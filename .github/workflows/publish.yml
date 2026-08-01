@@ -1,0 +1,43 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @playwright-backend-mocks/e2e exec playwright install --with-deps chromium
+
+      - name: Test
+        run: pnpm test
+
+      - name: Publish
+        run: pnpm -r --filter '@playwright-backend-mocks/*' publish --access public --no-git-checks
+        env:
+          NPM_CONFIG_PROVENANCE: true
