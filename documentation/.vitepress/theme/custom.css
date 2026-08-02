@@ -8,6 +8,7 @@
   );
 }
 
+/* Match VPHero container: max-width 1152px + the same horizontal padding */
 .home-page {
   width: 100%;
 }
@@ -17,9 +18,28 @@
   border-top: 1px solid var(--vp-c-divider);
 }
 
+@media (min-width: 640px) {
+  .home-section {
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+}
+
+@media (min-width: 960px) {
+  .home-section {
+    padding-left: 64px;
+    padding-right: 64px;
+  }
+}
+
 .home-section__inner {
-  max-width: 960px;
+  max-width: 1152px;
   margin: 0 auto;
+}
+
+/* Belt-and-suspenders: never show the default features grid on the home page */
+.VPHomeFeatures {
+  display: none !important;
 }
 
 .home-section__eyebrow {
@@ -110,18 +130,30 @@
   color: var(--vp-c-text-3);
 }
 
-.home-code__pre {
+.home-code__pre,
+.home-code__body pre {
   margin: 0;
   padding: 20px 22px 24px;
   overflow-x: auto;
   font-size: 13.5px;
   line-height: 1.65;
-  color: var(--vp-c-text-1);
+  background: transparent !important;
 }
 
-.home-code__pre code {
+.home-code__pre code,
+.home-code__body code {
   font-family: var(--vp-font-family-mono);
+  font-size: inherit;
   white-space: pre;
+  background: transparent !important;
+}
+
+.home-code__body .shiki span {
+  color: var(--shiki-light);
+}
+
+.dark .home-code__body .shiki span {
+  color: var(--shiki-dark);
 }
 
 /* Mermaid diagrams */

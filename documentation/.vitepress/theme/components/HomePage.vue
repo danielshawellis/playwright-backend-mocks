@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { withBase } from "vitepress";
 import { onMounted, ref } from "vue";
+import HighlightedCode from "./HighlightedCode.vue";
 import MermaidDiagram from "./MermaidDiagram.vue";
 
 const example = `test("declined card shows an error", async ({ page, backendMocks }) => {
@@ -64,15 +65,7 @@ onMounted(async () => {
           — aimed at the outbound HTTP your
           <strong>server</strong> makes, not the browser.
         </p>
-        <div class="home-code" aria-label="Example Playwright test">
-          <div class="home-code__chrome">
-            <span class="home-code__dot" />
-            <span class="home-code__dot" />
-            <span class="home-code__dot" />
-            <span class="home-code__label">checkout.spec.ts</span>
-          </div>
-          <pre class="home-code__pre"><code>{{ example }}</code></pre>
-        </div>
+        <HighlightedCode :code="example" lang="ts" filename="checkout.spec.ts" />
       </div>
     </section>
 
