@@ -19,12 +19,15 @@ The experience should feel like a natural extension of Playwright’s browser-si
 Conceptually:
 
 ```ts
-await backendMocks.route("https://api.example.com/users", async (route) => {
-  await route.fulfill({
-    status: 200,
-    json: [{ id: 1 }],
-  });
-});
+await backendMocks.route(
+  "https://api.example.com/users",
+  async (route) => {
+    await route.fulfill({
+      status: 200,
+      json: [{ id: 1 }],
+    });
+  },
+);
 ```
 
 The test author should not need to think extensively about process boundaries, proxy protocols, transport internals, or which supported HTTP client originated the request.
@@ -62,42 +65,42 @@ The project should begin with research and planning documented in a series of Ma
 
 Research at least:
 
-- Playwright request routing and mocking APIs
-- Common Playwright route usage
-- Playwright fixtures and fixture composition
-- `mergeTests()`
-- Playwright worker and test lifecycles
-- Playwright `webServer` configuration
-- `@mswjs/interceptors`
-- MSW’s Node.js architecture
-- `BatchInterceptor`
-- Fetch, XMLHttpRequest, and Node HTTP interception behavior
-- Request and response normalization in `@mswjs/interceptors`
-- `controller.respondWith()`
-- `controller.errorWith()`
-- Passthrough behavior
-- Interceptor lifecycle and cleanup
-- Supported and unsupported HTTP clients
-- Async interceptor handlers
-- Cancellation and abort propagation
-- Native Node.js Fetch error behavior
-- Axios and `node:http` error behavior
-- Common network failures
-- Buffered and streaming body behavior
-- HTTP proxy and coordinator conventions
-- WebSocket lifecycle and failure handling
-- Runtime protocol validation
-- pnpm workspaces
-- npm package publishing through GitHub Actions and OIDC
+* Playwright request routing and mocking APIs
+* Common Playwright route usage
+* Playwright fixtures and fixture composition
+* `mergeTests()`
+* Playwright worker and test lifecycles
+* Playwright `webServer` configuration
+* `@mswjs/interceptors`
+* MSW’s Node.js architecture
+* `BatchInterceptor`
+* Fetch, XMLHttpRequest, and Node HTTP interception behavior
+* Request and response normalization in `@mswjs/interceptors`
+* `controller.respondWith()`
+* `controller.errorWith()`
+* Passthrough behavior
+* Interceptor lifecycle and cleanup
+* Supported and unsupported HTTP clients
+* Async interceptor handlers
+* Cancellation and abort propagation
+* Native Node.js Fetch error behavior
+* Axios and `node:http` error behavior
+* Common network failures
+* Buffered and streaming body behavior
+* HTTP proxy and coordinator conventions
+* WebSocket lifecycle and failure handling
+* Runtime protocol validation
+* pnpm workspaces
+* npm package publishing through GitHub Actions and OIDC
 
 A small technical spike should verify that the chosen interceptor approach can:
 
-- Intercept the target HTTP clients
-- Pause an intercepted request during a WebSocket round trip
-- Return a mocked response
-- Pass through an unmatched request
-- Simulate supported failures
-- Cleanly dispose without leaking interception state
+* Intercept the target HTTP clients
+* Pause an intercepted request during a WebSocket round trip
+* Return a mocked response
+* Pass through an unmatched request
+* Simulate supported failures
+* Cleanly dispose without leaking interception state
 
 The purpose of this research is not to justify implementing every available feature. It is to make deliberate API and architecture decisions.
 
@@ -107,21 +110,21 @@ Before implementation, create a Markdown document proposing the complete public 
 
 It should cover:
 
-- Exported functions
-- Exported types
-- Node.js interceptor setup
-- Playwright fixtures
-- Route handlers
-- Request inspection
-- Response fulfillment
-- Passthrough
-- Response modification
-- Failure simulation
-- Request spying and history
-- Configuration
-- Package boundaries
-- CLI usage
-- Unsupported behavior
+* Exported functions
+* Exported types
+* Node.js interceptor setup
+* Playwright fixtures
+* Route handlers
+* Request inspection
+* Response fulfillment
+* Passthrough
+* Response modification
+* Failure simulation
+* Request spying and history
+* Configuration
+* Package boundaries
+* CLI usage
+* Unsupported behavior
 
 The proposed API should be evaluated against common Playwright usage, common Node.js application structures, and the capabilities of `@mswjs/interceptors`.
 
@@ -131,23 +134,23 @@ Before implementation, create a dedicated Markdown document defining the cross-p
 
 It should cover:
 
-- Connection roles
-- Handshake messages
-- Protocol versioning
-- Package-version compatibility
-- Node-agent messages
-- Playwright-worker messages
-- Proxy responses
-- Request and response serialization
-- Header serialization
-- Body encoding
-- Error serialization
-- Cancellation
-- Heartbeats
-- Disconnect handling
-- Multiple-match failures
-- Runtime validation
-- Compatibility and migration strategy
+* Connection roles
+* Handshake messages
+* Protocol versioning
+* Package-version compatibility
+* Node-agent messages
+* Playwright-worker messages
+* Proxy responses
+* Request and response serialization
+* Header serialization
+* Body encoding
+* Error serialization
+* Cancellation
+* Heartbeats
+* Disconnect handling
+* Multiple-match failures
+* Runtime validation
+* Compatibility and migration strategy
 
 Protocol integrity is a primary design requirement.
 
@@ -155,24 +158,24 @@ Protocol integrity is a primary design requirement.
 
 Before implementation, create a Markdown document covering:
 
-- Repository structure
-- pnpm workspace structure
-- Package structure
-- Shared protocol package
-- TypeScript configuration
-- ESLint configuration
-- Formatting
-- Build tooling
-- Module formats
-- Test architecture
-- CI
-- Release workflow
-- npm publishing
-- Proxy lifecycle
-- Node interceptor lifecycle
-- WebSocket lifecycle
-- Error handling
-- Dashboard architecture
+* Repository structure
+* pnpm workspace structure
+* Package structure
+* Shared protocol package
+* TypeScript configuration
+* ESLint configuration
+* Formatting
+* Build tooling
+* Module formats
+* Test architecture
+* CI
+* Release workflow
+* npm publishing
+* Proxy lifecycle
+* Node interceptor lifecycle
+* WebSocket lifecycle
+* Error handling
+* Dashboard architecture
 
 Production implementation should begin only after these plans exist and are internally coherent.
 
@@ -186,27 +189,27 @@ Configure TypeScript in strict mode before beginning implementation.
 
 Avoid:
 
-- `any`
-- Implicit `any`
-- Weakly typed protocol messages
-- Unvalidated `JSON.parse()` results
-- Duplicated protocol definitions
-- Unnecessary type assertions
-- Unsafe casts used to bypass design problems
-- Large, loosely typed configuration objects
-- Clever abstractions that obscure control flow
+* `any`
+* Implicit `any`
+* Weakly typed protocol messages
+* Unvalidated `JSON.parse()` results
+* Duplicated protocol definitions
+* Unnecessary type assertions
+* Unsafe casts used to bypass design problems
+* Large, loosely typed configuration objects
+* Clever abstractions that obscure control flow
 
 Prefer:
 
-- Discriminated unions
-- Readonly types
-- Explicit interfaces
-- Exhaustive handling
-- Small focused functions
-- Immutable data where practical
-- Clear ownership and lifecycle boundaries
-- Runtime validation at process and network boundaries
-- A single canonical source for protocol types and schemas
+* Discriminated unions
+* Readonly types
+* Explicit interfaces
+* Exhaustive handling
+* Small focused functions
+* Immutable data where practical
+* Clear ownership and lifecycle boundaries
+* Runtime validation at process and network boundaries
+* A single canonical source for protocol types and schemas
 
 Any assertion used at an external-library compatibility boundary should be narrow, justified, and isolated.
 
@@ -216,29 +219,29 @@ Configure ESLint before production implementation. Linting, formatting, and type
 
 Version 1 supports:
 
-- Node.js application processes
-- Supported outbound HTTP and HTTPS traffic intercepted through `@mswjs/interceptors`
-- Common clients such as Fetch, Axios, and Node HTTP clients where the interceptor library supports them
-- Playwright-controlled route registration
-- Mocked responses
-- Passthrough requests
-- Response inspection and modification for common cases
-- Common network failure simulation
-- Request spying and history
-- Multiple Node.js client processes
-- Multiple Playwright workers
-- A standalone central proxy and coordinator
-- A lightweight dashboard
+* Node.js application processes
+* Supported outbound HTTP and HTTPS traffic intercepted through `@mswjs/interceptors`
+* Common clients such as Fetch, Axios, and Node HTTP clients where the interceptor library supports them
+* Playwright-controlled route registration
+* Mocked responses
+* Passthrough requests
+* Response inspection and modification for common cases
+* Common network failure simulation
+* Request spying and history
+* Multiple Node.js client processes
+* Multiple Playwright workers
+* A standalone central proxy and coordinator
+* A lightweight dashboard
 
 Version 1 does not support:
 
-- WebSockets as an application transport
-- gRPC
-- Arbitrary unsupported socket or native transports
-- Traffic that bypasses the selected interceptor implementation
-- Streaming request bodies
-- Streaming response bodies
-- Perfect emulation of every operating-system-level network failure
+* WebSockets as an application transport
+* gRPC
+* Arbitrary unsupported socket or native transports
+* Traffic that bypasses the selected interceptor implementation
+* Streaming request bodies
+* Streaming response bodies
+* Perfect emulation of every operating-system-level network failure
 
 WebSockets may be used internally between Playwright workers, Node agents, and the proxy.
 
@@ -260,13 +263,13 @@ This means the complete body is read into memory before it is sent between the N
 
 Common buffered body types should be supported where practical, including:
 
-- JSON
-- Text
-- `URLSearchParams`
-- `FormData`
-- `Blob`
-- `ArrayBuffer`
-- Typed arrays and ordinary binary bodies
+* JSON
+* Text
+* `URLSearchParams`
+* `FormData`
+* `Blob`
+* `ArrayBuffer`
+* Typed arrays and ordinary binary bodies
 
 The exact support matrix should be established during interceptor and Fetch research.
 
@@ -307,14 +310,14 @@ All participating Node.js processes and Playwright workers connect to the same p
 
 The proxy is the central source of truth for:
 
-- Active route registrations
-- Request matching
-- Route ownership
-- Request lifecycle state
-- Multiple-match detection
-- Passthrough coordination
-- Request history
-- Diagnostics
+* Active route registrations
+* Request matching
+* Route ownership
+* Request lifecycle state
+* Multiple-match detection
+* Passthrough coordination
+* Request history
+* Diagnostics
 
 The Node and Playwright packages should remain comparatively thin.
 
@@ -324,17 +327,17 @@ The Node and Playwright packages should remain comparatively thin.
 
 The Node.js package should:
 
-- Install and dispose the interceptor
-- Use `@mswjs/interceptors` to observe supported outbound HTTP traffic
-- Normalize intercepted requests into shared protocol messages
-- Send requests to the proxy
-- Wait for proxy decisions
-- Apply mocked responses through the interceptor controller
-- Pass through requests when instructed
-- Apply supported failures
-- Propagate cancellation
-- Identify the originating Node client
-- Reconnect or fail clearly according to documented behavior
+* Install and dispose the interceptor
+* Use `@mswjs/interceptors` to observe supported outbound HTTP traffic
+* Normalize intercepted requests into shared protocol messages
+* Send requests to the proxy
+* Wait for proxy decisions
+* Apply mocked responses through the interceptor controller
+* Pass through requests when instructed
+* Apply supported failures
+* Propagate cancellation
+* Identify the originating Node client
+* Reconnect or fail clearly according to documented behavior
 
 It should not own route matching.
 
@@ -346,15 +349,15 @@ It should not duplicate proxy coordination logic.
 
 The Playwright package should:
 
-- Expose Playwright fixtures
-- Connect Playwright workers or tests to the proxy
-- Register and unregister route matchers
-- Receive matched request events
-- Execute user handlers
-- Return fulfill, continue, fetch, abort, or other supported decisions
-- Surface proxy failures in the affected test
-- Clean up test-scoped registrations
-- Provide spying and request-inspection APIs
+* Expose Playwright fixtures
+* Connect Playwright workers or tests to the proxy
+* Register and unregister route matchers
+* Receive matched request events
+* Execute user handlers
+* Return fulfill, continue, fetch, abort, or other supported decisions
+* Surface proxy failures in the affected test
+* Clean up test-scoped registrations
+* Provide spying and request-inspection APIs
 
 It should not independently determine global route ownership.
 
@@ -364,20 +367,20 @@ It may perform local convenience validation, but the proxy remains authoritative
 
 The proxy should:
 
-- Authenticate or identify connections where appropriate
-- Maintain active connections
-- Maintain route registrations
-- Match every intercepted request against active registrations
-- Detect zero, one, or multiple matches
-- Dispatch matched requests to the correct Playwright connection
-- Coordinate responses and failures
-- Coordinate passthrough
-- Track pending requests
-- Handle cancellations
-- Clean up disconnected clients
-- Record request and response history
-- Produce diagnostics
-- Expose health and dashboard endpoints
+* Authenticate or identify connections where appropriate
+* Maintain active connections
+* Maintain route registrations
+* Match every intercepted request against active registrations
+* Detect zero, one, or multiple matches
+* Dispatch matched requests to the correct Playwright connection
+* Coordinate responses and failures
+* Coordinate passthrough
+* Track pending requests
+* Handle cancellations
+* Clean up disconnected clients
+* Record request and response history
+* Produce diagnostics
+* Expose health and dashboard endpoints
 
 The proxy should contain most distributed coordination behavior.
 
@@ -385,14 +388,14 @@ The proxy should contain most distributed coordination behavior.
 
 The protocol package should:
 
-- Define every cross-process message
-- Define request and response serialization
-- Define error serialization
-- Export runtime validators
-- Export TypeScript types derived from those validators
-- Define protocol-version constants
-- Define shared parsing and serialization helpers
-- Be consumed directly by the Node, Playwright, and proxy packages
+* Define every cross-process message
+* Define request and response serialization
+* Define error serialization
+* Export runtime validators
+* Export TypeScript types derived from those validators
+* Define protocol-version constants
+* Define shared parsing and serialization helpers
+* Be consumed directly by the Node, Playwright, and proxy packages
 
 No package should recreate protocol types locally.
 
@@ -425,11 +428,11 @@ The exact function and environment-variable names are not prescribed.
 
 The common setup should require:
 
-- A configured proxy URL during Playwright tests
-- One small startup integration
-- No replacement of Fetch
-- No injection into every API client
-- Normal production networking outside the test environment
+* A configured proxy URL during Playwright tests
+* One small startup integration
+* No replacement of Fetch
+* No injection into every API client
+* Normal production networking outside the test environment
 
 The library should expose explicit lifecycle control when useful:
 
@@ -483,14 +486,14 @@ The CLI should use sensible defaults and expose the configuration needed for com
 
 Likely configuration areas include:
 
-- Host
-- Port
-- Logging
-- Request-history retention
-- Health endpoint
-- Authentication or connection token
-- Heartbeat interval
-- Connection timeout
+* Host
+* Port
+* Logging
+* Request-history retention
+* Health endpoint
+* Authentication or connection token
+* Heartbeat interval
+* Connection timeout
 
 ### Playwright-managed web server
 
@@ -506,7 +509,8 @@ const proxyUrl = "http://127.0.0.1:4310";
 export default defineConfig({
   webServer: [
     {
-      command: "playwright-backend-mocks-proxy --host 127.0.0.1 --port 4310",
+      command:
+        "playwright-backend-mocks-proxy --host 127.0.0.1 --port 4310",
       url: `${proxyUrl}/health`,
       reuseExistingServer: !process.env.CI,
     },
@@ -549,7 +553,10 @@ import { mergeTests } from "@playwright/test";
 import { test as applicationTest } from "./application-fixtures";
 import { test as backendMocksTest } from "@playwright-backend-mocks/playwright";
 
-export const test = mergeTests(applicationTest, backendMocksTest);
+export const test = mergeTests(
+  applicationTest,
+  backendMocksTest,
+);
 
 export { expect } from "@playwright/test";
 ```
@@ -559,20 +566,28 @@ Tests would then import the project’s locally composed `test`:
 ```ts
 import { test, expect } from "./fixtures";
 
-test("handles a declined payment", async ({ page, backendMocks }) => {
-  await backendMocks.route("https://payments.example.test/charges", async (route) => {
-    await route.fulfill({
-      status: 402,
-      json: {
-        error: "card_declined",
-      },
-    });
-  });
+test("handles a declined payment", async ({
+  page,
+  backendMocks,
+}) => {
+  await backendMocks.route(
+    "https://payments.example.test/charges",
+    async (route) => {
+      await route.fulfill({
+        status: 402,
+        json: {
+          error: "card_declined",
+        },
+      });
+    },
+  );
 
   await page.goto("/checkout");
   await page.getByRole("button", { name: "Pay" }).click();
 
-  await expect(page.getByText("Your card was declined")).toBeVisible();
+  await expect(
+    page.getByText("Your card was declined"),
+  ).toBeVisible();
 });
 ```
 
@@ -627,21 +642,21 @@ The proxy is the central coordinator.
 
 It should:
 
-- Receive normalized requests from Node agents
-- Preserve the original destination and relevant request information
-- Maintain route registrations
-- Associate registrations with Playwright connections and tests
-- Match incoming requests
-- Dispatch matching requests to Playwright workers
-- Instruct Node agents to pass through unmatched requests
-- Coordinate continued or upstream requests
-- Return mocked responses
-- Coordinate supported failures
-- Record request and response history
-- Expose health and dashboard endpoints
-- Clean up disconnected workers, agents, and abandoned routes
-- Track request cancellation and pending work
-- Reject incompatible protocol versions
+* Receive normalized requests from Node agents
+* Preserve the original destination and relevant request information
+* Maintain route registrations
+* Associate registrations with Playwright connections and tests
+* Match incoming requests
+* Dispatch matching requests to Playwright workers
+* Instruct Node agents to pass through unmatched requests
+* Coordinate continued or upstream requests
+* Return mocked responses
+* Coordinate supported failures
+* Record request and response history
+* Expose health and dashboard endpoints
+* Clean up disconnected workers, agents, and abandoned routes
+* Track request cancellation and pending work
+* Reject incompatible protocol versions
 
 The Node integration should not function as an ordinary network proxy. It should intercept locally and communicate decisions through the coordinator protocol.
 
@@ -653,17 +668,17 @@ Each participating Node process should maintain a persistent connection to the p
 
 A Node-agent connection should support at least:
 
-- Handshake
-- Client registration
-- Intercepted request submission
-- Request cancellation
-- Mocked response decisions
-- Passthrough decisions
-- Failure decisions
-- Completion events
-- Error propagation
-- Ping and liveness checks
-- Graceful disposal
+* Handshake
+* Client registration
+* Intercepted request submission
+* Request cancellation
+* Mocked response decisions
+* Passthrough decisions
+* Failure decisions
+* Completion events
+* Error propagation
+* Ping and liveness checks
+* Graceful disposal
 
 The Node agent should remain thin and delegate matching and coordination to the proxy.
 
@@ -673,16 +688,16 @@ Playwright workers should use persistent WebSocket connections to communicate wi
 
 A connection should support at least:
 
-- Handshake
-- Test registration
-- Route registration
-- Route removal
-- Incoming matched request events
-- Handler results
-- Test teardown
-- Test failure propagation
-- Error propagation
-- Ping and liveness checks
+* Handshake
+* Test registration
+* Route registration
+* Route removal
+* Incoming matched request events
+* Handler results
+* Test teardown
+* Test failure propagation
+* Error propagation
+* Ping and liveness checks
 
 The exact connection granularity—per test or per worker—may be chosen after considering simplicity and reliability.
 
@@ -730,7 +745,9 @@ const message = JSON.parse(data) as NodeToProxyMessage;
 Instead, parse through the canonical protocol schema:
 
 ```ts
-const message = parseNodeToProxyMessage(JSON.parse(data));
+const message = parseNodeToProxyMessage(
+  JSON.parse(data),
+);
 ```
 
 The type should ideally be inferred from the runtime schema so that static and runtime definitions cannot drift.
@@ -739,26 +756,26 @@ The implementer may select a schema library or create small purpose-built valida
 
 The protocol should include:
 
-- A protocol version
-- Package versions in the handshake
-- Explicit connection roles
-- Stable message discriminants
-- Shared request serialization
-- Shared response serialization
-- Shared header serialization
-- Shared body encoding
-- Shared error serialization
-- Exhaustive handling requirements
-- Clear compatibility failures
+* A protocol version
+* Package versions in the handshake
+* Explicit connection roles
+* Stable message discriminants
+* Shared request serialization
+* Shared response serialization
+* Shared header serialization
+* Shared body encoding
+* Shared error serialization
+* Exhaustive handling requirements
+* Clear compatibility failures
 
 All participating packages should normally use the same release version.
 
 Cross-package contract tests must prove that:
 
-- Each sender can serialize messages accepted by the receiver
-- Each receiver rejects invalid messages
-- Built package outputs remain compatible
-- Protocol-version mismatches fail clearly
+* Each sender can serialize messages accepted by the receiver
+* Each receiver rejects invalid messages
+* Built package outputs remain compatible
+* Protocol-version mismatches fail clearly
 
 ## Route Matching and Ownership
 
@@ -770,18 +787,18 @@ The Node package should never decide which Playwright registration owns a reques
 
 For every incoming request:
 
-- Zero matches: pass through by default.
-- One match: dispatch to that route’s Playwright connection.
-- Multiple matches: fail loudly.
+* Zero matches: pass through by default.
+* One match: dispatch to that route’s Playwright connection.
+* Multiple matches: fail loudly.
 
 Multiple-match diagnostics should identify all matching registrations, including available information such as:
 
-- Matcher
-- Test name
-- Test file
-- Worker
-- Node client identifier
-- Registration location
+* Matcher
+* Test name
+* Test file
+* Worker
+* Node client identifier
+* Registration location
 
 Every affected Playwright test should fail.
 
@@ -797,16 +814,16 @@ The goal is to support the common Playwright routing experience without copying 
 
 Likely concepts include:
 
-- `route`
-- `unroute`
-- `fulfill`
-- `continue`
-- `fetch`
-- `abort`
-- Request inspection
-- Request spying
-- Waiting for requests
-- Request history
+* `route`
+* `unroute`
+* `fulfill`
+* `continue`
+* `fetch`
+* `abort`
+* Request inspection
+* Request spying
+* Waiting for requests
+* Request history
 
 Support the most valuable matcher forms and handler operations without substantially complicating the implementation.
 
@@ -848,14 +865,14 @@ Support common network and client failure scenarios where practical.
 
 Potential examples include:
 
-- Generic network error
-- Timeout
-- Indefinitely pending request
-- Explicit abort
-- Connection refusal
-- Connection reset
-- DNS failure
-- TLS failure
+* Generic network error
+* Timeout
+* Indefinitely pending request
+* Explicit abort
+* Connection refusal
+* Connection reset
+* DNS failure
+* TLS failure
 
 Research `@mswjs/interceptors`, Fetch, Axios, and Node HTTP behavior.
 
@@ -873,24 +890,24 @@ Routes should be scoped to tests.
 
 Normal Playwright teardown should:
 
-- Unregister the test
-- Remove its routes
-- Reject or resolve pending work according to documented behavior
-- Release associated resources
+* Unregister the test
+* Remove its routes
+* Reject or resolve pending work according to documented behavior
+* Release associated resources
 
 If a Playwright WebSocket disconnects unexpectedly:
 
-- Remove its routes immediately
-- Fail the associated test
-- Reject pending requests routed to that connection
-- Produce actionable diagnostics
+* Remove its routes immediately
+* Fail the associated test
+* Reject pending requests routed to that connection
+* Produce actionable diagnostics
 
 If a Node-agent WebSocket disconnects unexpectedly:
 
-- Mark the client as disconnected
-- Reject pending coordination work associated with it
-- Surface clear errors
-- Avoid silently leaving intercepted requests unresolved
+* Mark the client as disconnected
+* Reject pending coordination work associated with it
+* Surface clear errors
+* Avoid silently leaving intercepted requests unresolved
 
 Use a simple ping or heartbeat mechanism and configurable inactivity timeouts to identify abandoned connections.
 
@@ -900,12 +917,12 @@ The proxy naturally observes requests and should expose that information through
 
 Tests should be able to:
 
-- Inspect requests received by a route
-- Assert that a request occurred
-- Inspect request method, URL, headers, and body
-- Identify the originating Node client
-- Count matching requests
-- Wait for a matching request
+* Inspect requests received by a route
+* Assert that a request occurred
+* Inspect request method, URL, headers, and body
+* Identify the originating Node client
+* Count matching requests
+* Wait for a matching request
 
 The exact assertion API is left to the implementer.
 
@@ -921,18 +938,18 @@ The proxy should expose a lightweight, read-only dashboard, likely at:
 
 The dashboard should show useful observability information, including:
 
-- Request URL
-- Method
-- Node client identifier
-- Timing
-- Mocked, forwarded, or failed status
-- Matching route
-- Request headers and body
-- Response status, headers, and body
-- Errors
-- Playwright test ownership
-- Pending requests
-- Connected Node agents and Playwright workers
+* Request URL
+* Method
+* Node client identifier
+* Timing
+* Mocked, forwarded, or failed status
+* Matching route
+* Request headers and body
+* Response status, headers, and body
+* Errors
+* Playwright test ownership
+* Pending requests
+* Connected Node agents and Playwright workers
 
 The dashboard may allow downloading or exporting captured request data.
 
@@ -958,22 +975,22 @@ Use a pnpm monorepo.
 
 The repository should be capable of:
 
-- Building all packages
-- Sharing internal packages cleanly
-- Testing packages together
-- Publishing packages independently while sharing a version
-- Running fixture applications
-- Running real Playwright tests
-- Enforcing linting and type checking
-- Testing built package artifacts
-- Preventing dependency and protocol drift
+* Building all packages
+* Sharing internal packages cleanly
+* Testing packages together
+* Publishing packages independently while sharing a version
+* Running fixture applications
+* Running real Playwright tests
+* Enforcing linting and type checking
+* Testing built package artifacts
+* Preventing dependency and protocol drift
 
 Likely package boundaries are:
 
-- `@playwright-backend-mocks/playwright`
-- `@playwright-backend-mocks/node`
-- `@playwright-backend-mocks/proxy`
-- `@playwright-backend-mocks/protocol`
+* `@playwright-backend-mocks/playwright`
+* `@playwright-backend-mocks/node`
+* `@playwright-backend-mocks/proxy`
+* `@playwright-backend-mocks/protocol`
 
 The protocol package may remain internal if publishing it provides no user value, but all runtime packages must consume the same built protocol implementation.
 
@@ -987,8 +1004,8 @@ Use pnpm workspace dependencies so packages consume one another through explicit
 
 Published packages should support:
 
-- ESM
-- CommonJS
+* ESM
+* CommonJS
 
 Ensure package exports, declarations, and build outputs work correctly in both environments.
 
@@ -1025,33 +1042,33 @@ Playwright test
 
 The repository should include small fixture processes such as:
 
-- A web application using Fetch
-- A web application or worker using Axios
-- A process using `node:http` or another supported client
-- A background worker
-- A fake upstream HTTP server
+* A web application using Fetch
+* A web application or worker using Axios
+* A process using `node:http` or another supported client
+* A background worker
+* A fake upstream HTTP server
 
 Important cross-process scenarios should include:
 
-- Basic mocked responses
-- Dynamic route handlers
-- Request inspection
-- Spying and request counts
-- Passthrough
-- Response modification
-- Failure simulation
-- Abort behavior
-- Multiple Node.js processes
-- Multiple HTTP clients
-- Multiple Playwright workers
-- Multiple-match failures
-- Route cleanup
-- Unexpected Playwright disconnects
-- Unexpected Node-agent disconnects
-- Unsupported transport behavior
-- Protocol validation
-- Protocol-version mismatches
-- Dashboard and history behavior
+* Basic mocked responses
+* Dynamic route handlers
+* Request inspection
+* Spying and request counts
+* Passthrough
+* Response modification
+* Failure simulation
+* Abort behavior
+* Multiple Node.js processes
+* Multiple HTTP clients
+* Multiple Playwright workers
+* Multiple-match failures
+* Route cleanup
+* Unexpected Playwright disconnects
+* Unexpected Node-agent disconnects
+* Unsupported transport behavior
+* Protocol validation
+* Protocol-version mismatches
+* Dashboard and history behavior
 
 Everything should remain local. No test should depend on the public internet.
 
@@ -1059,13 +1076,13 @@ Tests should use the built package outputs in at least one end-to-end suite so s
 
 Focused unit tests are appropriate for modules with meaningful combinatorial or protocol complexity, such as:
 
-- Matcher behavior
-- Header normalization
-- Protocol schemas
-- Error serialization
-- Body encoding
-- Exhaustive message handling
-- Interceptor compatibility helpers
+* Matcher behavior
+* Header normalization
+* Protocol schemas
+* Error serialization
+* Body encoding
+* Exhaustive message handling
+* Interceptor compatibility helpers
 
 Unit tests should supplement rather than replace confidence from broad tests.
 
@@ -1073,15 +1090,15 @@ Unit tests should supplement rather than replace confidence from broad tests.
 
 CI should require:
 
-- Dependency installation succeeds
-- pnpm workspace integrity is valid
-- All packages build
-- Type checking passes
-- ESLint passes
-- Formatting checks pass
-- Protocol contract tests pass
-- All unit and cross-process tests pass
-- Built-package smoke tests pass
+* Dependency installation succeeds
+* pnpm workspace integrity is valid
+* All packages build
+* Type checking passes
+* ESLint passes
+* Formatting checks pass
+* Protocol contract tests pass
+* All unit and cross-process tests pass
+* Built-package smoke tests pass
 
 These checks should run for every pull request and be required before merging.
 
@@ -1115,18 +1132,18 @@ When this document suggests an implementation detail, it should normally be unde
 
 Preserve the central vision:
 
-- Backend HTTP mocking controlled from Playwright
-- Broad Node.js client support through low-level interception
-- Familiar Playwright-like ergonomics
-- Minimal application integration
-- One shared standalone proxy and coordinator
-- Centralized route matching
-- Thin Node and Playwright clients
-- One canonical, runtime-validated protocol
-- Strong TypeScript
-- A pnpm monorepo
-- Broad cross-process testing
-- Clear failures
-- Simple, maintainable implementation
+* Backend HTTP mocking controlled from Playwright
+* Broad Node.js client support through low-level interception
+* Familiar Playwright-like ergonomics
+* Minimal application integration
+* One shared standalone proxy and coordinator
+* Centralized route matching
+* Thin Node and Playwright clients
+* One canonical, runtime-validated protocol
+* Strong TypeScript
+* A pnpm monorepo
+* Broad cross-process testing
+* Clear failures
+* Simple, maintainable implementation
 
 Within those boundaries, choose the architecture and API that produce the best library.
