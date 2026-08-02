@@ -1,0 +1,40 @@
+{
+  "name": "playwright-backend-mocks",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mock outbound Node.js HTTP from Playwright tests",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' run build",
+    "typecheck": "pnpm -r --filter './packages/*' run typecheck && tsc -p tests/unit/tsconfig.json --noEmit && tsc -p tests/contract/tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm test:unit && pnpm test:contract && pnpm test:e2e",
+    "test:unit": "vitest run --config tests/unit/vitest.config.ts",
+    "test:contract": "vitest run --config tests/contract/vitest.config.ts",
+    "test:e2e": "pnpm --filter @playwright-backend-mocks/e2e test",
+    "clean": "pnpm -r exec rm -rf dist"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@playwright-backend-mocks/protocol": "workspace:*",
+    "@types/node": "^22.16.5",
+    "eslint": "^9.32.0",
+    "globals": "^17.8.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "@playwright-backend-mocks/proxy",
+  "version": "0.1.0",
+  "description": "Standalone proxy and coordinator for Playwright Backend Mocks",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "playwright-backend-mocks-proxy": "./dist/cli.cjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@playwright-backend-mocks/protocol": "workspace:*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
