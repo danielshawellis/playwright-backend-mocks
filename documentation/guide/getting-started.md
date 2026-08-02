@@ -59,7 +59,7 @@ export default defineConfig<object, BackendMocksWorkerOptions>({
 });
 ```
 
-Open `http://127.0.0.1:4310/dashboard` while tests run for a live view of connections and request history.
+While tests run you can inspect traffic with `GET /api/history` and `GET /api/connections` on the proxy (see [REST API](/reference/rest-api)). For a UI, optionally run the [dashboard](/reference/dashboard) as a separate process.
 
 ## 2. Enable the Node agent in your app
 

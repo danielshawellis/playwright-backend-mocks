@@ -7,7 +7,7 @@ A small architecture with three roles. Understanding them makes every other page
 ```mermaid
 flowchart TB
   PW["Playwright worker<br/>backendMocks.route / fulfill / continue"]
-  Proxy["Proxy coordinator<br/>dashboard · request history"]
+  Proxy["Proxy coordinator<br/>REST API · request history"]
   Node["Node app process(es)<br/>startBackendMocks · @mswjs/interceptors"]
   Outside["Outbound HTTP/HTTPS<br/>third parties"]
 
@@ -22,13 +22,14 @@ flowchart TB
 
 You almost never interact with the protocol directly. You write tests against `backendMocks` and start the agent + proxy around your app.
 
-## The three packages you use day to day
+## The packages you use day to day
 
-| Package                                | Role                                                          |
-| -------------------------------------- | ------------------------------------------------------------- |
-| `@playwright-backend-mocks/proxy`      | CLI process that coordinates matching and serves `/dashboard` |
-| `@playwright-backend-mocks/node`       | Agent installed in each Node process under test               |
-| `@playwright-backend-mocks/playwright` | `test` fixture exposing `backendMocks`                        |
+| Package                                | Role                                                           |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `@playwright-backend-mocks/proxy`      | CLI process that coordinates matching and exposes the REST API |
+| `@playwright-backend-mocks/node`       | Agent installed in each Node process under test                |
+| `@playwright-backend-mocks/playwright` | `test` fixture exposing `backendMocks`                         |
+| `@playwright-backend-mocks/dashboard`  | Optional separate Vue UI that consumes the proxy REST API      |
 
 `@playwright-backend-mocks/protocol` is shared wire types for the packages above. Application tests rarely import it.
 
@@ -52,7 +53,7 @@ Design matchers so concurrent tests (or overlapping routes in one test) stay una
 
 ## Passthrough by default
 
-Unmatched traffic is **not** blocked. That keeps setup light, but it also means a missing route can hit a real service. Prefer explicit mocks for anything external or costly, and use the [dashboard](/reference/proxy#http-endpoints) while writing tests to confirm what was mocked vs passed through.
+Unmatched traffic is **not** blocked. That keeps setup light, but it also means a missing route can hit a real service. Prefer explicit mocks for anything external or costly, and use the [REST API](/reference/rest-api) or [dashboard](/reference/dashboard) while writing tests to confirm what was mocked vs passed through.
 
 ## Test scope vs worker scope
 

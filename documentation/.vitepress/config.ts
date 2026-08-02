@@ -77,6 +77,8 @@ export default defineConfig({
             { text: "Playwright fixture", link: "/reference/playwright" },
             { text: "Node agent", link: "/reference/node" },
             { text: "Proxy", link: "/reference/proxy" },
+            { text: "REST API", link: "/reference/rest-api" },
+            { text: "Dashboard", link: "/reference/dashboard" },
             { text: "Errors", link: "/reference/errors" },
             { text: "Protocol", link: "/reference/protocol" },
           ],

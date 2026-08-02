@@ -2,7 +2,9 @@
 
 Package: `@playwright-backend-mocks/proxy`
 
-The proxy is the coordinator: it accepts WebSocket connections from Playwright workers and Node agents, matches routes, records history, and serves a read-only dashboard.
+The proxy is the coordinator: it accepts WebSocket connections from Playwright workers and Node agents, matches routes, records history, and exposes a read-only [REST API](/reference/rest-api).
+
+The HTML dashboard is a **separate** optional package — see [Dashboard](/reference/dashboard).
 
 ## CLI
 
@@ -69,13 +71,12 @@ type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
 | Method | Path               | Description                              |
 | ------ | ------------------ | ---------------------------------------- |
 | `GET`  | `/health`          | `{ ok: true, version, protocolVersion }` |
-| `GET`  | `/dashboard`       | Read-only HTML UI (polls every 2s)       |
 | `GET`  | `/api/history`     | `{ entries: HistoryEntry[] }`            |
 | `GET`  | `/api/connections` | `{ nodeAgents, playwrightWorkers }`      |
 | WS     | `/ws`              | Protocol transport                       |
 | \*     | other              | `404` `{ error: "not_found" }`           |
 
-The dashboard shows connections and request history with JSON detail. It does **not** mutate routes or connections.
+Full request/response shapes and agent-oriented examples live in the [REST API](/reference/rest-api) reference. The API does **not** mutate routes or connections.
 
 ### History outcomes
 

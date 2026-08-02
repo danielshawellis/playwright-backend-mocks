@@ -14,7 +14,6 @@ import {
   type SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 import { createProxyConfig, type ProxyConfig } from "./config.js";
-import { renderDashboardHtml } from "./dashboard.js";
 import { HistoryStore } from "./history.js";
 import { Logger } from "./logger.js";
 
@@ -623,6 +622,20 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
+    const isApiPath =
+      url.pathname === "/health" ||
+      url.pathname === "/api/history" ||
+      url.pathname === "/api/connections";
+
+    if (isApiPath) {
+      setCors(res);
+    }
+
+    if (req.method === "OPTIONS" && isApiPath) {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
     if (req.method === "GET" && url.pathname === "/health") {
       json(res, 200, {
@@ -630,12 +643,6 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         version: PACKAGE_VERSION,
         protocolVersion: PROTOCOL_VERSION,
       });
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/dashboard") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(renderDashboardHtml());
       return;
     }
 
@@ -675,6 +682,12 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     }
 
     json(res, 404, { error: "not_found" });
+  }
+
+  function setCors(res: ServerResponse): void {
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+    res.setHeader("access-control-allow-headers", "content-type");
   }
 
   function json(res: ServerResponse, status: number, body: unknown): void {
