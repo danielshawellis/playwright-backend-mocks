@@ -18,10 +18,10 @@ None of those are “run the real app, mock the outside world.”
 
 ## What “mock at the boundaries” means
 
-```
-Browser  →  Your server  →  Third parties
-   ▲              ▲              ▲
- real           real          mocked
+```mermaid
+flowchart LR
+  Browser["Browser<br/>run for real"] --> Server["Your server<br/>run for real"]
+  Server --> Edge["Third parties<br/>mocked"]
 ```
 
 - Your checkout page is real.

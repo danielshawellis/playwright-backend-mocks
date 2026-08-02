@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { withBase } from "vitepress";
 import { onMounted, ref } from "vue";
+import MermaidDiagram from "./MermaidDiagram.vue";
 
 const example = `test("declined card shows an error", async ({ page, backendMocks }) => {
   await backendMocks.route("https://api.stripe.com/**", async (route) => {
@@ -15,8 +16,24 @@ const example = `test("declined card shows an error", async ({ page, backendMock
   await expect(page.getByText("Your card was declined")).toBeVisible();
 });`;
 
+const architectureDiagram = `flowchart LR
+  PW["Playwright test<br/>backendMocks.route()"]
+  Proxy["Proxy<br/>match · history · dashboard"]
+  Node["Your Node app<br/>startBackendMocks()"]
+  Outside["Third parties<br/>Stripe · email · APIs"]
+
+  PW <-->|"WebSocket"| Proxy
+  Proxy <-->|"WebSocket"| Node
+  Node -->|"outbound HTTP"| Outside`;
+
+const boundaryDiagram = `flowchart LR
+  Browser["Browser<br/>run for real"] --> Server["Your server<br/>run for real"]
+  Server --> Edge["Third parties<br/>mock here"]`;
+
 const videoSrc = withBase("/dashboard-demo.mp4");
 const posterSrc = withBase("/dashboard-demo-poster.svg");
+const gettingStartedHref = withBase("/guide/getting-started");
+const whyHref = withBase("/guide/why");
 const hasVideo = ref(false);
 
 onMounted(async () => {
@@ -30,7 +47,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="home-sections">
+  <div class="home-page">
     <section class="home-section home-section--syntax">
       <div class="home-section__inner">
         <p class="home-section__eyebrow">From your Playwright tests</p>
@@ -71,27 +88,17 @@ onMounted(async () => {
           — mock it, let it through, or fail it — then the server continues.
         </p>
 
-        <div class="arch" role="img" aria-label="Architecture diagram">
-          <div class="arch__node">
-            <span class="arch__label">Playwright test</span>
-            <span class="arch__detail"><code>backendMocks.route(...)</code></span>
-          </div>
-          <div class="arch__arrow" aria-hidden="true">
-            <span class="arch__arrow-line" />
-            <span class="arch__arrow-text">WebSocket</span>
-          </div>
-          <div class="arch__node arch__node--accent">
-            <span class="arch__label">Proxy</span>
-            <span class="arch__detail">Match routes · history · dashboard</span>
-          </div>
-          <div class="arch__arrow" aria-hidden="true">
-            <span class="arch__arrow-line" />
-            <span class="arch__arrow-text">WebSocket</span>
-          </div>
-          <div class="arch__node">
-            <span class="arch__label">Your Node app</span>
-            <span class="arch__detail"><code>startBackendMocks()</code></span>
-          </div>
+        <div class="home-diagram">
+          <MermaidDiagram :code="architectureDiagram" />
+        </div>
+
+        <p class="home-section__sublead">
+          The goal in one glance: run the browser and server for real; mock only the
+          outside world.
+        </p>
+
+        <div class="home-diagram home-diagram--compact">
+          <MermaidDiagram :code="boundaryDiagram" />
         </div>
 
         <ol class="home-steps">
@@ -165,6 +172,22 @@ onMounted(async () => {
           <p class="home-video__note">
             Available at <code>/dashboard</code> while the proxy is running.
           </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-section home-section--cta">
+      <div class="home-section__inner home-cta">
+        <h2 class="home-section__title">Ready to wire it into a suite?</h2>
+        <p class="home-section__lead">
+          Four steps: start the proxy, enable the Node agent, compose the fixture, write
+          your first route.
+        </p>
+        <div class="home-cta__actions">
+          <a class="home-cta__button home-cta__button--brand" :href="gettingStartedHref"
+            >Get Started</a
+          >
+          <a class="home-cta__button" :href="whyHref">Why this library</a>
         </div>
       </div>
     </section>

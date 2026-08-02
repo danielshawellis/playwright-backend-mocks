@@ -7,6 +7,20 @@ export default defineConfig({
   base: "/playwright-backend-mocks-msw/",
   cleanUrls: true,
   lastUpdated: true,
+  markdown: {
+    config(md) {
+      const defaultFence = md.renderer.rules.fence;
+      md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+        const token = tokens[idx];
+        if (token.info.trim() === "mermaid") {
+          return `<MermaidDiagram code="${encodeURIComponent(token.content)}" />\n`;
+        }
+        return defaultFence
+          ? defaultFence(tokens, idx, options, env, self)
+          : self.renderToken(tokens, idx, options);
+      };
+    },
+  },
   themeConfig: {
     nav: [
       { text: "Guide", link: "/guide/getting-started" },

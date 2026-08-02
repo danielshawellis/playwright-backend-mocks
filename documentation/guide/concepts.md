@@ -4,21 +4,16 @@ A small architecture with three roles. Understanding them makes every other page
 
 ## Architecture
 
-```
-┌─────────────────────┐         WebSocket          ┌──────────────────────┐
-│  Playwright worker  │ ◄────────────────────────► │                      │
-│  backendMocks.route │                            │  Proxy coordinator   │
-│  fulfill / continue │                            │  + dashboard         │
-└─────────────────────┘                            │  + request history    │
-                                                   └──────────▲───────────┘
-                                                              │ WebSocket
-                                                   ┌──────────┴───────────┐
-                                                   │  Node app process(es)│
-                                                   │  startBackendMocks() │
-                                                   │  @mswjs/interceptors │
-                                                   └──────────────────────┘
-                                                              │
-                                                   outbound HTTP/HTTPS
+```mermaid
+flowchart TB
+  PW["Playwright worker<br/>backendMocks.route / fulfill / continue"]
+  Proxy["Proxy coordinator<br/>dashboard · request history"]
+  Node["Node app process(es)<br/>startBackendMocks · @mswjs/interceptors"]
+  Outside["Outbound HTTP/HTTPS<br/>third parties"]
+
+  PW <-->|"WebSocket"| Proxy
+  Proxy <-->|"WebSocket"| Node
+  Node --> Outside
 ```
 
 1. **Node agent** pauses an outbound request and asks the proxy what to do.
