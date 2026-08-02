@@ -5,7 +5,7 @@ markdownStyles: false
 
 hero:
   name: Playwright Backend Mocks
-  text: Run the real app. Mock only the outside world.
+  text: "Run the real app.<br>Mock only the outside world."
   tagline: Good e2e tests cover your UI and your server — then fake Stripe, email, and every other third party at the boundary. Playwright can do the browser half. We make the server half just as easy.
   actions:
     - theme: brand

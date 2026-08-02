@@ -17,19 +17,18 @@ const example = `test("declined card shows an error", async ({ page, backendMock
   await expect(page.getByText("Your card was declined")).toBeVisible();
 });`;
 
-const architectureDiagram = `flowchart LR
-  PW["Playwright test<br/>backendMocks.route()"]
-  Proxy["Proxy<br/>match · history · dashboard"]
-  Node["Your Node app<br/>startBackendMocks()"]
-  Outside["Third parties<br/>Stripe · email · APIs"]
+const architectureDiagram = `sequenceDiagram
+  participant App as Your Node app
+  participant MSW as @mswjs/interceptors
+  participant Proxy as Proxy server
+  participant Test as Playwright test
 
-  PW <-->|"WebSocket"| Proxy
-  Proxy <-->|"WebSocket"| Node
-  Node -->|"outbound HTTP"| Outside`;
-
-const boundaryDiagram = `flowchart LR
-  Browser["Browser<br/>run for real"] --> Server["Your server<br/>run for real"]
-  Server --> Edge["Third parties<br/>mock here"]`;
+  App->>MSW: outbound HTTP call
+  MSW->>Proxy: pause and forward request
+  Proxy->>Test: match backendMocks.route()
+  Test-->>Proxy: fulfill / continue / abort
+  Proxy-->>MSW: return decision
+  MSW-->>App: mocked or real response`;
 
 const videoSrc = withBase("/dashboard-demo.mp4");
 const posterSrc = withBase("/dashboard-demo-poster.svg");
@@ -73,41 +72,53 @@ onMounted(async () => {
       <div class="home-section__inner">
         <p class="home-section__eyebrow">How it works</p>
         <h2 class="home-section__title">
-          A small proxy sits between your tests and your Node app
+          Not magic — a proxy your Playwright tests control
         </h2>
         <p class="home-section__lead">
-          Your real server keeps running. When it calls the outside world, a tiny agent
-          pauses that request and asks the proxy what to do. Your Playwright test answers
-          — mock it, let it through, or fail it — then the server continues.
+          Your app still runs for real. We intercept the HTTP it sends to the outside
+          world, then let the test decide what happens next.
         </p>
+
+        <div class="home-pillars" role="list">
+          <article class="home-pillar" role="listitem">
+            <span class="home-pillar__num">1</span>
+            <h3 class="home-pillar__title">Start a proxy server</h3>
+            <p class="home-pillar__body">
+              A small local process that sits between your Node app and Playwright. It
+              matches routes, returns decisions, and hosts the debug dashboard.
+            </p>
+          </article>
+          <article class="home-pillar" role="listitem">
+            <span class="home-pillar__num">2</span>
+            <h3 class="home-pillar__title">Route Node HTTP through it</h3>
+            <p class="home-pillar__body">
+              In your app, <code>startBackendMocks()</code> uses
+              <code>@mswjs/interceptors</code> to catch outbound <code>fetch</code> /
+              <code>http</code> / <code>https</code> calls and send them to the proxy
+              instead of going straight to Stripe, email, etc.
+            </p>
+          </article>
+          <article class="home-pillar" role="listitem">
+            <span class="home-pillar__num">3</span>
+            <h3 class="home-pillar__title">Control it from Playwright</h3>
+            <p class="home-pillar__body">
+              Your test calls <code>backendMocks.route(...)</code>. When the app makes a
+              matching request, the handler runs in Playwright — fulfill a mock, continue
+              upstream, or abort — and Node gets that result.
+            </p>
+          </article>
+        </div>
+
+        <p class="home-section__sublead">One request, end to end:</p>
 
         <div class="home-diagram">
           <MermaidDiagram :code="architectureDiagram" />
         </div>
 
-        <p class="home-section__sublead">
-          The goal in one glance: run the browser and server for real; mock only the
-          outside world.
+        <p class="home-section__footnote">
+          Unmatched requests pass through to the real network. Outside tests, with no
+          proxy URL set, the Node agent is a no-op.
         </p>
-
-        <div class="home-diagram home-diagram--compact">
-          <MermaidDiagram :code="boundaryDiagram" />
-        </div>
-
-        <ol class="home-steps">
-          <li>
-            <strong>Start the proxy</strong> next to your app (usually via Playwright
-            <code>webServer</code>).
-          </li>
-          <li>
-            <strong>Enable the Node agent</strong> in each process under test — it’s a
-            no-op when the proxy URL isn’t set.
-          </li>
-          <li>
-            <strong>Register routes in the test</strong> with familiar Playwright syntax.
-            Unmatched calls pass through to the real network.
-          </li>
-        </ol>
       </div>
     </section>
 
