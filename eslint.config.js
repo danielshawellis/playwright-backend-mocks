@@ -13,6 +13,7 @@ export default tseslint.config(
       "fixtures/**/public/**",
       "documentation/.vitepress/cache/**",
       "documentation/.vitepress/dist/**",
+      "documentation/.vitepress/theme/**",
     ],
   },
   {
