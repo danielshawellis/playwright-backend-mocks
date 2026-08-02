@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright-backend-mocks/playwright";
 import {
   ABORT_CODES,
@@ -7,6 +9,11 @@ import {
   headerValue,
   readProxyJson,
 } from "../helpers.js";
+
+const fulfillBodyPath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../testdata/fulfill-body.txt",
+);
 
 for (const transport of TRANSPORTS) {
   test.describe(`transport: ${transport}`, () => {
@@ -113,6 +120,50 @@ for (const transport of TRANSPORTS) {
       expect(body.data).toMatchObject({ variant: "alt" });
     });
 
+    test(`continue() with method/headers/postData overrides (${transport})`, async ({
+      request,
+      backendMocks,
+    }) => {
+      await backendMocks.route(`${UPSTREAM}/echo`, async (route) => {
+        await route.continue({
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-continue": "yes",
+          },
+          postData: JSON.stringify({ overridden: true }),
+        });
+      });
+
+      const response = await callVia(request, transport, "/echo");
+      const body = await readProxyJson(response);
+      expect(body.status).toBe(200);
+      expect(body.data).toMatchObject({
+        method: "POST",
+        body: JSON.stringify({ overridden: true }),
+      });
+      const echoHeaders = (body.data as { headers: Record<string, string> }).headers;
+      expect(echoHeaders["x-continue"]).toBe("yes");
+    });
+
+    test(`fulfill({ path }) serves a local file body (${transport})`, async ({
+      request,
+      backendMocks,
+    }) => {
+      await backendMocks.route(`${UPSTREAM}/users`, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/plain",
+          path: fulfillBodyPath,
+        });
+      });
+
+      const response = await callVia(request, transport, "/users");
+      const body = await readProxyJson(response);
+      expect(body.status).toBe(200);
+      expect(body.raw?.trim()).toBe("hello-from-file");
+    });
+
     test(`fetch() + modify + fulfill (${transport})`, async ({
       request,
       backendMocks,
@@ -131,6 +182,42 @@ for (const transport of TRANSPORTS) {
         { id: 2, name: "Grace" },
         { id: 100, name: "Loquat" },
       ]);
+    });
+
+    test(`fetch() with url/method/headers/postData overrides (${transport})`, async ({
+      request,
+      backendMocks,
+    }) => {
+      await backendMocks.route(`${UPSTREAM}/users`, async (route) => {
+        const upstream = await route.fetch({
+          url: `${UPSTREAM}/echo`,
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-fetch": "yes",
+          },
+          postData: JSON.stringify({ from: "fetch-override" }),
+        });
+        await route.fulfill({
+          status: 200,
+          json: {
+            fetched: upstream.json(),
+          },
+        });
+      });
+
+      const response = await callVia(request, transport, "/users");
+      const body = await readProxyJson(response);
+      expect(body.data).toMatchObject({
+        fetched: {
+          method: "POST",
+          body: JSON.stringify({ from: "fetch-override" }),
+        },
+      });
+      const fetched = body.data as {
+        fetched: { headers: Record<string, string> };
+      };
+      expect(fetched.fetched.headers["x-fetch"]).toBe("yes");
     });
 
     test(`waitForRequest and requests() inspect traffic (${transport})`, async ({

@@ -5,6 +5,7 @@ const proxyUrl = "http://127.0.0.1:4310";
 const appUrl = "http://127.0.0.1:3000";
 const workerUrl = "http://127.0.0.1:3001";
 const upstreamUrl = "http://127.0.0.1:4001";
+const proxyToken = "e2e-secret";
 
 export default defineConfig<object, BackendMocksWorkerOptions>({
   testDir: "./specs",
@@ -17,11 +18,11 @@ export default defineConfig<object, BackendMocksWorkerOptions>({
   use: {
     baseURL: appUrl,
     backendMocksProxyUrl: proxyUrl,
+    backendMocksToken: proxyToken,
   },
   webServer: [
     {
-      command:
-        "node ../../packages/proxy/dist/cli.cjs --host 127.0.0.1 --port 4310 --log-level warn",
+      command: `node ../../packages/proxy/dist/cli.cjs --host 127.0.0.1 --port 4310 --token ${proxyToken} --log-level warn`,
       url: `${proxyUrl}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
@@ -46,6 +47,7 @@ export default defineConfig<object, BackendMocksWorkerOptions>({
         PORT: "3000",
         UPSTREAM_URL: upstreamUrl,
         PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL: proxyUrl,
+        PLAYWRIGHT_BACKEND_MOCKS_TOKEN: proxyToken,
       },
     },
     {
@@ -58,6 +60,7 @@ export default defineConfig<object, BackendMocksWorkerOptions>({
         PORT: "3001",
         UPSTREAM_URL: upstreamUrl,
         PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL: proxyUrl,
+        PLAYWRIGHT_BACKEND_MOCKS_TOKEN: proxyToken,
       },
     },
   ],
