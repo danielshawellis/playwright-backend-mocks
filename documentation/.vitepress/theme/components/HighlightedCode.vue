@@ -40,9 +40,6 @@ watch(
 <template>
   <div class="home-code" :aria-label="filename ?? 'Code example'">
     <div v-if="filename" class="home-code__chrome">
-      <span class="home-code__dot" />
-      <span class="home-code__dot" />
-      <span class="home-code__dot" />
       <span class="home-code__label">{{ filename }}</span>
     </div>
     <div v-if="ready" class="home-code__body" v-html="html" />

@@ -2,9 +2,42 @@
 import { withBase } from "vitepress";
 import { onMounted, ref } from "vue";
 import HighlightedCode from "./HighlightedCode.vue";
+import HomeCodeGroup from "./HomeCodeGroup.vue";
+import LogoCloud from "./LogoCloud.vue";
 import MermaidDiagram from "./MermaidDiagram.vue";
 
-const example = `test("declined card shows an error", async ({ page, backendMocks }) => {
+const compatibilityLogos = [
+  { name: "fetch", icon: "logos:fetch" },
+  { name: "http", icon: "carbon:http" },
+  { name: "axios", icon: "logos:axios" },
+  { name: "Next.js", icon: "logos:nextjs-icon", invertDark: true },
+  { name: "Nuxt.js", icon: "logos:nuxt-icon" },
+  { name: "Stripe", icon: "logos:stripe" },
+  { name: "Got", src: "/logos/got.svg" },
+  { name: "node-fetch", src: "/logos/node-fetch.svg" },
+  { name: "Twilio", icon: "logos:twilio-icon" },
+  { name: "GraphQL", icon: "logos:graphql" },
+  { name: "Supabase", icon: "logos:supabase-icon" },
+  { name: "Firebase", icon: "logos:firebase-icon" },
+  { name: "OpenAI", icon: "logos:openai-icon", invertDark: true },
+  { name: "Algolia", icon: "logos:algolia" },
+  { name: "Express", icon: "simple-icons:express", invertDark: true },
+  { name: "Fastify", icon: "logos:fastify-icon", invertDark: true },
+  { name: "NestJS", icon: "logos:nestjs" },
+  { name: "RedwoodJS", icon: "logos:redwoodjs" },
+  { name: "SvelteKit", icon: "logos:svelte-icon" },
+  { name: "Astro", icon: "logos:astro-icon" },
+  { name: "Apollo", icon: "logos:apollostack" },
+  { name: "urql", src: "/logos/urql.svg" },
+  { name: "tRPC", icon: "logos:trpc" },
+  { name: "Undici", icon: "logos:nodejs-icon" },
+  { name: "Ky", src: "/logos/ky.png" },
+  { name: "Koa", icon: "logos:koa" },
+  { name: "Hapi", icon: "logos:hapi" },
+  { name: "Remix", icon: "logos:remix-icon", invertDark: true },
+];
+
+const introExample = `test("declined card shows an error", async ({ page, backendMocks }) => {
   await backendMocks.route("https://api.stripe.com/**", async (route) => {
     await route.fulfill({
       status: 402,
@@ -16,6 +49,86 @@ const example = `test("declined card shows an error", async ({ page, backendMock
   await page.getByRole("button", { name: "Pay" }).click();
   await expect(page.getByText("Your card was declined")).toBeVisible();
 });`;
+
+const nodeSetupExample = `import { startBackendMocks } from "@playwright-backend-mocks/node";
+
+if (process.env.NODE_ENV === "test") {
+  await startBackendMocks({
+    proxyUrl: process.env.PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL,
+    clientId: "api-server",
+  });
+}
+
+// The rest of your app is unchanged — keep using fetch, http, axios, etc.`;
+
+const apiTabs = [
+  {
+    label: "Mock",
+    code: `test("shows a declined card error", async ({ page, backendMocks }) => {
+  await backendMocks.route("https://api.stripe.com/**", async (route) => {
+    await route.fulfill({
+      status: 402,
+      json: { error: "card_declined" },
+    });
+  });
+
+  await page.goto("/checkout");
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page.getByText("Your card was declined")).toBeVisible();
+});`,
+  },
+  {
+    label: "Spy",
+    code: `test("charges the expected amount", async ({ page, backendMocks }) => {
+  await backendMocks.route("https://api.stripe.com/v1/charges", async (route) => {
+    await route.continue(); // real upstream — just observe the call
+  });
+
+  const pending = backendMocks.waitForRequest(
+    "https://api.stripe.com/v1/charges",
+    { method: "POST" },
+  );
+
+  await page.goto("/checkout");
+  await page.getByRole("button", { name: "Pay" }).click();
+
+  const charge = await pending;
+  expect(charge.json()).toEqual({ amount: 2000, currency: "usd" });
+});`,
+  },
+  {
+    label: "Modify",
+    code: `test("renders an extra user from a modified upstream response", async ({
+  page,
+  backendMocks,
+}) => {
+  await backendMocks.route("https://api.example.test/users", async (route) => {
+    const upstream = await route.fetch();
+    const users = upstream.json() as Array<{ id: number; name: string }>;
+    users.push({ id: 100, name: "Injected" });
+    await route.fulfill({ response: upstream, json: users });
+  });
+
+  await page.goto("/users");
+  await expect(page.getByText("Injected")).toBeVisible();
+});`,
+  },
+  {
+    label: "Abort",
+    code: `test("shows a timeout message when payments hang", async ({
+  page,
+  backendMocks,
+}) => {
+  await backendMocks.route("https://api.stripe.com/**", async (route) => {
+    await route.abort("timedout");
+  });
+
+  await page.goto("/checkout");
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page.getByText(/timed out|try again/i)).toBeVisible();
+});`,
+  },
+];
 
 const architectureDiagram = `sequenceDiagram
   participant App as Your Node app
@@ -52,19 +165,72 @@ onMounted(async () => {
       <div class="home-section__inner">
         <p class="home-section__eyebrow">From your Playwright tests</p>
         <h2 class="home-section__title">
-          Mock Requests from Node.js Directly from Your Tests with Familiar Playwright
-          Syntax
+          Mock Node.js Outbound Requests from Playwright
         </h2>
         <p class="home-section__lead">
-          Same
-          <code>route</code> / <code>fulfill</code> / <code>continue</code> /
-          <code>abort</code>
-          mental model as
-          <code>page.route()</code>
-          — aimed at the outbound HTTP your
-          <strong>server</strong> makes, not the browser.
+          Your UI and server stay real.
+          <code>backendMocks.route()</code> targets the outbound HTTP your Node process
+          makes — the calls that never show up in the browser Network tab.
         </p>
-        <HighlightedCode :code="example" lang="ts" filename="checkout.spec.ts" />
+        <HighlightedCode :code="introExample" lang="ts" filename="checkout.spec.ts" />
+      </div>
+    </section>
+
+    <section class="home-section home-section--api">
+      <div class="home-section__inner">
+        <p class="home-section__eyebrow">Familiar API</p>
+        <h2 class="home-section__title">
+          Mock, Spy, Modify, and Abort Requests with an API that Matches Playwright
+        </h2>
+        <p class="home-section__lead">
+          If you know <code>page.route()</code>, you already know this shape —
+          <code>fulfill</code>, <code>fetch</code>, <code>continue</code>, and
+          <code>abort</code> — plus request spying for what your server actually called.
+        </p>
+        <HomeCodeGroup :tabs="apiTabs" />
+      </div>
+    </section>
+
+    <section class="home-section home-section--node">
+      <div class="home-section__inner">
+        <p class="home-section__eyebrow">In your Node app</p>
+        <h2 class="home-section__title">
+          Simple Node.js Setup that Stays Out of the Way
+        </h2>
+        <p class="home-section__lead">
+          Add one startup call. Under the hood it uses
+          <a
+            href="https://www.npmjs.com/package/@mswjs/interceptors"
+            target="_blank"
+            rel="noreferrer"
+            >@mswjs/interceptors</a
+          >
+          to catch outbound HTTP, so you configure mocks in Playwright and write the rest
+          of your app exactly as you otherwise would — no test-only branches, wrappers, or
+          dependency-injection seams for Stripe, email, and friends.
+        </p>
+        <HighlightedCode :code="nodeSetupExample" lang="ts" filename="server.ts" />
+      </div>
+    </section>
+
+    <section class="home-section home-section--compat">
+      <div class="home-section__inner">
+        <p class="home-section__eyebrow">Works with your stack</p>
+        <h2 class="home-section__title">
+          Compatible with Your Codebase, Regardless of HTTP Client
+        </h2>
+        <p class="home-section__lead">
+          Because interception happens at the lowest level through
+          <a
+            href="https://www.npmjs.com/package/@mswjs/interceptors"
+            target="_blank"
+            rel="noreferrer"
+            >@mswjs/interceptors</a
+          >, this library can capture and mock requests from virtually every Node HTTP
+          client and the frameworks and SDKs built on top of them — without rewriting how
+          your app talks to the network.
+        </p>
+        <LogoCloud :items="compatibilityLogos" />
       </div>
     </section>
 
@@ -111,14 +277,13 @@ onMounted(async () => {
 
         <p class="home-section__sublead">One request, end to end:</p>
 
-        <div class="home-diagram">
+        <figure class="home-diagram">
           <MermaidDiagram :code="architectureDiagram" />
-        </div>
-
-        <p class="home-section__footnote">
-          Unmatched requests pass through to the real network. Outside tests, with no
-          proxy URL set, the Node agent is a no-op.
-        </p>
+          <figcaption class="home-diagram__caption">
+            Unmatched requests pass through to the real network. Outside tests, with no
+            proxy URL set, the Node agent is a no-op.
+          </figcaption>
+        </figure>
       </div>
     </section>
 
