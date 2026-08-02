@@ -10,14 +10,19 @@ hero:
       text: Get Started
       link: /guide/getting-started
     - theme: alt
-      text: View on GitHub
+      text: Why this library
+      link: /guide/why
+    - theme: alt
+      text: GitHub
       link: https://github.com/danielshawellis/playwright-backend-mocks-msw
 
 features:
-  - title: Playwright-native API
-    details: Use familiar route / fulfill / continue patterns from your Playwright tests.
-  - title: Node process interception
-    details: Intercept outbound HTTP/HTTPS inside your app processes via MSW interceptors.
-  - title: Observability dashboard
-    details: Inspect connections and request history while the proxy is running.
+  - title: Familiar Playwright API
+    details: Use route / fulfill / continue / fetch / abort from your tests — the same mental model as page.route(), applied to Node outbound HTTP.
+  - title: Process-aware interception
+    details: Intercept Fetch and node:http/https inside your app via @mswjs/interceptors. Works across API servers, workers, and other Node processes.
+  - title: Safe by default outside tests
+    details: The Node agent is a no-op unless PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL is set, so the same startup path works in production and e2e.
+  - title: Built-in observability
+    details: Spy on matched requests in tests, and use the proxy dashboard for live connections and request history while debugging.
 ---

@@ -99,7 +99,7 @@ Open `http://127.0.0.1:4310/dashboard` while the proxy is running for a read-onl
 
 See [`docs/`](./docs) for research notes, the public API plan, protocol plan, and technical plan. The product intent is described in [`SPECIFICATION.md`](./SPECIFICATION.md).
 
-Published documentation lives in [`documentation/`](./documentation) (VitePress) and is deployed to GitHub Pages.
+Published documentation lives in [`documentation/`](./documentation) (VitePress) and deploys to GitHub Pages at [danielshawellis.github.io/playwright-backend-mocks-msw](https://danielshawellis.github.io/playwright-backend-mocks-msw/).
 
 ## Development
 
