@@ -66,9 +66,32 @@ export type RouteHandler = (
   request: BackendRequest,
 ) => Promise<void> | void;
 
+export interface RouteFromJSONOptions {
+  /**
+   * Only record or replay requests whose URL matches this glob or RegExp.
+   * When omitted, every request is included.
+   */
+  readonly url?: string | RegExp;
+  /**
+   * When `true`, record live upstream traffic into the JSON file instead of
+   * serving from it. The file is rewritten when the test fixture disposes.
+   */
+  readonly update?: boolean;
+  /**
+   * What to do when a request has no matching entry during replay.
+   * Defaults to `"abort"`.
+   */
+  readonly notFound?: "abort" | "fallback";
+}
+
 export interface BackendMocks {
   route(url: RouteMatcherInput, handler: RouteHandler): Promise<void>;
   unroute(url?: RouteMatcherInput, handler?: RouteHandler): Promise<void>;
+  /**
+   * Record or replay outbound backend requests from a JSON cassette file.
+   * Mirrors Playwright's `routeFromHAR` developer experience.
+   */
+  routeFromJSON(path: string, options?: RouteFromJSONOptions): Promise<void>;
   waitForRequest(
     url: RouteMatcherInput,
     options?: { timeout?: number; method?: string },

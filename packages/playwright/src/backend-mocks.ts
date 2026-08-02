@@ -14,6 +14,11 @@ import {
 } from "@playwright-backend-mocks/protocol";
 import type { PlaywrightProxyConnection } from "./connection.js";
 import {
+  createRouteFromJSONSession,
+  flushRouteFromJSONSession,
+  type RouteFromJSONSession,
+} from "./route-from-json.js";
+import {
   toSerializedMatcher,
   type BackendMocks,
   type BackendRequest,
@@ -22,6 +27,7 @@ import {
   type ContinueOptions,
   type FetchOptions,
   type FulfillOptions,
+  type RouteFromJSONOptions,
   type RouteHandler,
   type RouteMatcherInput,
 } from "./types.js";
@@ -50,6 +56,7 @@ export function createBackendMocks(options: {
   const pendingFetches = new Map<string, PendingFetch>();
   const observed: BackendRequest[] = [];
   const errors: Error[] = [];
+  const jsonSessions: RouteFromJSONSession[] = [];
 
   const unsubscribe = connection.onMessage((message) => {
     void handleMessage(message);
@@ -241,6 +248,12 @@ export function createBackendMocks(options: {
       routes.push(...remaining);
     },
 
+    async routeFromJSON(filePath, options: RouteFromJSONOptions = {}) {
+      const session = createRouteFromJSONSession(filePath, options);
+      jsonSessions.push(session);
+      await api.route(session.matcher, session.handler);
+    },
+
     async waitForRequest(url, options = {}) {
       const matcher = toSerializedMatcher(url, options.method);
       const timeout = options.timeout ?? 30_000;
@@ -294,6 +307,11 @@ export function createBackendMocks(options: {
     },
 
     dispose() {
+      for (const session of jsonSessions) {
+        flushRouteFromJSONSession(session);
+      }
+      jsonSessions.length = 0;
+
       unsubscribe();
       connection.send({
         type: "route:unregister",
