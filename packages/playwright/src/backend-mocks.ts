@@ -44,12 +44,12 @@ export interface BackendMocksController extends BackendMocks {
 export function createBackendMocks(options: {
   connection: PlaywrightProxyConnection;
   testId: string;
-  onProxyError: (error: Error) => void;
 }): BackendMocksController {
-  const { connection, testId, onProxyError } = options;
+  const { connection, testId } = options;
   const routes: RouteRecord[] = [];
   const pendingFetches = new Map<string, PendingFetch>();
   const observed: BackendRequest[] = [];
+  const errors: Error[] = [];
 
   const unsubscribe = connection.onMessage((message) => {
     void handleMessage(message);
@@ -98,7 +98,7 @@ export function createBackendMocks(options: {
               },
             });
           }
-          onProxyError(error instanceof Error ? error : new Error(String(error)));
+          errors.push(error instanceof Error ? error : new Error(String(error)));
         }
         return;
       }
@@ -123,7 +123,7 @@ export function createBackendMocks(options: {
         if (message.testId !== undefined && message.testId !== testId) {
           return;
         }
-        onProxyError(new Error(message.message));
+        errors.push(new Error(message.message));
         return;
       }
       default:
@@ -285,6 +285,12 @@ export function createBackendMocks(options: {
           clientId: request.clientId,
         }),
       );
+    },
+
+    takeErrors() {
+      const drained = [...errors];
+      errors.length = 0;
+      return drained;
     },
 
     dispose() {

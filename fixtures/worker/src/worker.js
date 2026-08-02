@@ -8,6 +8,10 @@ const agent = await startBackendMocks({
   clientId: "job-worker",
 });
 
+/**
+ * Second Node process used for clientId-scoped routing tests.
+ * Same /via/http/* shape as the api-server.
+ */
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
 
@@ -16,12 +20,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && url.pathname === "/run") {
+  const httpMatch = url.pathname.match(/^\/via\/http(\/.*)$/);
+  if (httpMatch) {
+    const targetUrl = `${upstream}${httpMatch[1] ?? "/"}`;
+    const method = req.method ?? "GET";
+    const body = await readBody(req);
+
     try {
-      const data = await nodeHttpGet(`${upstream}/users`);
-      json(res, 200, { source: "node:http", data: JSON.parse(data) });
+      const result = await callWithNodeHttp(targetUrl, method, body);
+      json(res, 200, {
+        transport: "http",
+        clientId: agent.clientId,
+        status: result.status,
+        headers: result.headers,
+        data: tryParseJson(result.body),
+        raw: result.body,
+      });
     } catch (error) {
       json(res, 500, {
+        transport: "http",
+        clientId: agent.clientId,
         error: "request_failed",
         message: error instanceof Error ? error.message : String(error),
       });
@@ -32,25 +50,51 @@ const server = http.createServer(async (req, res) => {
   json(res, 404, { error: "not_found" });
 });
 
-function nodeHttpGet(targetUrl) {
+function callWithNodeHttp(targetUrl, method, body) {
   return new Promise((resolve, reject) => {
-    const url = new URL(targetUrl);
-    // Use the module namespace so @mswjs/interceptors can patch http.request.
+    const parsed = new URL(targetUrl);
     const req = http.request(
       {
-        hostname: url.hostname,
-        port: url.port,
-        path: url.pathname + url.search,
-        method: "GET",
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.pathname + parsed.search,
+        method,
+        headers: { accept: "application/json" },
       },
       (response) => {
         const chunks = [];
         response.on("data", (chunk) => chunks.push(chunk));
-        response.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        response.on("end", () => {
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
       },
     );
     req.on("error", reject);
+    if (method !== "GET" && method !== "HEAD" && body.length > 0) {
+      req.write(body);
+    }
     req.end();
+  });
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
   });
 }
 

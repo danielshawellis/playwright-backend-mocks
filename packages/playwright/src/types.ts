@@ -74,6 +74,12 @@ export interface BackendMocks {
     options?: { timeout?: number; method?: string },
   ): Promise<BackendRequest>;
   requests(url?: RouteMatcherInput): Promise<readonly BackendRequest[]>;
+  /**
+   * Return and clear proxy errors recorded for this test.
+   * Useful when a test intentionally triggers an ambiguity/disconnect failure.
+   * Any remaining errors are still thrown during fixture teardown.
+   */
+  takeErrors(): Error[];
 }
 
 export function toSerializedMatcher(

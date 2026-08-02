@@ -40,7 +40,6 @@ export const test = base.extend<BackendMocksFixtures, WorkerFixtures>({
 
   backendMocks: async ({ backendMocksConnection }, use, testInfo) => {
     const testId = randomUUID();
-    const errors: Error[] = [];
 
     backendMocksConnection.send({
       type: "test:register",
@@ -53,16 +52,17 @@ export const test = base.extend<BackendMocksFixtures, WorkerFixtures>({
     const mocks = createBackendMocks({
       connection: backendMocksConnection,
       testId,
-      onProxyError(error) {
-        errors.push(error);
-      },
     });
 
     await use(mocks);
     mocks.dispose();
 
-    if (errors.length > 0) {
-      throw new AggregateError(errors, errors.map((error) => error.message).join("\n"));
+    const remainingErrors = mocks.takeErrors();
+    if (remainingErrors.length > 0) {
+      throw new AggregateError(
+        remainingErrors,
+        remainingErrors.map((error) => error.message).join("\n"),
+      );
     }
   },
 });

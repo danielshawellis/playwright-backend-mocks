@@ -1,83 +1,164 @@
-import { createServer } from "node:http";
-import axios from "axios";
+import http from "node:http";
 import { startBackendMocks } from "@playwright-backend-mocks/node";
 
 const port = Number(process.env.PORT ?? 3000);
 const upstream = process.env.UPSTREAM_URL ?? "http://127.0.0.1:4001";
+const clientId = process.env.CLIENT_ID ?? "api-server";
 
-const agent = await startBackendMocks({
-  clientId: "api-server",
-});
+const agent = await startBackendMocks({ clientId });
 
-const server = createServer(async (req, res) => {
+/**
+ * JSON proxy used by e2e tests.
+ *
+ *   GET|POST /via/fetch/<path>  → outbound fetch to upstream/<path>
+ *   GET|POST /via/http/<path>   → outbound node:http to upstream/<path>
+ *
+ * The response body is always JSON:
+ *   { transport, clientId, status, headers, data }
+ * On outbound failure:
+ *   { transport, clientId, error: "request_failed", message }
+ */
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
 
+  if (req.method === "GET" && url.pathname === "/health") {
+    json(res, 200, { ok: true, clientId: agent.clientId });
+    return;
+  }
+
+  const fetchMatch = url.pathname.match(/^\/via\/fetch(\/.*)$/);
+  if (fetchMatch) {
+    await forward(res, "fetch", fetchMatch[1] ?? "/", req);
+    return;
+  }
+
+  const httpMatch = url.pathname.match(/^\/via\/http(\/.*)$/);
+  if (httpMatch) {
+    await forward(res, "http", httpMatch[1] ?? "/", req);
+    return;
+  }
+
+  json(res, 404, { error: "not_found" });
+});
+
+async function forward(res, transport, upstreamPath, incoming) {
+  const targetUrl = `${upstream}${upstreamPath}`;
+  const method = incoming.method ?? "GET";
+  const incomingBody = await readBody(incoming);
+
   try {
-    if (req.method === "GET" && url.pathname === "/health") {
-      json(res, 200, { ok: true, clientId: agent.clientId });
-      return;
-    }
+    const result =
+      transport === "fetch"
+        ? await callWithFetch(targetUrl, method, incomingBody, incoming.headers)
+        : await callWithNodeHttp(targetUrl, method, incomingBody, incoming.headers);
 
-    if (req.method === "GET" && url.pathname === "/") {
-      html(
-        res,
-        `<!doctype html>
-<html>
-  <head><title>Checkout</title></head>
-  <body>
-    <h1>Checkout</h1>
-    <button id="pay">Pay</button>
-    <pre id="result"></pre>
-    <script>
-      document.getElementById("pay").addEventListener("click", async () => {
-        const response = await fetch("/api/pay", { method: "POST" });
-        const data = await response.json();
-        document.getElementById("result").textContent = JSON.stringify(data);
-        if (data.error === "card_declined") {
-          const p = document.createElement("p");
-          p.textContent = "Your card was declined";
-          document.body.appendChild(p);
-        }
-      });
-    </script>
-  </body>
-</html>`,
-      );
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/users") {
-      const response = await fetch(`${upstream}/users`);
-      const data = await response.json();
-      json(res, response.status, data);
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/pay") {
-      const response = await fetch(`${upstream}/charges`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount: 2500 }),
-      });
-      const data = await response.json();
-      json(res, response.status, data);
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/users-axios") {
-      const response = await axios.get(`${upstream}/users`);
-      json(res, response.status, response.data);
-      return;
-    }
-
-    json(res, 404, { error: "not_found" });
+    json(res, 200, {
+      transport,
+      clientId: agent.clientId,
+      status: result.status,
+      headers: result.headers,
+      data: tryParseJson(result.body),
+      raw: result.body,
+    });
   } catch (error) {
     json(res, 500, {
+      transport,
+      clientId: agent.clientId,
       error: "request_failed",
       message: error instanceof Error ? error.message : String(error),
     });
   }
-});
+}
+
+async function callWithFetch(targetUrl, method, body, incomingHeaders) {
+  const headers = pickForwardHeaders(incomingHeaders);
+  const init = {
+    method,
+    headers,
+  };
+  if (method !== "GET" && method !== "HEAD" && body.length > 0) {
+    init.body = body;
+  }
+
+  const response = await fetch(targetUrl, init);
+  const text = await response.text();
+  return {
+    status: response.status,
+    headers: Object.fromEntries(response.headers.entries()),
+    body: text,
+  };
+}
+
+function callWithNodeHttp(targetUrl, method, body, incomingHeaders) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(targetUrl);
+    const headers = pickForwardHeaders(incomingHeaders);
+    const req = http.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.pathname + parsed.search,
+        method,
+        headers,
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      },
+    );
+    req.on("error", reject);
+    if (method !== "GET" && method !== "HEAD" && body.length > 0) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
+function pickForwardHeaders(headers) {
+  const result = {};
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    const lower = key.toLowerCase();
+    if (
+      lower === "host" ||
+      lower === "connection" ||
+      lower === "content-length" ||
+      lower === "transfer-encoding"
+    ) {
+      continue;
+    }
+    if (typeof value === "string") {
+      result[lower] = value;
+    }
+  }
+  if (!result["content-type"] && !result.accept) {
+    result.accept = "application/json";
+  }
+  return result;
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
@@ -88,13 +169,10 @@ function json(res, status, body) {
   res.end(payload);
 }
 
-function html(res, body) {
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  res.end(body);
-}
-
 server.listen(port, "127.0.0.1", () => {
-  console.log(`[api-server] listening on http://127.0.0.1:${port}`);
+  console.log(
+    `[api-server] listening on http://127.0.0.1:${port} clientId=${agent.clientId}`,
+  );
 });
 
 async function shutdown() {

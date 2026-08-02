@@ -4,6 +4,7 @@ const port = Number(process.env.PORT ?? 4001);
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+  const body = await readBody(req);
 
   if (req.method === "GET" && url.pathname === "/health") {
     json(res, 200, { ok: true });
@@ -19,7 +20,6 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/charges") {
-    const body = await readBody(req);
     json(res, 201, {
       id: "ch_real",
       amount: body ? JSON.parse(body).amount : null,
@@ -28,7 +28,28 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  json(res, 404, { error: "not_found" });
+  if (url.pathname === "/echo") {
+    json(res, 200, {
+      method: req.method,
+      url: url.pathname + url.search,
+      headers: req.headers,
+      body: body.length > 0 ? body : null,
+    });
+    return;
+  }
+
+  if (url.pathname === "/echo-alt") {
+    json(res, 200, {
+      method: req.method,
+      url: url.pathname + url.search,
+      headers: req.headers,
+      body: body.length > 0 ? body : null,
+      variant: "alt",
+    });
+    return;
+  }
+
+  json(res, 404, { error: "not_found", path: url.pathname });
 });
 
 function json(res, status, body) {
@@ -36,6 +57,7 @@ function json(res, status, body) {
   res.writeHead(status, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
+    "x-upstream": "real",
   });
   res.end(payload);
 }

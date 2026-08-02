@@ -302,7 +302,12 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         matches: diagnostics,
       });
 
+      const notifiedTests = new Set<string>();
       for (const match of matches) {
+        if (notifiedTests.has(match.testId)) {
+          continue;
+        }
+        notifiedTests.add(match.testId);
         const worker = connections.get(match.connectionId);
         if (worker) {
           send(worker, {
