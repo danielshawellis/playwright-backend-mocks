@@ -99,12 +99,22 @@ Open `http://127.0.0.1:4310/dashboard` while the proxy is running for a read-onl
 
 See [`docs/`](./docs) for research notes, the public API plan, protocol plan, and technical plan. The product intent is described in [`SPECIFICATION.md`](./SPECIFICATION.md).
 
+Published documentation lives in [`documentation/`](./documentation) (VitePress) and is deployed to GitHub Pages.
+
 ## Development
 
 ```bash
 pnpm install
 pnpm build
 pnpm test
+```
+
+### Documentation site
+
+```bash
+pnpm docs:dev      # local preview
+pnpm docs:build    # production build
+pnpm docs:preview  # serve the production build
 ```
 
 ## License

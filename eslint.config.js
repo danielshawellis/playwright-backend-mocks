@@ -11,6 +11,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/coverage/**",
       "fixtures/**/public/**",
+      "documentation/.vitepress/cache/**",
+      "documentation/.vitepress/dist/**",
     ],
   },
   {

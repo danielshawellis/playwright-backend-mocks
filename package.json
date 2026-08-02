@@ -19,6 +19,9 @@
     "test:unit": "vitest run --config tests/unit/vitest.config.ts",
     "test:contract": "vitest run --config tests/contract/vitest.config.ts",
     "test:e2e": "pnpm --filter @playwright-backend-mocks/e2e test",
+    "docs:dev": "vitepress dev documentation",
+    "docs:build": "vitepress build documentation",
+    "docs:preview": "vitepress preview documentation",
     "clean": "pnpm -r exec rm -rf dist"
   },
   "devDependencies": {
@@ -30,6 +33,7 @@
     "prettier": "^3.6.2",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
+    "vitepress": "^1.6.4",
     "vitest": "^3.2.4"
   },
   "pnpm": {

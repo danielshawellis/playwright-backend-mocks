@@ -5,3 +5,5 @@ coverage
 playwright-report
 test-results
 SPECIFICATION.md
+documentation/.vitepress/cache
+documentation/.vitepress/dist
