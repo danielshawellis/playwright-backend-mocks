@@ -1,14 +1,38 @@
 # Why this library
 
-Playwright already lets you mock **browser** network traffic with `page.route()`. Many real applications also make **server-side** HTTP calls — from an API process, a background worker, or a Next.js/Remix server component path — that never touch the browser.
+Good end-to-end tests should cover your **entire application** — the UI _and_ the server — and mock **only at the boundaries**.
 
-Those outbound calls are invisible to Playwright's browser routing. Without a way to mock them, e2e tests either hit real third-party services or require brittle stubs wired into application code.
+That sounds obvious. In Playwright suites it is surprisingly rare.
 
-Playwright Backend Mocks closes that gap.
+## The usual tradeoffs
 
-## What problem it solves
+Playwright can mock what the **browser** fetches (`page.route()`). It cannot see outbound HTTP from your **Node** process — payments, email, SMS, auth providers, internal HTTP APIs called from the server.
 
-You want to write a Playwright test like:
+So teams fall into one of these traps:
+
+1. **Skip the server** — drive the UI against a stubbed or mocked API layer, and never run real server code.
+2. **Hit real third parties** — flaky, slow, credential-heavy, and unsafe for failure injection.
+3. **Plant fakes inside the app** — test-only branches, DI seams, or module mocks that diverge from production.
+
+None of those are “run the real app, mock the outside world.”
+
+## What “mock at the boundaries” means
+
+```
+Browser  →  Your server  →  Third parties
+   ▲              ▲              ▲
+ real           real          mocked
+```
+
+- Your checkout page is real.
+- Your API route / server action / worker that charges the card is real.
+- Stripe (or whatever sits outside your system) is mocked.
+
+That is the test you actually want when you say e2e.
+
+## How this library makes it easy
+
+Playwright Backend Mocks gives your tests a `backendMocks` fixture with the same mental model as browser routing:
 
 ```ts
 test("handles a declined payment", async ({ page, backendMocks }) => {
@@ -25,31 +49,20 @@ test("handles a declined payment", async ({ page, backendMocks }) => {
 });
 ```
 
-…even when `https://payments.example.test/charges` is called by your **Node** process, not by the browser.
+The payment URL is called by your **Node** process. The handler still looks like Playwright. Your app code stays free of test seams.
 
-## Use cases
+## Concrete payoffs
 
-- **Third-party APIs** — payments, email, SMS, auth providers, analytics — without sandbox credentials or rate limits.
-- **Failure paths** — timeouts, connection refused, DNS failures, and abort scenarios that are hard to reproduce against real services.
-- **Deterministic e2e** — freeze response bodies and status codes so UI assertions stay stable.
-- **Multi-process apps** — mock traffic from an API server and a worker independently with `clientId`.
-- **Request assertions** — confirm your app actually called the right URL/method/body with `waitForRequest` / `requests`.
-
-## Benefits
-
-| Benefit                 | What you get                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------------- |
-| Familiar DX             | Same `route` / `fulfill` / `continue` / `abort` shape as Playwright                          |
-| Broad client coverage   | Intercepts via `@mswjs/interceptors` (Fetch, `node:http`/`https`, and clients built on them) |
-| Test-scoped routes      | Mocks register and tear down with each test                                                  |
-| Unmatched = passthrough | Only the routes you declare are mocked                                                       |
-| Production-safe agent   | No proxy URL → agent does nothing                                                            |
-| Debuggability           | Dashboard + history APIs show what happened across processes                                 |
+- **Third-party APIs** — payments, email, SMS, auth, analytics — without sandboxes or rate limits.
+- **Failure paths** — timeouts, connection refused, DNS failures that are painful against real services.
+- **Deterministic e2e** — stable bodies and status codes; assertions stop flickering.
+- **Multi-process apps** — API server and workers mocked independently via `clientId`.
+- **Request assertions** — prove the server called the right URL/method/body with `waitForRequest`.
 
 ## What it is not
 
-- Not a replacement for Playwright browser `page.route()` — use both when you need browser **and** Node mocks.
+- Not a replacement for `page.route()` — use both when the browser _and_ the server talk to the outside world.
 - Not a general HTTP proxy for browsers or non-Node clients.
 - Not an interceptor for WebSockets, gRPC, or raw TCP.
 
-See [Limitations](/guide/limitations) for the full v1 boundary.
+See [Limitations](/guide/limitations) for the v1 boundary, or [get started](/guide/getting-started) and wire it into a suite.
