@@ -22,7 +22,6 @@ interface StartBackendMocksOptions {
   readonly proxyUrl?: string; // default: process.env.PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL
   readonly clientId?: string; // default: `node-${process.pid}`
   readonly token?: string; // optional auth token
-  readonly reconnect?: boolean; // default true for transient disconnects during startup
 }
 
 interface BackendMocksAgent {
@@ -39,6 +38,8 @@ Behavior:
 
 - No-ops (returns a stopped agent) when `proxyUrl` is unset, so production code can call it unconditionally when desired.
 - Connects over WebSocket, handshakes, installs `@mswjs/interceptors` node preset.
+- Throws a clear error if the proxy is unreachable or rejects the handshake.
+- If the proxy connection drops later, pending intercepted requests fail immediately with a clear error. There is no automatic reconnect in v1; restart the agent against a running proxy.
 - On `stop()`, disposes interceptor and closes the socket.
 
 Environment variable: `PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL`.

@@ -38,6 +38,10 @@ interface PendingController {
 const PROXY_URL_ENV = "PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL";
 const TOKEN_ENV = "PLAYWRIGHT_BACKEND_MOCKS_TOKEN";
 
+const DISCONNECTED_MESSAGE =
+  "Lost connection to the Playwright Backend Mocks proxy. " +
+  "Outbound requests cannot be mocked until the agent is restarted against a running proxy.";
+
 /** When true, interceptor listeners pass through without consulting the proxy. */
 const upstreamBypass = new AsyncLocalStorage<true>();
 
@@ -69,6 +73,19 @@ export async function startBackendMocks(
   });
 
   const pending = new Map<string, PendingController>();
+  let stopped = false;
+
+  const failPending = (message: string) => {
+    for (const [id, item] of pending) {
+      item.controller.errorWith(new Error(message));
+      item.resolve();
+      pending.delete(id);
+    }
+  };
+
+  connection.onClose((reason) => {
+    failPending(reason);
+  });
 
   connection.onMessage((message) => {
     handleProxyMessage(connection, pending, message);
@@ -81,6 +98,11 @@ export async function startBackendMocks(
 
     // Avoid intercepting traffic to the proxy itself.
     if (isProxyUrl(request.url, proxyUrl)) {
+      return;
+    }
+
+    if (stopped || !connection.connected) {
+      controller.errorWith(new Error(DISCONNECTED_MESSAGE));
       return;
     }
 
@@ -100,12 +122,18 @@ export async function startBackendMocks(
         resolve,
       });
 
-      connection.send({
-        type: "request:start",
-        requestId: id,
-        clientId: connection.clientId,
-        request: serialized,
-      });
+      try {
+        connection.send({
+          type: "request:start",
+          requestId: id,
+          clientId: connection.clientId,
+          request: serialized,
+        });
+      } catch (error) {
+        pending.delete(id);
+        controller.errorWith(error instanceof Error ? error : new Error(String(error)));
+        resolve();
+      }
     });
   });
 
@@ -114,14 +142,9 @@ export async function startBackendMocks(
   return {
     clientId: connection.clientId,
     async stop() {
+      stopped = true;
       interceptor.dispose();
-      for (const [id, item] of pending) {
-        item.controller.errorWith(
-          new Error("Backend mocks agent stopped while a request was pending"),
-        );
-        item.resolve();
-        pending.delete(id);
-      }
+      failPending("Backend mocks agent stopped while a request was pending");
       await connection.close();
     },
   };

@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",
+    "@playwright-backend-mocks/node": "workspace:*",
     "@playwright-backend-mocks/playwright": "workspace:*",
     "@playwright-backend-mocks/proxy": "workspace:*",
     "@playwright-backend-mocks/protocol": "workspace:*"

@@ -9,11 +9,14 @@ import {
 } from "@playwright-backend-mocks/protocol";
 
 export type ProxyMessageHandler = (message: ProxyToClientMessage) => void;
+export type ProxyCloseHandler = (reason: string) => void;
 
 export interface ProxyConnection {
   readonly clientId: string;
+  readonly connected: boolean;
   send(message: ClientToProxyMessage): void;
   onMessage(handler: ProxyMessageHandler): void;
+  onClose(handler: ProxyCloseHandler): void;
   close(): Promise<void>;
 }
 
@@ -33,24 +36,36 @@ export async function connectToProxy(options: {
 }): Promise<ProxyConnection> {
   const wsUrl = toWsUrl(options.proxyUrl);
   const socket = new WebSocket(wsUrl);
-  const handlers = new Set<ProxyMessageHandler>();
+  const messageHandlers = new Set<ProxyMessageHandler>();
+  const closeHandlers = new Set<ProxyCloseHandler>();
+  let connected = false;
+  let closingIntentionally = false;
+  let closeNotified = false;
 
-  await new Promise<void>((resolve, reject) => {
-    const onOpen = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = (error: Error) => {
-      cleanup();
-      reject(error);
-    };
-    const cleanup = () => {
-      socket.off("open", onOpen);
-      socket.off("error", onError);
-    };
-    socket.on("open", onOpen);
-    socket.on("error", onError);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onOpen = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const cleanup = () => {
+        socket.off("open", onOpen);
+        socket.off("error", onError);
+      };
+      socket.on("open", onOpen);
+      socket.on("error", onError);
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to connect to Playwright Backend Mocks proxy at ${options.proxyUrl}. ` +
+        `Is the proxy running and reachable? ` +
+        `Cause: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   let resolvedClientId = options.clientId;
   let helloDone!: (value: void) => void;
@@ -59,6 +74,17 @@ export async function connectToProxy(options: {
     helloDone = resolve;
     helloFail = reject;
   });
+
+  const notifyClose = (reason: string) => {
+    if (closeNotified) {
+      return;
+    }
+    closeNotified = true;
+    connected = false;
+    for (const handler of closeHandlers) {
+      handler(reason);
+    }
+  };
 
   socket.on("message", (data) => {
     const raw = typeof data === "string" ? data : data.toString("utf8");
@@ -72,11 +98,16 @@ export async function connectToProxy(options: {
 
     if (message.type === "hello:ok") {
       resolvedClientId = message.clientId;
+      connected = true;
       helloDone();
       return;
     }
     if (message.type === "hello:error") {
-      helloFail(new Error(`Proxy handshake failed: ${message.message}`));
+      helloFail(
+        new Error(
+          `Playwright Backend Mocks proxy rejected the connection: ${message.message}`,
+        ),
+      );
       return;
     }
     if (message.type === "ping") {
@@ -84,14 +115,34 @@ export async function connectToProxy(options: {
       return;
     }
 
-    for (const handler of handlers) {
+    for (const handler of messageHandlers) {
       handler(message);
     }
   });
 
+  socket.on("close", () => {
+    if (closingIntentionally) {
+      notifyClose("Backend mocks agent stopped while a request was pending");
+      return;
+    }
+    notifyClose(
+      "Lost connection to the Playwright Backend Mocks proxy while a request was pending. " +
+        "The proxy may have exited; pending outbound requests were failed.",
+    );
+  });
+
+  socket.on("error", (error) => {
+    if (closingIntentionally || closeNotified) {
+      return;
+    }
+    notifyClose(`Playwright Backend Mocks proxy connection error: ${error.message}`);
+  });
+
   function send(message: ClientToProxyMessage): void {
     if (socket.readyState !== WebSocket.OPEN) {
-      throw new Error("Proxy WebSocket is not open");
+      throw new Error(
+        "Cannot send to the Playwright Backend Mocks proxy because the WebSocket is not open",
+      );
     }
     socket.send(stringifyMessage(message));
   }
@@ -105,18 +156,30 @@ export async function connectToProxy(options: {
     ...(options.token !== undefined ? { token: options.token } : {}),
   });
 
-  await helloPromise;
+  try {
+    await helloPromise;
+  } catch (error) {
+    socket.close();
+    throw error;
+  }
 
   return {
     get clientId() {
       return resolvedClientId;
     },
+    get connected() {
+      return connected;
+    },
     send,
     onMessage(handler) {
-      handlers.add(handler);
+      messageHandlers.add(handler);
+    },
+    onClose(handler) {
+      closeHandlers.add(handler);
     },
     async close() {
-      handlers.clear();
+      closingIntentionally = true;
+      messageHandlers.clear();
       if (
         socket.readyState === WebSocket.OPEN ||
         socket.readyState === WebSocket.CONNECTING
@@ -125,7 +188,10 @@ export async function connectToProxy(options: {
           socket.once("close", () => resolve());
           socket.close();
         });
+      } else {
+        notifyClose("Backend mocks agent stopped while a request was pending");
       }
+      closeHandlers.clear();
     },
   };
 }

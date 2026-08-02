@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { startBackendMocks } from "@playwright-backend-mocks/node";
+import { createProxyServer } from "@playwright-backend-mocks/proxy";
 import { expect, test } from "@playwright-backend-mocks/playwright";
-import { TestSocket, withProxy } from "../ws-helpers.js";
+import { TestSocket, getFreePort, withProxy } from "../ws-helpers.js";
 
 test.describe("proxy auth and protocol", () => {
   test("accepts a correct connection token", async () => {
@@ -160,5 +162,80 @@ test.describe("disconnect handling", () => {
         "ephemeral-node",
       );
     });
+  });
+
+  test("startBackendMocks fails clearly when the proxy is unreachable", async () => {
+    await expect(
+      startBackendMocks({
+        proxyUrl: "http://127.0.0.1:1",
+        clientId: "unreachable-agent",
+      }),
+    ).rejects.toThrow(/Failed to connect to Playwright Backend Mocks proxy/);
+  });
+
+  test("Node agent fails pending requests when the proxy connection drops", async () => {
+    const port = await getFreePort();
+    const proxy = createProxyServer({
+      host: "127.0.0.1",
+      port,
+      logLevel: "silent",
+    });
+    await proxy.start();
+
+    const agent = await startBackendMocks({
+      proxyUrl: proxy.url,
+      clientId: "drop-agent",
+    });
+
+    const playwright = await TestSocket.connect(proxy.url);
+    const pwHello = await playwright.hello({
+      role: "playwright",
+      workerId: "drop-worker",
+      clientId: "pw-drop",
+    });
+    expect(pwHello.type).toBe("hello:ok");
+
+    const testId = randomUUID();
+    const routeId = randomUUID();
+    playwright.send({
+      type: "test:register",
+      testId,
+      title: "proxy drop",
+      file: "security-disconnect.spec.ts",
+      workerId: "drop-worker",
+    });
+    playwright.send({
+      type: "route:register",
+      routeId,
+      testId,
+      matcher: { urlGlob: "http://example.test/hang" },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const pendingFetch = fetch("http://example.test/hang").then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    const matched = await playwright.waitForType("request:matched");
+    expect(matched.request.url).toBe("http://example.test/hang");
+
+    await proxy.stop();
+
+    const result = await pendingFetch;
+    expect(result).toBeInstanceOf(Error);
+    const error = result as Error & { cause?: unknown };
+    const details = [
+      error.message,
+      error.cause instanceof Error ? error.cause.message : "",
+    ].join(" ");
+    // Fetch may wrap the interceptor error as TypeError("fetch failed") with a cause.
+    expect(details).toMatch(
+      /Lost connection to the Playwright Backend Mocks proxy|fetch failed/i,
+    );
+
+    await agent.stop();
+    playwright.close();
   });
 });

@@ -128,6 +128,9 @@ importers:
 
   tests/e2e:
     devDependencies:
+      '@playwright-backend-mocks/node':
+        specifier: workspace:*
+        version: link:../../packages/node
       '@playwright-backend-mocks/playwright':
         specifier: workspace:*
         version: link:../../packages/playwright
