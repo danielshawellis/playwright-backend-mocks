@@ -37,10 +37,11 @@ function startBackendMocks(
 Behavior:
 
 - No-ops (returns a stopped agent) when `proxyUrl` is unset, so production code can call it unconditionally when desired.
-- Connects over WebSocket, handshakes, installs `@mswjs/interceptors` node preset.
+- Connects over WebSocket, handshakes, installs `@mswjs/interceptors` node preset **and** `WebSocketInterceptor` for application sockets.
 - Throws a clear error if the proxy is unreachable or rejects the handshake.
-- If the proxy connection drops later, pending intercepted requests fail immediately with a clear error. There is no automatic reconnect in v1; restart the agent against a running proxy.
-- On `stop()`, disposes interceptor and closes the socket.
+- If the proxy connection drops later, pending intercepted requests/sockets fail immediately with a clear error. There is no automatic reconnect in v1; restart the agent against a running proxy.
+- On `stop()`, disposes interceptors and closes the socket.
+- **App WebSocket caveat:** only `globalThis.WebSocket` is intercepted (not npm `ws` / direct Undici imports). See rewrite-specification §4.
 
 Environment variable: `PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL`.
 
@@ -81,6 +82,16 @@ interface BackendMocks {
   unroute(
     url?: string | RegExp | RouteMatcherObject,
     handler?: RouteHandler,
+  ): Promise<void>;
+
+  /**
+   * Playwright-compatible WebSocket routing (`routeWebSocket` / `WebSocketRoute`).
+   * Intercepts only `globalThis.WebSocket` in Node (loud docs required).
+   * Not cleared by `unrouteAll` (matches Playwright).
+   */
+  routeWebSocket(
+    url: string | RegExp | ((url: URL) => boolean) | URLPattern | RouteMatcherObject,
+    handler: (ws: WebSocketRoute) => void | Promise<void>,
   ): Promise<void>;
 
   /** Wait for a matching request observed by the proxy. */
@@ -212,8 +223,9 @@ Options:
 ## Unsupported behavior (clear errors)
 
 - Streaming request/response bodies
-- Application WebSocket / gRPC / raw sockets
-- Traffic outside `@mswjs/interceptors` coverage
+- gRPC / raw TCP sockets
+- Application WebSockets **not** created via `globalThis.WebSocket` (npm `ws`, direct Undici imports, etc.) — bypass mocks; document loudly
+- Other traffic outside `@mswjs/interceptors` coverage
 - Protocol version mismatches
 
 ---

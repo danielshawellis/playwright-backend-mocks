@@ -2,7 +2,7 @@
 
 Findings that informed the v1 architecture. This is a decision log, not a comprehensive survey.
 
-For a deeper dive into Playwright’s network-routing implementation, how closely this library can mirror it across the proxy/WebSocket boundary, and a catalog of Playwright’s related tests, see [`playwright-network-parity.md`](./playwright-network-parity.md) (test dump: [`playwright-network-tests.json`](./playwright-network-tests.json)).
+For a deeper dive into Playwright’s HTTP **and WebSocket** routing implementation, how closely this library can mirror it across the control-plane WebSocket boundary, MSW bridge gaps for `routeWebSocket`, and a catalog of Playwright’s related tests, see [`playwright-network-parity.md`](./playwright-network-parity.md) (test dump: [`playwright-network-tests.json`](./playwright-network-tests.json); living oracle: [`tests/parity/`](../tests/parity/)).
 
 ## Playwright request routing
 
