@@ -4,7 +4,6 @@ import {
   decodeBody,
   decodeBodyText,
   encodeBody,
-  matchSerializedMatcher,
   normalizeHeaders,
   type HistoryEntry,
   type ProxyToClientMessage,
@@ -13,6 +12,7 @@ import {
   type SerializedResponse,
 } from "@playwright-backend-mocks/protocol";
 import type { PlaywrightProxyConnection } from "./connection.js";
+import { matchRouteMatcher } from "./match.js";
 import {
   createRouteFromJSONSession,
   flushRouteFromJSONSession,
@@ -64,6 +64,29 @@ export function createBackendMocks(options: {
 
   async function handleMessage(message: ProxyToClientMessage): Promise<void> {
     switch (message.type) {
+      case "request:claim": {
+        if (routes.length === 0) {
+          return;
+        }
+        const matches: Array<{ routeId: string }> = [];
+        for (const route of routes) {
+          if (
+            matchRouteMatcher(route.matcherInput, {
+              request: message.request,
+              clientId: message.clientId,
+            })
+          ) {
+            matches.push({ routeId: route.routeId });
+          }
+        }
+        connection.send({
+          type: "request:claim-result",
+          requestId: message.requestId,
+          testId,
+          matches,
+        });
+        return;
+      }
       case "request:matched": {
         if (message.testId !== testId) {
           return;
@@ -255,21 +278,24 @@ export function createBackendMocks(options: {
     },
 
     async waitForRequest(url, options = {}) {
-      const matcher = toSerializedMatcher(url, options.method);
       const timeout = options.timeout ?? 30_000;
       const started = Date.now();
 
       while (Date.now() - started < timeout) {
         const found = observed.find((request) =>
-          matchSerializedMatcher(matcher, {
-            request: {
-              url: request.url,
-              method: request.method,
-              headers: { ...request.headers },
-              bodyBase64: encodeBody(request.postDataBuffer),
+          matchRouteMatcher(
+            url,
+            {
+              request: {
+                url: request.url,
+                method: request.method,
+                headers: { ...request.headers },
+                bodyBase64: encodeBody(request.postDataBuffer),
+              },
+              clientId: request.clientId,
             },
-            clientId: request.clientId,
-          }),
+            options.method,
+          ),
         );
         if (found) {
           return found;
@@ -278,7 +304,7 @@ export function createBackendMocks(options: {
       }
 
       throw new Error(
-        `Timed out waiting for backend request matching ${JSON.stringify(matcher)}`,
+        `Timed out waiting for backend request matching ${describeMatcher(url, options.method)}`,
       );
     },
 
@@ -286,9 +312,8 @@ export function createBackendMocks(options: {
       if (url === undefined) {
         return [...observed];
       }
-      const matcher = toSerializedMatcher(url);
       return observed.filter((request) =>
-        matchSerializedMatcher(matcher, {
+        matchRouteMatcher(url, {
           request: {
             url: request.url,
             method: request.method,
@@ -335,6 +360,14 @@ function matcherEquals(a: RouteMatcherInput, b: RouteMatcherInput): boolean {
   return (
     JSON.stringify(toSerializedMatcher(a)) === JSON.stringify(toSerializedMatcher(b))
   );
+}
+
+function describeMatcher(input: RouteMatcherInput, methodFilter?: string): string {
+  try {
+    return JSON.stringify(toSerializedMatcher(input, methodFilter));
+  } catch {
+    return String(input);
+  }
 }
 
 function toBackendRequest(request: SerializedRequest, clientId: string): BackendRequest {

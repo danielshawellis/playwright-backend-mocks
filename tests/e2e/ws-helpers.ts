@@ -2,10 +2,12 @@ import { createServer } from "node:http";
 import {
   PACKAGE_VERSION,
   PROTOCOL_VERSION,
+  matchSerializedMatcher,
   parseJsonProxyMessage,
   stringifyMessage,
   type ClientToProxyMessage,
   type ProxyToClientMessage,
+  type SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 import { createProxyServer, type ProxyServer } from "@playwright-backend-mocks/proxy";
 
@@ -53,6 +55,11 @@ export class TestSocket {
   private readonly queue: ProxyToClientMessage[] = [];
   private waiters: Array<(message: ProxyToClientMessage) => void> = [];
   private readonly openPromise: Promise<void>;
+  /** Local route table so this socket can answer claim broadcasts like Playwright. */
+  private readonly routes = new Map<
+    string,
+    { testId: string; matcher: SerializedMatcher }
+  >();
 
   private constructor(url: string) {
     this.socket = new WebSocket(url);
@@ -69,6 +76,10 @@ export class TestSocket {
       const message = parseJsonProxyMessage(raw);
       if (message.type === "ping") {
         this.send({ type: "pong", at: message.at });
+        return;
+      }
+      if (message.type === "request:claim") {
+        this.answerClaim(message);
         return;
       }
       const waiter = this.waiters.shift();
@@ -90,7 +101,58 @@ export class TestSocket {
   }
 
   send(message: ClientToProxyMessage): void {
+    if (message.type === "route:register") {
+      this.routes.set(message.routeId, {
+        testId: message.testId,
+        matcher: message.matcher,
+      });
+    } else if (message.type === "route:unregister") {
+      if (message.routeId !== undefined) {
+        this.routes.delete(message.routeId);
+      } else if (message.testId !== undefined) {
+        for (const [routeId, route] of this.routes) {
+          if (route.testId === message.testId) {
+            this.routes.delete(routeId);
+          }
+        }
+      }
+    } else if (message.type === "test:unregister") {
+      for (const [routeId, route] of this.routes) {
+        if (route.testId === message.testId) {
+          this.routes.delete(routeId);
+        }
+      }
+    }
     this.socket.send(stringifyMessage(message));
+  }
+
+  private answerClaim(
+    message: Extract<ProxyToClientMessage, { type: "request:claim" }>,
+  ): void {
+    const byTest = new Map<string, Array<{ routeId: string }>>();
+    for (const [routeId, route] of this.routes) {
+      if (
+        !matchSerializedMatcher(route.matcher, {
+          request: message.request,
+          clientId: message.clientId,
+        })
+      ) {
+        continue;
+      }
+      const matches = byTest.get(route.testId) ?? [];
+      matches.push({ routeId });
+      byTest.set(route.testId, matches);
+    }
+
+    const testIds = new Set([...this.routes.values()].map((route) => route.testId));
+    for (const testId of testIds) {
+      this.send({
+        type: "request:claim-result",
+        requestId: message.requestId,
+        testId,
+        matches: byTest.get(testId) ?? [],
+      });
+    }
   }
 
   private waitForIncoming(timeoutMs: number): Promise<ProxyToClientMessage> {

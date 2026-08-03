@@ -7,6 +7,8 @@ export interface ProxyConfig {
   readonly historyLimit: number;
   readonly heartbeatMs: number;
   readonly idleTimeoutMs: number;
+  /** How long to wait for every Playwright test with routes to answer a claim. */
+  readonly claimTimeoutMs: number;
   readonly logLevel: LogLevel;
 }
 
@@ -17,6 +19,7 @@ export const DEFAULT_PROXY_CONFIG: ProxyConfig = {
   historyLimit: 1000,
   heartbeatMs: 15_000,
   idleTimeoutMs: 60_000,
+  claimTimeoutMs: 5_000,
   logLevel: "info",
 };
 

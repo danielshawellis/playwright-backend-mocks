@@ -15,6 +15,7 @@ export type {
   FetchOptions,
 } from "./types.js";
 export { toSerializedMatcher } from "./types.js";
+export { matchRouteMatcher } from "./match.js";
 export {
   ROUTE_FROM_JSON_VERSION,
   findRouteFromJSONResponse,

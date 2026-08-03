@@ -1,6 +1,6 @@
 # Matching requests
 
-Matchers decide which outbound Node requests your handler receives. They must be **serializable** — no predicate functions — because matching runs in the proxy process.
+Matchers decide which outbound Node requests your handler receives. Matching runs in the **Playwright worker**: the proxy broadcasts each Node request to every test with active routes, waits for all claim replies, then enforces 0 / 1 / >1 ownership. Serializable matcher metadata is still registered with the proxy for diagnostics and history filters.
 
 ## Matcher forms
 

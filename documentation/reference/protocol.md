@@ -9,7 +9,7 @@ Shared wire types, validators, and helpers used by the Playwright fixture, Node 
 ## Version constants
 
 ```ts
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 const PACKAGE_VERSION = "0.1.0"; // mirrors the releasing package version
 ```
 
@@ -27,6 +27,8 @@ function serializeRegExp(regex: RegExp): { source: string; flags: string };
 ```
 
 Glob rules: `*` within a segment, `**` across segments; matched against the absolute URL. Methods compared case-insensitively. A matcher with no URL still matches when method/client filters pass.
+
+Authoritative route ownership uses a claim broadcast: proxy → Playwright `request:claim`, Playwright → proxy `request:claim-result`. The proxy waits for every test that currently has routes before deciding 0 / 1 / >1 matches.
 
 ## Body / header helpers
 
@@ -71,8 +73,8 @@ All message schemas are Zod-derived and re-exported (e.g. `clientToProxyMessageS
 
 ## Message families (summary)
 
-**Client → proxy:** `hello`, `ping`/`pong`, `request:start`/`cancel`, `fetch:result`, `agent:error`, `test:register`/`unregister`, `route:register`/`unregister`, `handler:result` (`fulfill` \| `continue` \| `abort` \| `fetch`), `history:query`
+**Client → proxy:** `hello`, `ping`/`pong`, `request:start`/`cancel`, `fetch:result`, `agent:error`, `test:register`/`unregister`, `route:register`/`unregister`, `request:claim-result`, `handler:result` (`fulfill` \| `continue` \| `abort` \| `fetch`), `history:query`
 
-**Proxy → client:** `hello:ok` / `hello:error`, `ping`/`pong`, `decision:*` (`fulfill` \| `continue` \| `abort` \| `fetch` \| `passthrough` \| `error`), `request:matched`, `fetch:done`, `history:result`, `proxy:error`
+**Proxy → client:** `hello:ok` / `hello:error`, `ping`/`pong`, `decision:*` (`fulfill` \| `continue` \| `abort` \| `fetch` \| `passthrough` \| `error`), `request:claim`, `request:matched`, `fetch:done`, `history:result`, `proxy:error`
 
 For day-to-day mocking, prefer the [Playwright](/reference/playwright), [Node](/reference/node), and [Proxy](/reference/proxy) references.

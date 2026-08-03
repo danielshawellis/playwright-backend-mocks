@@ -57,6 +57,15 @@ interface PendingRequest {
   >;
 }
 
+interface PendingClaim {
+  readonly expectedTestIds: Set<string>;
+  readonly respondedTestIds: Set<string>;
+  readonly matches: Array<{ routeId: string; testId: string }>;
+  readonly timer: NodeJS.Timeout;
+  resolve(matches: Array<{ routeId: string; testId: string }>): void;
+  reject(error: Error): void;
+}
+
 export interface ProxyServer {
   readonly url: string;
   readonly config: ProxyConfig;
@@ -73,6 +82,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
   const routes = new Map<string, RouteRegistration>();
   const tests = new Map<string, TestRegistration>();
   const pending = new Map<string, PendingRequest>();
+  const pendingClaims = new Map<string, PendingClaim>();
 
   const httpServer = createServer((req, res) => {
     void handleHttp(req, res);
@@ -163,6 +173,9 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       case "route:unregister":
         handleRouteUnregister(message);
         return;
+      case "request:claim-result":
+        handleClaimResult(message);
+        return;
       case "handler:result":
         void handleHandlerResult(message);
         return;
@@ -250,20 +263,71 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     };
     pending.set(message.requestId, pendingRequest);
 
-    const matches: Array<RouteRegistration & { test: TestRegistration }> = [];
+    const activeRoutes: RouteRegistration[] = [];
+    const expectedTestIds = new Set<string>();
+    const claimConnections = new Set<string>();
     for (const route of routes.values()) {
       const test = tests.get(route.testId);
       if (test === undefined) {
         continue;
       }
-      if (
-        matchSerializedMatcher(route.matcher, {
-          request: message.request,
-          clientId: message.clientId,
-        })
-      ) {
-        matches.push({ ...route, test });
+      activeRoutes.push(route);
+      expectedTestIds.add(route.testId);
+      claimConnections.add(route.connectionId);
+    }
+
+    if (expectedTestIds.size === 0) {
+      finishHistory(historyId, startedAt, { kind: "passthrough" });
+      pending.delete(message.requestId);
+      send(bound, {
+        type: "decision:passthrough",
+        requestId: message.requestId,
+      });
+      return;
+    }
+
+    let claimed: Array<{ routeId: string; testId: string }>;
+    try {
+      claimed = await collectClaims(message, expectedTestIds, claimConnections);
+    } catch (error) {
+      if (!pending.has(message.requestId)) {
+        return;
       }
+      const errorMessage =
+        error instanceof Error ? error.message : "Route claim failed";
+      const code =
+        error instanceof Error && error.name === "ClaimTimeoutError"
+          ? "claim_timeout"
+          : "internal";
+      finishHistory(historyId, startedAt, {
+        kind: "error",
+        message: errorMessage,
+      });
+      pending.delete(message.requestId);
+      send(bound, {
+        type: "decision:error",
+        requestId: message.requestId,
+        code,
+        message: errorMessage,
+      });
+      return;
+    }
+
+    if (!pending.has(message.requestId)) {
+      return;
+    }
+
+    const matches: Array<RouteRegistration & { test: TestRegistration }> = [];
+    for (const claim of claimed) {
+      const route = activeRoutes.find((item) => item.routeId === claim.routeId);
+      const test = tests.get(claim.testId);
+      if (route === undefined || test === undefined) {
+        continue;
+      }
+      if (route.testId !== claim.testId) {
+        continue;
+      }
+      matches.push({ ...route, test });
     }
 
     if (matches.length === 0) {
@@ -357,18 +421,131 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     });
   }
 
+  function collectClaims(
+    message: Extract<ClientToProxyMessage, { type: "request:start" }>,
+    expectedTestIds: Set<string>,
+    claimConnections: Set<string>,
+  ): Promise<Array<{ routeId: string; testId: string }>> {
+    return new Promise((resolve, reject) => {
+      const respondedTestIds = new Set<string>();
+      const matches: Array<{ routeId: string; testId: string }> = [];
+
+      const timer = setTimeout(() => {
+        pendingClaims.delete(message.requestId);
+        const missing = [...expectedTestIds].filter((id) => !respondedTestIds.has(id));
+        const error = new Error(
+          `Timed out waiting for route claims from Playwright tests: ${missing.join(", ")}`,
+        );
+        error.name = "ClaimTimeoutError";
+        reject(error);
+      }, config.claimTimeoutMs);
+
+      const settle = () => {
+        clearTimeout(timer);
+        pendingClaims.delete(message.requestId);
+        resolve([...matches]);
+      };
+
+      pendingClaims.set(message.requestId, {
+        expectedTestIds,
+        respondedTestIds,
+        matches,
+        timer,
+        resolve: settle,
+        reject,
+      });
+
+      for (const connectionId of claimConnections) {
+        const worker = connections.get(connectionId);
+        if (worker === undefined || worker.socket.readyState !== WebSocket.OPEN) {
+          for (const testId of expectedTestIds) {
+            const test = tests.get(testId);
+            if (test?.connectionId === connectionId && !respondedTestIds.has(testId)) {
+              respondedTestIds.add(testId);
+            }
+          }
+          continue;
+        }
+        send(worker, {
+          type: "request:claim",
+          requestId: message.requestId,
+          request: message.request,
+          clientId: message.clientId,
+        });
+      }
+
+      if (
+        [...expectedTestIds].every((testId) => respondedTestIds.has(testId))
+      ) {
+        settle();
+      }
+    });
+  }
+
+  function handleClaimResult(
+    message: Extract<ClientToProxyMessage, { type: "request:claim-result" }>,
+  ): void {
+    const claim = pendingClaims.get(message.requestId);
+    if (claim === undefined) {
+      return;
+    }
+    if (!claim.expectedTestIds.has(message.testId)) {
+      return;
+    }
+    if (claim.respondedTestIds.has(message.testId)) {
+      return;
+    }
+
+    claim.respondedTestIds.add(message.testId);
+    for (const match of message.matches) {
+      claim.matches.push({
+        routeId: match.routeId,
+        testId: message.testId,
+      });
+    }
+
+    if (
+      [...claim.expectedTestIds].every((testId) =>
+        claim.respondedTestIds.has(testId),
+      )
+    ) {
+      claim.resolve([...claim.matches]);
+    }
+  }
+
+  function completeClaimForTest(testId: string): void {
+    for (const claim of pendingClaims.values()) {
+      if (!claim.expectedTestIds.has(testId) || claim.respondedTestIds.has(testId)) {
+        continue;
+      }
+      claim.respondedTestIds.add(testId);
+      if (
+        [...claim.expectedTestIds].every((id) => claim.respondedTestIds.has(id))
+      ) {
+        claim.resolve([...claim.matches]);
+      }
+    }
+  }
+
   function handleRequestCancel(
     message: Extract<ClientToProxyMessage, { type: "request:cancel" }>,
   ): void {
     const item = pending.get(message.requestId);
-    if (item === undefined) {
-      return;
+    if (item !== undefined) {
+      finishHistory(item.historyId, item.startedAt, {
+        kind: "aborted",
+        errorCode: "aborted",
+      });
+      pending.delete(message.requestId);
     }
-    finishHistory(item.historyId, item.startedAt, {
-      kind: "aborted",
-      errorCode: "aborted",
-    });
-    pending.delete(message.requestId);
+
+    const claim = pendingClaims.get(message.requestId);
+    if (claim !== undefined) {
+      clearTimeout(claim.timer);
+      pendingClaims.delete(message.requestId);
+      // Reject after clearing pending so handleRequestStart does not send a decision.
+      claim.reject(new Error("Request cancelled while waiting for route claims"));
+    }
   }
 
   function handleFetchResult(
@@ -406,6 +583,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         routes.delete(routeId);
       }
     }
+    completeClaimForTest(testId);
     for (const [requestId, item] of pending) {
       if (item.testId === testId) {
         const node = connections.get(item.connectionId);

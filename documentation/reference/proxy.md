@@ -86,11 +86,15 @@ Each history entry's `outcome.kind` is one of:
 
 ## Matching rules (authoritative)
 
+The proxy does not evaluate URL matchers itself for ownership. It broadcasts `request:claim` to every Playwright connection that has active routes, waits for all `request:claim-result` replies (or `claimTimeoutMs`), then applies:
+
 | Matches | Proxy behavior                                                                 |
 | ------- | ------------------------------------------------------------------------------ |
 | 0       | `decision:passthrough` to the Node agent                                       |
 | 1       | `request:matched` to the owning Playwright connection                          |
 | >1      | `decision:error` (`ambiguous_route`) to Node + `proxy:error` to affected tests |
+
+If any expected test fails to answer before `claimTimeoutMs`, the Node request fails with `claim_timeout`.
 
 Additional connection rules:
 

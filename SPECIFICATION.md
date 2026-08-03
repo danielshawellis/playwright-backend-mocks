@@ -779,9 +779,9 @@ Cross-package contract tests must prove that:
 
 ## Route Matching and Ownership
 
-Playwright workers register serializable matchers with the proxy.
+Playwright workers register routes with the proxy and keep live matchers locally.
 
-The proxy is solely authoritative for global route matching and ownership.
+The proxy is solely authoritative for global route **ownership**: it broadcasts each request to every Playwright test with active routes, waits for all claim replies, then applies the zero / one / many rule. Matcher evaluation itself runs in the Playwright workers.
 
 The Node package should never decide which Playwright registration owns a request.
 
