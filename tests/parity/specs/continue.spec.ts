@@ -297,4 +297,122 @@ test.describe("route.continue", () => {
     expect(result.status).toBe(200);
     expect(laterCalled).toBe(false);
   });
+
+  test("rejects url override that changes the protocol", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    let message = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      try {
+        await r.continue({ url: "file:///tmp/foo" });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+        // Route is already marked handled; fulfill/abort/continue all reject.
+        // Leaving the handler exits without a successful network send → stall.
+      }
+    });
+
+    const result = await Promise.race([
+      trigger("/users"),
+      page.waitForTimeout(500).then(() => ({ timeout: true as const })),
+    ]);
+
+    expect(message).toMatch(/same protocol/i);
+    expect(result).toEqual({ timeout: true });
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("rejects https url override when the original protocol is http", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    let message = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      try {
+        await r.continue({ url: "https://example.com/" });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+    });
+
+    const result = await Promise.race([
+      trigger("/users"),
+      page.waitForTimeout(500).then(() => ({ timeout: true as const })),
+    ]);
+
+    expect(message).toMatch(/same protocol/i);
+    expect(result).toEqual({ timeout: true });
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("ignores forbidden Cookie and Content-Length header overrides", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        method: "POST",
+        postData: "abcd",
+        headers: {
+          ...r.request().headers(),
+          cookie: "evil=1",
+          "content-length": "1",
+          trailer: "should-be-ignored",
+        },
+      });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      body: "x",
+    });
+    expect(result.status).toBe(200);
+    const echoed = result.data as {
+      body: string | null;
+      bodyByteLength: number;
+      headers: Record<string, string>;
+    };
+    // Body must be the full overridden postData; a forbidden Content-Length of 1
+    // must not truncate it.
+    expect(echoed.body).toBe("abcd");
+    expect(echoed.bodyByteLength).toBe(4);
+    expect(echoed.headers.trailer).toBeFalsy();
+    // Cookie override is forbidden for continue; original request had no Cookie.
+    expect(echoed.headers.cookie ?? echoed.headers.Cookie).toBeFalsy();
+  });
+
+  test("amends utf-8 / non-ASCII post data", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        method: "POST",
+        postData: "пушкин",
+      });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      body: "birdy",
+    });
+    expect(result.status).toBe(200);
+    expect(result.data).toMatchObject({ body: "пушкин" });
+  });
+
+  test("postData-only override preserves method and url", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({ postData: "only-body" });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      body: "original",
+    });
+    expect(result.data).toMatchObject({
+      method: "POST",
+      url: "/echo",
+      body: "only-body",
+    });
+  });
 });

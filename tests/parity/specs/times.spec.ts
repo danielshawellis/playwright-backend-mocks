@@ -63,4 +63,76 @@ test.describe("route times", () => {
       { id: 2, name: "Grace" },
     ]);
   });
+
+  test("times: 2 fires exactly twice then falls through", async ({ route, trigger }) => {
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        await r.fulfill({ status: 200, json: { mocked: true } });
+      },
+      { times: 2 },
+    );
+
+    expect((await trigger("/users")).data).toEqual({ mocked: true });
+    expect((await trigger("/users")).data).toEqual({ mocked: true });
+    expect((await trigger("/users")).data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
+  test("exhausted times handler does not block a later handler", async ({
+    route,
+    trigger,
+  }) => {
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        await r.fulfill({ status: 200, body: "later" });
+      },
+      { times: 1 },
+    );
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        await r.fulfill({ status: 200, body: "first" });
+      },
+      { times: 1 },
+    );
+
+    // LIFO: newest (first) runs once, then older (later) runs once.
+    expect((await trigger("/users")).raw).toBe("first");
+    expect((await trigger("/users")).raw).toBe("later");
+    expect((await trigger("/users")).data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
+  test("times handler that falls back still consumes a use", async ({
+    route,
+    trigger,
+  }) => {
+    const seen: string[] = [];
+    await route(`${UPSTREAM}/users`, async (r) => {
+      seen.push("base");
+      await r.fulfill({ status: 200, body: "base" });
+    });
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        seen.push("limited");
+        await r.fallback();
+      },
+      { times: 1 },
+    );
+
+    expect((await trigger("/users")).raw).toBe("base");
+    expect(seen).toEqual(["limited", "base"]);
+
+    seen.length = 0;
+    expect((await trigger("/users")).raw).toBe("base");
+    // Limited handler exhausted — only base runs.
+    expect(seen).toEqual(["base"]);
+  });
 });

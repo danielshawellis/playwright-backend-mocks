@@ -296,6 +296,8 @@ test.describe("route.fallback", () => {
   }) => {
     // Observed Playwright behavior: after fallback({ url }), later handlers are
     // considered against the overridden URL (echo-alt handler runs next).
+    // Docs historically said URL overrides do not affect matching; the runtime
+    // rematches — this oracle pins the observed behavior for the rewrite.
     const seen: string[] = [];
 
     await route(`${UPSTREAM}/echo-alt`, async (r) => {
@@ -314,6 +316,32 @@ test.describe("route.fallback", () => {
     const result = await trigger("/echo");
     expect(seen).toEqual(["echo-fallback", "echo-alt-only"]);
     expect(result.data).toEqual({ via: "echo-alt-only" });
+  });
+
+  test("fallback url rematch skips handlers that only matched the original URL", async ({
+    route,
+    trigger,
+  }) => {
+    const seen: string[] = [];
+
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      seen.push("original-url-handler");
+      await r.fulfill({ status: 200, json: { via: "should-not-run" } });
+    });
+    await route(`${UPSTREAM}/echo-alt`, async (r) => {
+      seen.push("alt-handler");
+      await r.fulfill({ status: 200, json: { via: "alt" } });
+    });
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      seen.push("fallback");
+      await r.fallback({ url: `${UPSTREAM}/echo-alt` });
+    });
+
+    const result = await trigger("/echo");
+    // After URL override, the remaining `**/echo` handler is not invoked;
+    // only handlers matching the new URL run.
+    expect(seen).toEqual(["fallback", "alt-handler"]);
+    expect(result.data).toEqual({ via: "alt" });
   });
 
   test("handler can fall back based on method", async ({ route, trigger }) => {
@@ -338,5 +366,36 @@ test.describe("route.fallback", () => {
 
     const postResult = await trigger("/echo", { method: "POST", body: "x" });
     expect(postResult.data).toEqual({ only: "POST" });
+  });
+
+  test("fallback url override with a different protocol does not throw", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    // Observed Playwright behavior: unlike continue(), fallback({ url }) with a
+    // different protocol resolves without throwing, but the request does not
+    // complete successfully (stalls). Pin that asymmetry for the rewrite.
+    let threw = false;
+    let fallbackResolved = false;
+    await route(`${UPSTREAM}/users`, async (r) => {
+      try {
+        await r.fallback({ url: "file:///tmp/foo" });
+        fallbackResolved = true;
+      } catch {
+        threw = true;
+        await r.fulfill({ status: 200, body: "unexpected-throw" });
+      }
+    });
+
+    const result = await Promise.race([
+      trigger("/users"),
+      page.waitForTimeout(1000).then(() => ({ timeout: true as const })),
+    ]);
+
+    expect(threw).toBe(false);
+    expect(fallbackResolved).toBe(true);
+    expect(result).toEqual({ timeout: true });
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 });

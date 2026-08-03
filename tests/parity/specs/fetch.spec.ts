@@ -299,4 +299,210 @@ test.describe("route.fetch", () => {
     const result = await trigger("/simple.json");
     expect(result.data).toEqual({ foo: "bar" });
   });
+
+  test("rejects url override that changes the protocol", async ({ route, trigger }) => {
+    let message = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      try {
+        await r.fetch({ url: "file:///tmp/foo" });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      await r.fulfill({ status: 200, body: "fetch-protocol-rejected" });
+    });
+
+    const result = await trigger("/users");
+    // route.fetch reports an unsupported-protocol error (wording differs from
+    // continue/fallback's "same protocol" check).
+    expect(message).toMatch(/protocol/i);
+    expect(result.raw).toBe("fetch-protocol-rejected");
+  });
+
+  test("object postData defaults content-type to application/json", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      const response = await r.fetch({
+        method: "POST",
+        postData: { foo: "bar" },
+      });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo");
+    const echoed = result.data as {
+      body: string;
+      headers: Record<string, string>;
+    };
+    expect(echoed.body).toBe(JSON.stringify({ foo: "bar" }));
+    expect(echoed.headers["content-type"]).toContain("application/json");
+  });
+
+  test("non-object postData defaults content-type to application/octet-stream", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      // Clear any incoming content-type so the fetch default can be observed.
+      const headers = { ...r.request().headers() };
+      delete headers["content-type"];
+      const response = await r.fetch({
+        method: "POST",
+        headers,
+        postData: "raw-bytes",
+      });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo");
+    const echoed = result.data as {
+      body: string;
+      headers: Record<string, string>;
+    };
+    expect(echoed.body).toBe("raw-bytes");
+    expect(echoed.headers["content-type"]).toContain("application/octet-stream");
+  });
+
+  test("explicit content-type wins over postData defaults", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      const response = await r.fetch({
+        method: "POST",
+        headers: {
+          ...r.request().headers(),
+          "content-type": "text/plain",
+        },
+        postData: { foo: "bar" },
+      });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo");
+    const echoed = result.data as {
+      body: string;
+      headers: Record<string, string>;
+    };
+    expect(echoed.body).toBe(JSON.stringify({ foo: "bar" }));
+    expect(echoed.headers["content-type"]).toContain("text/plain");
+  });
+
+  test("throws when maxRedirects is exceeded", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/redirect1`, async (r) => {
+      let message = "";
+      try {
+        await r.fetch({ maxRedirects: 1 });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message).toMatch(/Max redirect count exceeded/i);
+      await r.fulfill({ status: 200, body: "redirects-exceeded" });
+    });
+
+    const result = await trigger("/redirect1");
+    expect(result.raw).toBe("redirects-exceeded");
+  });
+
+  test("throws when maxRedirects is negative", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/redirect`, async (r) => {
+      let message = "";
+      try {
+        await r.fetch({ maxRedirects: -1 });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message).toMatch(/maxRedirects/i);
+      await r.fulfill({ status: 200, body: "negative-max" });
+    });
+
+    const result = await trigger("/redirect");
+    expect(result.raw).toBe("negative-max");
+  });
+
+  test("postData-only fetch override preserves method and url", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      const response = await r.fetch({ postData: "fetch-only-body" });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      body: "original",
+    });
+    expect(result.data).toMatchObject({
+      method: "POST",
+      url: "/echo",
+      body: "fetch-only-body",
+    });
+  });
+
+  test("APIResponse.ok() is false for non-2xx and json() throws on non-JSON", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/status/500`, async (r) => {
+      const response = await r.fetch();
+      expect(response.status()).toBe(500);
+      expect(response.ok()).toBe(false);
+      await r.fulfill({ status: 200, body: "checked-500" });
+    });
+    expect((await trigger("/status/500")).raw).toBe("checked-500");
+
+    await route(`${UPSTREAM}/not-json`, async (r) => {
+      const response = await r.fetch();
+      expect(response.ok()).toBe(true);
+      let message = "";
+      try {
+        await response.json();
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message.length).toBeGreaterThan(0);
+      await r.fulfill({ status: 200, body: "checked-not-json" });
+    });
+    expect((await trigger("/not-json")).raw).toBe("checked-not-json");
+  });
+
+  test("APIResponse.dispose() prevents further body reads", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/simple.json`, async (r) => {
+      const response = await r.fetch();
+      expect(await response.json()).toEqual({ foo: "bar" });
+      await response.dispose();
+      let message = "";
+      try {
+        await response.text();
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message).toMatch(/disposed/i);
+      await r.fulfill({ status: 200, body: "disposed" });
+    });
+
+    const result = await trigger("/simple.json");
+    expect(result.raw).toBe("disposed");
+  });
+
+  test("follows redirects up to the maxRedirects limit", async ({ route, trigger }) => {
+    // redirect1 → redirect2 → redirect3 → users = 3 hops
+    await route(`${UPSTREAM}/redirect1`, async (r) => {
+      const response = await r.fetch({ maxRedirects: 3 });
+      expect(response.status()).toBe(200);
+      expect(response.url()).toContain("/users");
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/redirect1");
+    expect(result.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
 });

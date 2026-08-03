@@ -276,4 +276,205 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     const result = await trigger("/charges");
     expect(result.status).toBe(404);
   });
+
+  test("picks the entry with the most matching headers when no exact match", async ({
+    page,
+    trigger,
+  }) => {
+    // Three cassette entries share foo+bar and differ only on baz.
+    // An unknown baz value still matches foo+bar, so the first/best-scoring
+    // entry (baz1) wins — Playwright's header scoring, not exact-only match.
+    await page.routeFromHAR(harPath, { url: "**/echo-score", update: false });
+
+    const fetchScore = async (baz: string) =>
+      trigger("/echo-score", {
+        method: "POST",
+        headers: {
+          foo: "foo-value",
+          bar: "bar-value",
+          baz,
+        },
+        body: "",
+      });
+
+    expect((await fetchScore("baz1")).raw).toBe("baz1");
+    expect((await fetchScore("baz2")).raw).toBe("baz2");
+    expect((await fetchScore("baz3")).raw).toBe("baz3");
+    expect((await fetchScore("baz4")).raw).toBe("baz1");
+  });
+
+  test("ignores multipart boundary when matching the body", async ({ page, trigger }) => {
+    await page.routeFromHAR(harPath, { url: "**/multipart", update: false });
+
+    // Different boundary than the cassette, same field payload shape.
+    const boundary = "----WebKitFormBoundaryBBBB";
+    const body =
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="field"\r\n\r\n` +
+      `hello\r\n` +
+      `--${boundary}--\r\n`;
+
+    const result = await trigger("/multipart", {
+      method: "POST",
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      body,
+    });
+    expect(result.status).toBe(200);
+    expect(result.data).toEqual({ multipart: "matched" });
+  });
+
+  test("updateMode full records a replayable HAR", async ({ browser }, testInfo) => {
+    const outHar = testInfo.outputPath("full-mode.har");
+    const recordContext = await browser.newContext();
+    const recordPage = await recordContext.newPage();
+    await recordPage.goto("http://127.0.0.1:3000/");
+    await recordPage.routeFromHAR(outHar, {
+      url: "**/simple.json",
+      update: true,
+      updateMode: "full",
+      updateContent: "embed",
+    });
+
+    const live = await recordPage.evaluate(async (url) => {
+      const response = await fetch(url);
+      return response.json();
+    }, `${UPSTREAM}/simple.json`);
+    expect(live).toEqual({ foo: "bar" });
+    await recordContext.close();
+
+    const replayContext = await browser.newContext();
+    const replayPage = await replayContext.newPage();
+    await replayPage.goto("http://127.0.0.1:3000/");
+    await replayPage.routeFromHAR(outHar, {
+      url: "**/simple.json",
+      update: false,
+      notFound: "abort",
+    });
+
+    const result = await replayPage.evaluate(async (url) => {
+      const response = await fetch(url);
+      return { status: response.status, data: await response.json() };
+    }, `${UPSTREAM}/simple.json`);
+    expect(result.status).toBe(200);
+    expect(result.data).toEqual({ foo: "bar" });
+    await replayContext.close();
+  });
+
+  test("update records with url filter and override options then replays", async ({
+    browser,
+  }, testInfo) => {
+    const outHar = testInfo.outputPath("override-record.har");
+    const recordContext = await browser.newContext();
+    const recordPage = await recordContext.newPage();
+    await recordPage.goto("http://127.0.0.1:3000/");
+    await recordPage.routeFromHAR(outHar, {
+      url: "**/echo*",
+      update: true,
+      updateMode: "minimal",
+      updateContent: "embed",
+    });
+
+    // Record /echo-alt via a fallback url override into the HAR under that filter.
+    await recordPage.route(`${UPSTREAM}/echo`, async (r) => {
+      await r.fallback({ url: `${UPSTREAM}/echo-alt` });
+    });
+
+    const live = await recordPage.evaluate(async (url) => {
+      const response = await fetch(url);
+      return response.json();
+    }, `${UPSTREAM}/echo`);
+    expect(live).toMatchObject({ variant: "alt" });
+    await recordContext.close();
+
+    const replayContext = await browser.newContext();
+    const replayPage = await replayContext.newPage();
+    await replayPage.goto("http://127.0.0.1:3000/");
+    await replayPage.routeFromHAR(outHar, {
+      url: "**/echo-alt",
+      update: false,
+      notFound: "abort",
+    });
+
+    const result = await replayPage.evaluate(async (url) => {
+      const response = await fetch(url);
+      return response.json();
+    }, `${UPSTREAM}/echo-alt`);
+    expect(result).toMatchObject({ variant: "alt" });
+    await replayContext.close();
+  });
+
+  test("records aborted requests with a failure marker and does not replay success", async ({
+    browser,
+  }, testInfo) => {
+    // Playwright 1.62 records aborted/reset traffic with status -1 + _failureText
+    // rather than omitting the entry. Replaying that entry must not yield a
+    // successful 200 body (request stalls / fails) — portable signal for
+    // routeFromJSON: failed recordings must not be treated as fulfillable.
+    const outHar = testInfo.outputPath("aborted.har");
+
+    {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto("http://127.0.0.1:3000/");
+      await page.routeFromHAR(outHar, {
+        url: "**/abort-me",
+        update: true,
+        updateMode: "minimal",
+        updateContent: "embed",
+      });
+
+      const cancelled = await page.evaluate(async (url) => {
+        try {
+          await fetch(url);
+          return "ok";
+        } catch {
+          return "cancelled";
+        }
+      }, `${UPSTREAM}/abort-me`);
+      expect(cancelled).toBe("cancelled");
+      await context.close();
+    }
+
+    expect(fs.existsSync(outHar)).toBe(true);
+    const raw = fs.readFileSync(outHar, "utf8");
+    expect(raw).toContain("/abort-me");
+    expect(raw).toMatch(/"status"\s*:\s*-1/);
+    expect(raw).toContain("_failureText");
+    expect(raw).not.toMatch(/"status"\s*:\s*200/);
+
+    {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto("http://127.0.0.1:3000/");
+      await page.routeFromHAR(outHar, {
+        url: "**/abort-me",
+        update: false,
+        notFound: "abort",
+      });
+
+      const result = await Promise.race([
+        page.evaluate(async (url) => {
+          try {
+            const response = await fetch(url);
+            return {
+              ok: response.ok,
+              status: response.status,
+              text: await response.text(),
+            };
+          } catch (e) {
+            return { ok: false, error: e instanceof Error ? e.message : String(e) };
+          }
+        }, `${UPSTREAM}/abort-me`),
+        page.waitForTimeout(1000).then(() => ({ timeout: true as const })),
+      ]);
+
+      // Must not successfully fulfill from the failed HAR entry.
+      if ("timeout" in result) {
+        expect(result.timeout).toBe(true);
+      } else {
+        expect(result.ok).toBe(false);
+      }
+      await context.close();
+    }
+  });
 });

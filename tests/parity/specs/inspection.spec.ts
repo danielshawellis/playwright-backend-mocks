@@ -137,4 +137,50 @@ test.describe("request inspection", () => {
     const result = await trigger("/users");
     expect(result.raw).toBe("same");
   });
+
+  test("handler can inspect postData then continue with an amendment", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r, request) => {
+      const original = request.postDataJSON() as { a: number };
+      expect(original).toEqual({ a: 1 });
+      await r.continue({
+        postData: { ...original, a: 2, inspected: true },
+      });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ a: 1 }),
+    });
+    expect(result.data).toMatchObject({
+      body: JSON.stringify({ a: 2, inspected: true }),
+    });
+  });
+
+  test("isNavigationRequest is false for Ajax", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/users`, async (r, request) => {
+      expect(request.isNavigationRequest()).toBe(false);
+      await r.fulfill({ status: 200, body: "ajax" });
+    });
+
+    const result = await trigger("/users");
+    expect(result.raw).toBe("ajax");
+  });
+
+  test("redirectedFrom / redirectedTo are null without redirects", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/users`, async (r, request) => {
+      expect(request.redirectedFrom()).toBeNull();
+      expect(request.redirectedTo()).toBeNull();
+      await r.continue();
+    });
+
+    const result = await trigger("/users");
+    expect(result.status).toBe(200);
+  });
 });

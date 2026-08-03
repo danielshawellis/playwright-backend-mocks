@@ -153,8 +153,62 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // Longer chain for maxRedirects-exceeded tests:
+  // /redirect1 → /redirect2 → /redirect3 → /users  (3 hops)
+  if (req.method === "GET" && url.pathname === "/redirect1") {
+    res.writeHead(302, {
+      location: "/redirect2",
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/redirect2") {
+    res.writeHead(302, {
+      location: "/redirect3",
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/redirect3") {
+    res.writeHead(302, {
+      location: "/users",
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/slow") {
     // Intentionally never responds — used by route.fetch timeout tests.
+    return;
+  }
+
+  // Destroy the socket immediately — used by HAR update abort-ignore tests.
+  if (req.method === "GET" && url.pathname === "/abort-me") {
+    req.socket.destroy();
+    return;
+  }
+
+  // Plain text non-JSON body for APIResponse.json() throw tests.
+  if (req.method === "GET" && url.pathname === "/not-json") {
+    text(res, 200, "this is not json");
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/multipart") {
+    json(res, 200, {
+      method: req.method,
+      contentType: req.headers["content-type"] ?? null,
+      body: bodyText,
+      bodyByteLength: bodyBuf.length,
+    });
     return;
   }
 

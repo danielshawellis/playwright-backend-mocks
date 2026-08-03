@@ -193,4 +193,68 @@ test.describe("matchers", () => {
       { id: 2, name: "Grace" },
     ]);
   });
+
+  test("glob must match the entire URL", async ({ route, trigger }) => {
+    // A bare suffix like `*.json` does not match a full absolute URL.
+    await route("*.json", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "suffix-only" } });
+    });
+
+    const missed = await trigger("/simple.json");
+    expect(missed.data).toEqual({ foo: "bar" });
+
+    // Prefix-only globs without `**` also fail to match full URLs.
+    await route("http://127.0.0.1:4001/simp*", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "prefix" } });
+    });
+    const hit = await trigger("/simple.json");
+    expect(hit.data).toEqual({ matched: "prefix" });
+  });
+
+  test("glob backslash escapes special characters", async ({ route, trigger }) => {
+    // In Playwright globs, `?` is literal; escaping it with `\` is also literal `?`.
+    await route("**/api\\?param", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "escaped-q" } });
+    });
+
+    const hit = await trigger("/api?param");
+    expect(hit.data).toEqual({ matched: "escaped-q" });
+
+    const miss = await trigger("/api-param");
+    expect(miss.status).toBe(404);
+  });
+
+  test("glob braces with extensions match only the listed suffixes", async ({
+    route,
+    trigger,
+  }) => {
+    await route("http://127.0.0.1:4001/**/*.{json,txt}", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "ext" } });
+    });
+
+    const json = await trigger("/simple.json");
+    expect(json.data).toEqual({ matched: "ext" });
+
+    const users = await trigger("/users");
+    expect(users.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
+  test("partial path glob without host does not match absolute upstream URLs", async ({
+    route,
+    trigger,
+  }) => {
+    // `users` alone is not an entire-URL match for http://127.0.0.1:4001/users.
+    await route("users", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "bare" } });
+    });
+
+    const result = await trigger("/users");
+    expect(result.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
 });
