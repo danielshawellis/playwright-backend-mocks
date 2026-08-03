@@ -23,7 +23,6 @@ export type DownstreamSocket = {
   socketId: string;
   protocol: string;
   extensions: string;
-  events: DownstreamSocketEvent[];
   send: (
     data: string | Buffer | Uint8Array,
     encoding?: "utf8" | "base64",
@@ -225,9 +224,6 @@ class ControlClient {
       socketId,
       protocol,
       extensions,
-      get events() {
-        return eventsBySocket.get(socketId) ?? [];
-      },
       send: async (
         data: string | Buffer | Uint8Array,
         encoding: "utf8" | "base64" = "utf8",

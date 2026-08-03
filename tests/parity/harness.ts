@@ -101,6 +101,8 @@ export type ParityRouting = {
 type ParityFixtures = {
   /** Browser mode: ensures harness page is loaded. Node mode: no-op page. */
   harnessPage: Page;
+  /** Browser-only routing handle; null in node mode until Step 2. */
+  browserRouting: ParityRouting | null;
   route: ParityRouting["route"];
   unroute: ParityRouting["unroute"];
   unrouteAll: ParityRouting["unrouteAll"];
@@ -281,9 +283,6 @@ function createBrowserDownstreamSocket(
     socketId,
     protocol,
     extensions,
-    get events() {
-      return [];
-    },
     async send(data: string | Buffer | Uint8Array) {
       if (typeof data === "string") {
         await page.evaluate(
@@ -641,47 +640,52 @@ export const test = base.extend<ParityFixtures>({
     await use(page);
   },
 
-  // Depend on harnessPage so the shared downstream is loaded *before* tests
-  // install catch-all HTTP routes that would otherwise intercept the harness document.
-  route: async ({ page, harnessPage }, use) => {
+  // Shared browser routing handle. Depends on harnessPage so catch-all HTTP
+  // routes cannot intercept the harness document load. routeWebSocket itself
+  // does not require prior navigation; openDownstreamSocket reloads when dirty.
+  browserRouting: async ({ page, harnessPage }, use) => {
     void harnessPage;
     if (parityMode !== "browser") {
+      await use(null);
+      return;
+    }
+    await use(createBrowserRouting(page));
+  },
+
+  route: async ({ browserRouting }, use) => {
+    if (!browserRouting) {
       await use(async () => notWired("route"));
       return;
     }
-    const api = createBrowserRouting(page);
-    await use(api.route);
+    await use(browserRouting.route);
   },
 
-  unroute: async ({ page, harnessPage }, use) => {
-    void harnessPage;
-    if (parityMode !== "browser") {
+  unroute: async ({ browserRouting }, use) => {
+    if (!browserRouting) {
       await use(async () => notWired("unroute"));
       return;
     }
-    await use(createBrowserRouting(page).unroute);
+    await use(browserRouting.unroute);
   },
 
-  unrouteAll: async ({ page, harnessPage }, use) => {
-    void harnessPage;
-    if (parityMode !== "browser") {
+  unrouteAll: async ({ browserRouting }, use) => {
+    if (!browserRouting) {
       await use(async () => notWired("unrouteAll"));
       return;
     }
-    await use(createBrowserRouting(page).unrouteAll);
+    await use(browserRouting.unrouteAll);
   },
 
-  routeFromHAR: async ({ page, harnessPage }, use) => {
-    void harnessPage;
-    if (parityMode !== "browser") {
+  routeFromHAR: async ({ browserRouting }, use) => {
+    if (!browserRouting) {
       await use(async () => notWired("routeFromHAR"));
       return;
     }
-    await use(createBrowserRouting(page).routeFromHAR);
+    await use(browserRouting.routeFromHAR);
   },
 
-  // Intentionally does NOT depend on harnessPage — WS init scripts must be
-  // registered before the page that will open sockets is navigated.
+  // Must not depend on harnessPage / browserRouting — WS init scripts need to
+  // be registered before the page that opens sockets is navigated.
   routeWebSocket: async ({ page }, use) => {
     if (parityMode !== "browser") {
       await use(async () => notWired("routeWebSocket"));
@@ -690,8 +694,7 @@ export const test = base.extend<ParityFixtures>({
     await use(createBrowserRouting(page).routeWebSocket);
   },
 
-  trigger: async ({ page, harnessPage }, use) => {
-    void harnessPage;
+  trigger: async ({ browserRouting, page }, use) => {
     await use(async (path, init = {}) => {
       const url = path.startsWith("http") ? path : `${UPSTREAM}${path}`;
       const payload = triggerPayload(init);
@@ -704,10 +707,11 @@ export const test = base.extend<ParityFixtures>({
         });
       }
 
-      return createBrowserRouting(page).trigger(path, init);
+      return (browserRouting ?? createBrowserRouting(page)).trigger(path, init);
     });
   },
 
+  // Must not depend on harnessPage — pairs with routeWebSocket registration order.
   openDownstreamSocket: async ({ page }, use) => {
     await use(async (url, options) => {
       if (parityMode === "node") {
@@ -728,20 +732,20 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  waitForRequest: async ({ page }, use) => {
-    if (parityMode !== "browser") {
+  waitForRequest: async ({ browserRouting }, use) => {
+    if (!browserRouting) {
       await use(async () => notWired("waitForRequest"));
       return;
     }
-    await use(createBrowserRouting(page).waitForRequest);
+    await use(browserRouting.waitForRequest);
   },
 
-  waitForResponse: async ({ page }, use) => {
-    if (parityMode !== "browser") {
+  waitForResponse: async ({ browserRouting }, use) => {
+    if (!browserRouting) {
       await use(async () => notWired("waitForResponse"));
       return;
     }
-    await use(createBrowserRouting(page).waitForResponse);
+    await use(browserRouting.waitForResponse);
   },
 
   upstream: async ({ page }, use) => {
