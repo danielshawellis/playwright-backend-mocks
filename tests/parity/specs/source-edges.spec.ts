@@ -70,10 +70,7 @@ test.describe("source-backed Route / matcher edges", () => {
     expect((empty.data as { bodyByteLength: number }).bodyByteLength).toBe(0);
   });
 
-  test("fallback then throw does not run lower handlers", async ({
-    route,
-    trigger,
-  }) => {
+  test("fallback then throw does not run lower handlers", async ({ route, trigger }) => {
     // Playwright fails the test when a route handler throws after fallback();
     // that is the observed surface. Pin that the lower LIFO handler did not run.
     test.fail();
@@ -293,10 +290,7 @@ test.describe("source-backed fulfill Content-Length edges", () => {
     expect(headerValue(result.headers, "content-length")).toBe(String(bytes.length));
   });
 
-  test("preserves an explicit Content-Length header", async ({
-    route,
-    trigger,
-  }) => {
+  test("preserves an explicit Content-Length header", async ({ route, trigger }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
         status: 200,
@@ -1307,10 +1301,7 @@ test.describe("source-backed settlement / fetch / matcher sharpening", () => {
       // recovery settle APIs also throw "already handled".
     });
 
-    await Promise.race([
-      trigger("/users").catch(() => undefined),
-      sleep(500),
-    ]);
+    await Promise.race([trigger("/users").catch(() => undefined), sleep(500)]);
     expect(message).toMatch(/disposed/i);
   });
 

@@ -59,10 +59,7 @@ test.describe("waitForResponse", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  test("times out when no response matches", async ({
-    trigger,
-    waitForResponse,
-  }) => {
+  test("times out when no response matches", async ({ trigger, waitForResponse }) => {
     let message = "";
     try {
       await waitForResponse(`${UPSTREAM}/missing`, { timeout: 500 });

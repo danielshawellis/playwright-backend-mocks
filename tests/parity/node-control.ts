@@ -24,7 +24,10 @@ export type DownstreamSocket = {
   protocol: string;
   extensions: string;
   events: DownstreamSocketEvent[];
-  send: (data: string | Buffer | Uint8Array, encoding?: "utf8" | "base64") => Promise<void>;
+  send: (
+    data: string | Buffer | Uint8Array,
+    encoding?: "utf8" | "base64",
+  ) => Promise<void>;
   close: (code?: number, reason?: string) => Promise<void>;
   info: () => Promise<{
     readyState: number;
@@ -69,12 +72,15 @@ class ControlClient {
         if (msg.event === "open") {
           list.push({ event: "open" });
         } else if (msg.event === "message") {
-          list.push({
+          const messageEvent: Extract<DownstreamSocketEvent, { event: "message" }> = {
             event: "message",
             data: String(msg.data ?? ""),
             encoding: msg.encoding === "base64" ? "base64" : "utf8",
-            binaryType: typeof msg.binaryType === "string" ? msg.binaryType : undefined,
-          });
+          };
+          if (typeof msg.binaryType === "string") {
+            messageEvent.binaryType = msg.binaryType;
+          }
+          list.push(messageEvent);
         } else if (msg.event === "close") {
           list.push({
             event: "close",
@@ -222,7 +228,10 @@ class ControlClient {
       get events() {
         return eventsBySocket.get(socketId) ?? [];
       },
-      send: async (data: string | Buffer | Uint8Array, encoding: "utf8" | "base64" = "utf8") => {
+      send: async (
+        data: string | Buffer | Uint8Array,
+        encoding: "utf8" | "base64" = "utf8",
+      ) => {
         if (typeof data !== "string") {
           const buf = Buffer.isBuffer(data)
             ? data
@@ -256,7 +265,8 @@ class ControlClient {
       waitForOpen: async (timeoutMs = 5_000) => {
         await waitFor("open", timeoutMs);
       },
-      readyState: async () => (await request("ws.info", { socketId })).readyState as number,
+      readyState: async () =>
+        (await request("ws.info", { socketId })).readyState as number,
     };
   }
 

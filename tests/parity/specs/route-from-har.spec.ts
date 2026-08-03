@@ -19,10 +19,7 @@ const harPath = path.join(
 );
 
 test.describe("routeFromHAR", () => {
-  test("fulfills from HAR matching the method", async ({
-    trigger,
-    routeFromHAR,
-  }) => {
+  test("fulfills from HAR matching the method", async ({ trigger, routeFromHAR }) => {
     await routeFromHAR(harPath, { url: "**/users", update: false });
 
     const result = await trigger("/users");
@@ -219,11 +216,7 @@ test.describe("routeFromHAR", () => {
     expect(result.data).toEqual({ script: "alt" });
   });
 
-  test("unrouteAll stops routeFromHAR", async ({
-    routeFromHAR,
-    trigger,
-    unrouteAll,
-  }) => {
+  test("unrouteAll stops routeFromHAR", async ({ routeFromHAR, trigger, unrouteAll }) => {
     await routeFromHAR(harPath, { url: "**/users", update: false });
     await unrouteAll();
 

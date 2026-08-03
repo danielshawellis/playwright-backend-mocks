@@ -20,14 +20,8 @@ import {
   type Request,
   type Response,
   type Route,
-  type WebSocketRoute,
 } from "@playwright/test";
-import {
-  HARNESS,
-  UPSTREAM,
-  sleep,
-  type TriggerResult,
-} from "./helpers.js";
+import { HARNESS, UPSTREAM, sleep, type TriggerResult } from "./helpers.js";
 import {
   getNodeControl,
   resetNodeControl,
@@ -99,9 +93,7 @@ export type ParityRouting = {
   ) => Promise<Request>;
   waitForResponse: (
     urlOrPredicate:
-      | string
-      | RegExp
-      | ((response: Response) => boolean | Promise<boolean>),
+      string | RegExp | ((response: Response) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Response>;
 };
@@ -221,8 +213,9 @@ function routeDisposable(
       const candidate = registration as
         | { [Symbol.dispose]?: () => void; dispose?: () => void | Promise<void> }
         | undefined;
-      if (typeof candidate?.[Symbol.dispose] === "function") {
-        candidate[Symbol.dispose]();
+      const disposeSymbol = candidate?.[Symbol.dispose];
+      if (typeof disposeSymbol === "function") {
+        disposeSymbol.call(candidate);
         return;
       }
       if (typeof candidate?.dispose === "function") {
@@ -257,11 +250,20 @@ async function withBrowserFailureText(
     if (!result.ok && result.error !== "opaqueredirect") {
       const enriched =
         failureText ??
-        (await Promise.race([
-          failurePromise,
-          sleep(100).then(() => undefined),
-        ]));
-      if (enriched) return { ...result, error: enriched };
+        (await Promise.race([failurePromise, sleep(100).then(() => undefined)]));
+      if (enriched) {
+        const failed: Extract<TriggerResult, { ok: false }> = {
+          ok: false,
+          error: enriched,
+        };
+        if (result.status !== undefined) failed.status = result.status;
+        if (result.statusText !== undefined) failed.statusText = result.statusText;
+        if (result.headers !== undefined) failed.headers = result.headers;
+        if (result.raw !== undefined) failed.raw = result.raw;
+        if (result.bodyBase64 !== undefined) failed.bodyBase64 = result.bodyBase64;
+        if (result.data !== undefined) failed.data = result.data;
+        return failed;
+      }
     }
     return result;
   } finally {
@@ -351,10 +353,7 @@ function createBrowserDownstreamSocket(
         const hit = await page.evaluate((id) => {
           const entry = (
             globalThis as unknown as {
-              __paritySockets: Record<
-                string,
-                { events: Array<Record<string, unknown>> }
-              >;
+              __paritySockets: Record<string, { events: Array<Record<string, unknown>> }>;
             }
           ).__paritySockets[id];
           if (!entry) throw new Error(`missing socket ${id}`);
@@ -363,12 +362,20 @@ function createBrowserDownstreamSocket(
           return entry.events.splice(idx, 1)[0] ?? null;
         }, socketId);
         if (hit) {
-          return {
-            event: "message" as const,
+          const message: {
+            event: "message";
+            data: string;
+            encoding: "utf8" | "base64";
+            binaryType?: string;
+          } = {
+            event: "message",
             data: String(hit.data ?? ""),
-            encoding: hit.encoding === "base64" ? ("base64" as const) : ("utf8" as const),
-            binaryType: typeof hit.binaryType === "string" ? hit.binaryType : undefined,
+            encoding: hit.encoding === "base64" ? "base64" : "utf8",
           };
+          if (typeof hit.binaryType === "string") {
+            message.binaryType = hit.binaryType;
+          }
+          return message;
         }
         await sleep(25);
       }
@@ -380,10 +387,7 @@ function createBrowserDownstreamSocket(
         const hit = await page.evaluate((id) => {
           const entry = (
             globalThis as unknown as {
-              __paritySockets: Record<
-                string,
-                { events: Array<Record<string, unknown>> }
-              >;
+              __paritySockets: Record<string, { events: Array<Record<string, unknown>> }>;
             }
           ).__paritySockets[id];
           if (!entry) throw new Error(`missing socket ${id}`);
@@ -772,7 +776,8 @@ export const test = base.extend<ParityFixtures>({
               waitUntil?: "open" | "connecting";
             } = { url };
             if (options?.protocols !== undefined) openInit.protocols = options.protocols;
-            if (options?.binaryType !== undefined) openInit.binaryType = options.binaryType;
+            if (options?.binaryType !== undefined)
+              openInit.binaryType = options.binaryType;
             if (options?.waitUntil !== undefined) openInit.waitUntil = options.waitUntil;
             return control.openSocket(openInit);
           },

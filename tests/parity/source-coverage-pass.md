@@ -64,22 +64,26 @@ Frames, navigation, SW, cookies, CORS auto-headers, page/context dual HTTP/WS sc
 
 ---
 
-## `routeFromHAR` dual-mode readiness
+## Dual-mode harness readiness
 
 **Product decision:** full HAR parity (`backendMocks.routeFromHAR`), not JSON cassettes.
 
-The dual-mode seam already exposes:
+The dual-mode seam exposes:
 
 - `route` / `unroute` / `unrouteAll`
 - **`routeFromHAR(file, options)`** → browser: `page.routeFromHAR`; Step 2: `backendMocks.routeFromHAR`
-- `trigger` / `waitForRequest` / `waitForResponse`
+- **`routeWebSocket(url, handler)`** → browser: `page.routeWebSocket`; Step 2: `backendMocks.routeWebSocket`
+- `trigger` / `openDownstreamSocket` / `waitForRequest` / `waitForResponse`
+- `withIsolatedDownstream` for HAR update flush / custom `baseURL`
+
+Specs call harness fixtures only. Upstream is always Node; downstream outbound code is always `fixtures/downstream`.
 
 Step 2 switchover:
 
-1. Implement `backendMocks.routeFromHAR` with Playwright options (`url`, `update`, `updateMode`, `updateContent`, `notFound`).
-2. In `harness.ts`, replace the backend throw with a call to that API.
-3. Existing `route-from-har.spec.ts` + HAR cases in `source-edges.spec.ts` run dual-mode with the same HAR files.
-4. Record/update tests that open a fresh `browser.newContext()` need a small Node-client adapter in backend mode; assertions on HAR contents stay shared.
+1. Implement `backendMocks.*` with Playwright-compatible options.
+2. In `harness.ts`, replace the backend `notWired` throws with those APIs.
+3. Existing dual-mode specs (including HAR + WebSocket) run with the same assertions.
+4. HAR `update: true` uses `withIsolatedDownstream` so browser context close flushes recordings; node mode will flush on dispose.
 
 ---
 

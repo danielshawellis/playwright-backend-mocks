@@ -1,12 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  test,
-  expect,
-  UPSTREAM,
-  bodyFromBase64,
-  headerValue,
-} from "../harness.js";
+import { test, expect, UPSTREAM, bodyFromBase64, headerValue } from "../harness.js";
 
 const fulfillBodyPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -181,10 +175,7 @@ test.describe("route.fulfill", () => {
     expect(headerValue(result.headers, "content-type")).toContain("application/json");
   });
 
-  test("json respects an explicit content-type override", async ({
-    route,
-    trigger,
-  }) => {
+  test("json respects an explicit content-type override", async ({ route, trigger }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
         contentType: "text/plain",
@@ -263,10 +254,7 @@ test.describe("route.fulfill", () => {
     }
   });
 
-  test("preserves every byte in a binary Buffer body", async ({
-    route,
-    trigger,
-  }) => {
+  test("preserves every byte in a binary Buffer body", async ({ route, trigger }) => {
     const bytes = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
     await route(`${UPSTREAM}/binary`, async (r) => {
       await r.fulfill({
@@ -280,10 +268,7 @@ test.describe("route.fulfill", () => {
     expect(bodyFromBase64(result.bodyBase64).equals(bytes)).toBe(true);
   });
 
-  test("adds Content-Length for string and json bodies", async ({
-    route,
-    trigger,
-  }) => {
+  test("adds Content-Length for string and json bodies", async ({ route, trigger }) => {
     const stringBody = "π-body";
     const jsonBody = { value: "π" };
 
@@ -302,9 +287,7 @@ test.describe("route.fulfill", () => {
     ] as const) {
       const url = `${UPSTREAM}/auto-content-length?kind=${kind}`;
       const result = await trigger(url);
-      expect(headerValue(result.headers, "content-length")).toBe(
-        String(expectedLength),
-      );
+      expect(headerValue(result.headers, "content-length")).toBe(String(expectedLength));
     }
   });
 

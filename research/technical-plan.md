@@ -1,31 +1,33 @@
 # Technical Plan
 
+Living plan for the rewrite. Product intent: [`SPECIFICATION.md`](../SPECIFICATION.md). Execution order: [`rewrite-specification.md`](./rewrite-specification.md).
+
 ## Repository structure
 
 ```text
 /
 ├── SPECIFICATION.md
-├── docs/
-│   ├── research.md
-│   ├── public-api.md
-│   ├── protocol.md
-│   └── technical-plan.md
-├── packages/
-│   ├── protocol/          # @playwright-backend-mocks/protocol
-│   ├── proxy/             # @playwright-backend-mocks/proxy
-│   ├── node/              # @playwright-backend-mocks/node
-│   └── playwright/        # @playwright-backend-mocks/playwright
+├── research/                 # architecture + rewrite plans (this folder)
+├── documentation/            # VitePress site
+├── packages/                 # Step 2 greenfield (not present until reimplementation)
+│   ├── protocol/             # @playwright-backend-mocks/protocol
+│   ├── proxy/                # @playwright-backend-mocks/proxy
+│   ├── node/                 # @playwright-backend-mocks/node
+│   ├── playwright/           # @playwright-backend-mocks/playwright
+│   └── dashboard/            # optional Vue dashboard
 ├── fixtures/
-│   ├── upstream/          # fake upstream HTTP API
-│   ├── api-server/        # Express-like app using fetch + axios
-│   └── worker/            # background worker using node:http
+│   ├── upstream/             # fake upstream HTTP API (always Node)
+│   ├── ws-upstream/          # fake upstream WebSocket server (always Node)
+│   ├── downstream/           # shared isomorphic fetch + WebSocket helpers
+│   ├── browser-harness/      # browser host that inlines fixtures/downstream
+│   └── node-downstream/      # Node host + control-plane WS; Step 2 enables mocks
 ├── tests/
-│   ├── unit/
-│   ├── contract/
-│   └── e2e/               # Playwright tests against built packages
+│   ├── parity/               # dual-mode oracle (browser | node)
+│   ├── library/              # Step 2: clientId / ambiguity / disconnect (later)
+│   ├── unit/                 # Step 2: pure helpers
+│   └── contract/             # Step 2: wire protocol
+├── historical/               # frozen prototype (not in workspace)
 ├── .github/workflows/
-│   ├── ci.yml
-│   └── publish.yml
 ├── package.json
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
@@ -34,14 +36,33 @@
 └── README.md
 ```
 
-pnpm workspace:
+pnpm workspace (Step 1 / current):
 
 ```yaml
 packages:
-  - "packages/*"
   - "fixtures/*"
-  - "tests/*"
+  - "tests/parity"
 ```
+
+Step 2 adds `packages/*` (and later `tests/library`, unit/contract as needed).
+
+## Dual-mode oracle philosophy
+
+```text
+Test author
+  → harness routing API  (page.* in browser mode → backendMocks.* in node mode)
+  → downstream host using fixtures/downstream
+  → upstream Node fake
+```
+
+| Role       | Always                                                              |
+| ---------- | ------------------------------------------------------------------- |
+| Upstream   | Node servers (`fixtures/upstream`, `fixtures/ws-upstream`)          |
+| Downstream | Shared `fixtures/downstream` (`triggerHttp`, `connectWebSocket`)    |
+| Host swap  | Browser harness page **or** Node process + `/control` WebSocket     |
+| Specs      | Call harness fixtures only — not raw `page.route` / `page.evaluate` |
+
+See [`tests/parity/downstream.md`](../tests/parity/downstream.md) and [`tests/parity/harness.ts`](../tests/parity/harness.ts).
 
 ## TypeScript
 
@@ -83,19 +104,19 @@ Proxy package additionally exports a `bin` entry.
 
 ### protocol
 
-- Zod schemas for every message
+- Zod schemas for every message (HTTP settle + app WebSocket session)
 - Inferred types
 - `PROTOCOL_VERSION`, helpers to parse/serialize
 - Body/header helpers
-- Matcher types + matching pure functions (used by proxy; also tested in unit suite)
+- Matcher types + matching pure functions
 
 ### proxy
 
-- HTTP server (`node:http`) + `ws`
+- HTTP server (`node:http`) + `ws` (control plane — safe beside app `WebSocketInterceptor`)
 - CLI (`playwright-backend-mocks-proxy`)
 - Connection registry
-- Route registry & matching
-- Request dispatch / pending map
+- Route registry & matching (HTTP + WebSocket)
+- Request / socket dispatch + ownership
 - History ring buffer
 - `/health`, `/api/*` (CORS-enabled read-only REST)
 - Dashboard: separate optional Vue package/process consuming `/api/*`
@@ -103,17 +124,18 @@ Proxy package additionally exports a `bin` entry.
 ### node
 
 - WebSocket client to proxy
-- `BatchInterceptor` + node preset
-- Serialize intercepted requests
+- `BatchInterceptor` + node preset for HTTP
+- `WebSocketInterceptor` + product bridge for app sockets (`globalThis.WebSocket` only)
+- Serialize intercepted requests / socket events
 - Apply decisions via controller
-- Upstream `fetch` for `decision:fetch`
+- Upstream `fetch` for `decision:fetch`; real WS upstream for `connectToServer`
 - Lifecycle: `startBackendMocks` / `stop`
 
 ### playwright
 
 - `test` fixture via `base.extend`
 - Worker-scoped WS connection; test-scoped route registration
-- `BackendMocks` / `BackendRoute` public API
+- `BackendMocks` / `BackendRoute` / `WebSocketRoute` / `routeFromHAR` public API
 - Maps handler results to protocol messages
 - Surfaces `proxy:error` as test failures
 
@@ -128,44 +150,35 @@ Proxy package additionally exports a `bin` entry.
 ### Node agent
 
 1. Connect + hello
-2. `interceptor.apply()`
-3. On request → buffer body → `request:start` → await decision → apply
-4. On stop/dispose → `interceptor.dispose()`, close WS
+2. `interceptor.apply()` (+ WS interceptor)
+3. On HTTP request → buffer body → `request:start` → await decision → apply
+4. On app WS → session messages → apply connect/send/close/ensureOpened
+5. On stop/dispose → dispose interceptors, close WS
 
 ### Playwright fixture
 
 1. Worker setup: connect WS, hello as `playwright`
 2. Per test: `test:register`, provide `backendMocks`
-3. Teardown: `test:unregister` (removes routes), reject pending handlers
+3. Teardown: `test:unregister` (removes HTTP routes; WS routes follow Playwright rules), reject pending handlers
 4. Worker teardown: close WS
 
 ## Error handling
 
 - All WS messages validated; invalid → log + optional `proxy:error`
-- Ambiguous routes fail Node request and all matching tests
+- Ambiguous routes (two tests) fail Node request/socket and all matching tests
 - Disconnects fail pending work with clear messages
 - Unsupported features throw immediately in the calling API
 
 ## Testing
 
-| Layer    | Tool       | Focus                                       |
-| -------- | ---------- | ------------------------------------------- |
-| Unit     | Vitest     | matchers, body encoding, schemas            |
-| Contract | Vitest     | serialize/parse round-trips, reject invalid |
-| E2E      | Playwright | full cross-process against built dist       |
+| Layer    | Tool       | Focus                                                      |
+| -------- | ---------- | ---------------------------------------------------------- |
+| Oracle   | Playwright | Dual-mode parity suite (`tests/parity`) against pin 1.62.1 |
+| Library  | Playwright | Step 2: `clientId`, `ambiguous_route`, disconnect, auth    |
+| Unit     | Vitest     | matchers, body encoding, schemas                           |
+| Contract | Vitest     | serialize/parse round-trips, reject invalid                |
 
-Fixture apps run under Playwright `webServer` with proxy + upstream + api-server.
-
-E2E scenarios (minimum):
-
-- Mock JSON fulfill
-- Passthrough to upstream
-- fetch + modify + fulfill
-- abort / error codes
-- waitForRequest / requests()
-- multiple node clients
-- ambiguous route failure
-- health + REST API reachable; optional dashboard process
+CI today: browser oracle + lint/typecheck/format. Step 2 adds backend-mode parity against built packages.
 
 ## CI
 
@@ -177,7 +190,7 @@ E2E scenarios (minimum):
 - `pnpm typecheck`
 - `pnpm lint`
 - `pnpm format:check`
-- `pnpm test`
+- `pnpm test` (oracle)
 
 ## Release
 
@@ -200,12 +213,9 @@ Separate package `@playwright-backend-mocks/dashboard` (Vue SPA + CLI):
 - Auto-refresh via proxy `GET /api/history` and `GET /api/connections`
 - Not bundled with the proxy package
 
-## Implementation order
+## Implementation order (rewrite)
 
-1. Protocol package + unit/contract tests
-2. Proxy server + CLI + health/REST API (+ optional dashboard package)
-3. Node agent
-4. Playwright fixtures
-5. Fixture apps
-6. E2E suite
-7. CI + publish workflow + README
+1. **Done (Step 1):** Archive prototype → `historical/`; pin Playwright; oracle suite green in browser mode; dual-mode harness including `routeWebSocket` / `routeFromHAR` / shared downstream.
+2. **Step 2 skeleton:** Reintroduce `packages/*`; wire node mode (`ENABLE_BACKEND_MOCKS`, proxy `webServer`, harness → `backendMocks.*`).
+3. Implement against failing backend-mode cases until green (HTTP + HAR + WS).
+4. Library-only suite; loud WS docs; remove `historical/` when finished.

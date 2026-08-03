@@ -304,9 +304,7 @@ test.describe("matchers", () => {
     ).rejects.toThrow(/nested/i);
   });
 
-  test("unmatched closing brace in a glob throws at registration", async ({
-    route,
-  }) => {
+  test("unmatched closing brace in a glob throws at registration", async ({ route }) => {
     await expect(
       route("http://example.com/a}", async (r) => r.fallback()),
     ).rejects.toThrow(/}/);
@@ -315,15 +313,12 @@ test.describe("matchers", () => {
   test("HTTP relative matcher works with an uppercase-scheme baseURL", async ({
     withIsolatedDownstream,
   }) => {
-    await withIsolatedDownstream(
-      { baseURL: "HTTP://127.0.0.1:4001/" },
-      async (api) => {
-        await api.route("/users", async (r) => {
-          await r.fulfill({ status: 200, body: "upper-base" });
-        });
-        const result = await api.trigger("/users");
-        expect(result.raw).toBe("upper-base");
-      },
-    );
+    await withIsolatedDownstream({ baseURL: "HTTP://127.0.0.1:4001/" }, async (api) => {
+      await api.route("/users", async (r) => {
+        await r.fulfill({ status: 200, body: "upper-base" });
+      });
+      const result = await api.trigger("/users");
+      expect(result.raw).toBe("upper-base");
+    });
   });
 });
