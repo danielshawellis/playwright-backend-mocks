@@ -22,9 +22,24 @@ The living suite is [`tests/parity/`](./tests/parity/). Details: [`research/play
 
 ---
 
-## 2. Code tracks Playwright one-to-one
+## 2. Complete parity with Playwright interception
 
-The public API aims for near one-to-one parity with Playwright’s analogous APIs. The implementation should too.
+For HTTP (Ajax and outbound requests generally) and WebSockets, this library should work the same way as Playwright’s interception APIs — same semantics, same options, same awkward edges.
+
+Exceptions are a **narrow, deliberate set**, not a soft “mostly like Playwright”:
+
+- **Browser-only concerns** that have no Node analogue (e.g. the cookie jar, CORS auto-headers, navigation quirks).
+- **Small library additions** required by Node / multi-process reality (e.g. `clientId` on matchers).
+
+Outside that set: complete parity. Do not invent divergent behavior for convenience.
+
+Boundary detail: [`research/rewrite-specification.md`](./research/rewrite-specification.md) §4.
+
+---
+
+## 3. Code tracks Playwright one-to-one
+
+Because the DX is one-to-one, the implementation should be too.
 
 Playwright’s structure makes that feasible. When working on any feature, keep the analogous Playwright core code in view and align naming, layering, and control flow with it deliberately. Do not invent a parallel design where a Playwright-shaped one exists.
 
@@ -32,7 +47,7 @@ Do not vendor Playwright source. Reimplement, with reference paths documented be
 
 ---
 
-## 3. Concurrent tests must not share a route match
+## 4. Concurrent tests must not share a route match
 
 Playwright’s interception is scoped to a page (and thus to one test at a time). Ours is scoped to Node.js processes that often serve many tests concurrently.
 
