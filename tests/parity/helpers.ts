@@ -1,6 +1,7 @@
 export const UPSTREAM = "http://127.0.0.1:4001";
 export const HARNESS = "http://127.0.0.1:3000";
 export const WS_UPSTREAM = "ws://127.0.0.1:4002";
+export const WS_UPSTREAM_HTTP = "http://127.0.0.1:4002";
 /** Node downstream HTTP + control-plane WebSocket host. */
 export const NODE_DOWNSTREAM = "http://127.0.0.1:3001";
 export const NODE_CONTROL_WS = "ws://127.0.0.1:3001/control";
@@ -31,17 +32,20 @@ export type TriggerResult =
       statusText: string;
       headers: Record<string, string>;
       raw: string;
+      /** Raw response bytes as base64 (portable binary assertions). */
+      bodyBase64: string;
       data: unknown;
       error?: undefined;
     }
   | {
       ok: false;
       error: string;
-      status?: undefined;
-      statusText?: undefined;
-      headers?: undefined;
-      raw?: undefined;
-      data?: undefined;
+      status?: number;
+      statusText?: string;
+      headers?: Record<string, string>;
+      raw?: string;
+      bodyBase64?: string;
+      data?: unknown;
     };
 
 export function headerValue(
@@ -58,4 +62,14 @@ export function headerValue(
     }
   }
   return undefined;
+}
+
+/** Decode a trigger bodyBase64 payload to a Buffer. */
+export function bodyFromBase64(bodyBase64: string | undefined): Buffer {
+  return Buffer.from(bodyBase64 ?? "", "base64");
+}
+
+/** Small delay helper for stall / race assertions (not a Playwright page API). */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

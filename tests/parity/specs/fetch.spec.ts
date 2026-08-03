@@ -1,4 +1,4 @@
-import { test, expect, UPSTREAM } from "../harness.js";
+import { test, expect, UPSTREAM, headerValue } from "../harness.js";
 
 test.describe("route.fetch", () => {
   test("fetches original request and fulfills", async ({ route, trigger }) => {
@@ -15,7 +15,7 @@ test.describe("route.fetch", () => {
     ]);
   });
 
-  test("fulfills with fetch result and overrides", async ({ route, trigger, page }) => {
+  test("fulfills with fetch result and overrides", async ({ route, trigger }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       const response = await r.fetch();
       const users = (await response.json()) as Array<{
@@ -29,16 +29,15 @@ test.describe("route.fetch", () => {
         headers: {
           "content-type": "application/json",
           foo: "bar",
+          "access-control-expose-headers": "*",
         },
         json: users,
       });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.status).toBe(201);
-    expect(response.headers().foo).toBe("bar");
+    expect(headerValue(result.headers, "foo")).toBe("bar");
     expect(result.data).toEqual([
       { id: 1, name: "Ada" },
       { id: 2, name: "Grace" },

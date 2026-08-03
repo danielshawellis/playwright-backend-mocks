@@ -1,5 +1,4 @@
-import { test, expect, UPSTREAM } from "../harness.js";
-import { headerValue } from "../helpers.js";
+import { test, expect, UPSTREAM, headerValue, sleep } from "../harness.js";
 
 test.describe("route.continue", () => {
   test("sends the request upstream", async ({ route, trigger }) => {
@@ -140,7 +139,7 @@ test.describe("route.continue", () => {
     expect(seenLength).toBe(large.length);
   });
 
-  test("pauses a fetch request until continue", async ({ route, trigger, page }) => {
+  test("pauses a fetch request until continue", async ({ route, trigger }) => {
     let continueRoute: (() => void) | undefined;
     const barrier = new Promise<void>((resolve) => {
       continueRoute = resolve;
@@ -157,7 +156,7 @@ test.describe("route.continue", () => {
       return result;
     });
 
-    await page.waitForTimeout(200);
+    await sleep(200);
     expect(settled).toBe(false);
     continueRoute?.();
     const result = await pending;
@@ -326,7 +325,7 @@ test.describe("route.continue", () => {
   test("rejects url override that changes the protocol", async ({
     route,
     trigger,
-    page,
+    unrouteAll,
   }) => {
     let message = "";
     await route(`${UPSTREAM}/users`, async (r) => {
@@ -341,18 +340,18 @@ test.describe("route.continue", () => {
 
     const result = await Promise.race([
       trigger("/users"),
-      page.waitForTimeout(500).then(() => ({ timeout: true as const })),
+      sleep(500).then(() => ({ timeout: true as const })),
     ]);
 
     expect(message).toMatch(/same protocol/i);
     expect(result).toEqual({ timeout: true });
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("rejects https url override when the original protocol is http", async ({
     route,
     trigger,
-    page,
+    unrouteAll,
   }) => {
     let message = "";
     await route(`${UPSTREAM}/users`, async (r) => {
@@ -365,12 +364,12 @@ test.describe("route.continue", () => {
 
     const result = await Promise.race([
       trigger("/users"),
-      page.waitForTimeout(500).then(() => ({ timeout: true as const })),
+      sleep(500).then(() => ({ timeout: true as const })),
     ]);
 
     expect(message).toMatch(/same protocol/i);
     expect(result).toEqual({ timeout: true });
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("ignores forbidden Content-Length header overrides", async ({

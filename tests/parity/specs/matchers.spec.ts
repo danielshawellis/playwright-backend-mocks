@@ -121,16 +121,12 @@ test.describe("matchers", () => {
     ]);
   });
 
-  test("throws on an invalid glob pattern", async ({ page }) => {
-    let error: Error | undefined;
-    try {
-      await page.route("http://127.0.0.1:4001/{unclosed", async (r) => {
+  test("throws on an invalid glob pattern", async ({ route }) => {
+    await expect(
+      route("http://127.0.0.1:4001/{unclosed", async (r) => {
         await r.fallback();
-      });
-    } catch (e) {
-      error = e as Error;
-    }
-    expect(error).toBeTruthy();
+      }),
+    ).rejects.toThrow();
   });
 
   test("only the matching handler runs", async ({ route, trigger }) => {
@@ -157,36 +153,31 @@ test.describe("matchers", () => {
     expect(result.data).toEqual({ mocked: true });
   });
 
-  test("resolves relative glob strings against baseURL", async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: UPSTREAM });
-    const page = await context.newPage();
-    await page.goto("http://127.0.0.1:3000/");
-    await page.route("/users", async (r) => {
-      await r.fulfill({ status: 200, json: { via: "baseURL" } });
-    });
+  test("resolves relative glob strings against baseURL", async ({
+    withIsolatedDownstream,
+  }) => {
+    await withIsolatedDownstream({ baseURL: UPSTREAM }, async (api) => {
+      await api.route("/users", async (r) => {
+        await r.fulfill({ status: 200, json: { via: "baseURL" } });
+      });
 
-    const result = await page.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.json();
-    }, `${UPSTREAM}/users`);
-    expect(result).toEqual({ via: "baseURL" });
-    await context.close();
+      const result = await api.trigger("/users");
+      expect(result.data).toEqual({ via: "baseURL" });
+    });
   });
 
   test("route() returns a Disposable that unregisters the handler", async ({
-    page,
+    route,
     trigger,
-    harnessPage,
   }) => {
-    void harnessPage;
-    const registration = await page.route(`${UPSTREAM}/users`, async (r) => {
+    const registration = await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({ status: 200, body: "disposable" });
     });
 
     const first = await trigger("/users");
     expect(first.raw).toBe("disposable");
 
-    await registration.dispose();
+    registration[Symbol.dispose]();
     const second = await trigger("/users");
     expect(second.data).toEqual([
       { id: 1, name: "Ada" },
@@ -259,23 +250,22 @@ test.describe("matchers", () => {
   });
 
   test("a pattern starting with * is not resolved against baseURL", async ({
-    browser,
+    withIsolatedDownstream,
   }) => {
-    const context = await browser.newContext({
-      baseURL: "http://base-url.invalid/nested/",
-    });
-    const page = await context.newPage();
-    await page.goto("http://127.0.0.1:3000/");
-    await page.route("**/users", async (r) => {
-      await r.fulfill({ status: 200, json: { matchedWithoutBaseURL: true } });
-    });
+    await withIsolatedDownstream(
+      { baseURL: "http://base-url.invalid/nested/" },
+      async (api) => {
+        await api.route("**/users", async (r) => {
+          await r.fulfill({
+            status: 200,
+            json: { matchedWithoutBaseURL: true },
+          });
+        });
 
-    const result = await page.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.json();
-    }, `${UPSTREAM}/users`);
-    expect(result).toEqual({ matchedWithoutBaseURL: true });
-    await context.close();
+        const result = await api.trigger("/users");
+        expect(result.data).toEqual({ matchedWithoutBaseURL: true });
+      },
+    );
   });
 
   test("an empty string matcher matches every URL", async ({ route, trigger }) => {
@@ -308,34 +298,27 @@ test.describe("matchers", () => {
     expect(miss.status).toBe(404);
   });
 
-  test("nested braces in a glob throw at registration", async ({ page }) => {
+  test("nested braces in a glob throw at registration", async ({ route }) => {
     await expect(
-      page.route("http://example.com/{a{b,c}}", async (r) => r.fallback()),
+      route("http://example.com/{a{b,c}}", async (r) => r.fallback()),
     ).rejects.toThrow(/nested/i);
   });
 
-  test("unmatched closing brace in a glob throws at registration", async ({ page }) => {
+  test("unmatched closing brace in a glob throws at registration", async ({ route }) => {
     await expect(
-      page.route("http://example.com/a}", async (r) => r.fallback()),
+      route("http://example.com/a}", async (r) => r.fallback()),
     ).rejects.toThrow(/}/);
   });
 
   test("HTTP relative matcher works with an uppercase-scheme baseURL", async ({
-    browser,
+    withIsolatedDownstream,
   }) => {
-    const context = await browser.newContext({
-      baseURL: "HTTP://127.0.0.1:4001/",
+    await withIsolatedDownstream({ baseURL: "HTTP://127.0.0.1:4001/" }, async (api) => {
+      await api.route("/users", async (r) => {
+        await r.fulfill({ status: 200, body: "upper-base" });
+      });
+      const result = await api.trigger("/users");
+      expect(result.raw).toBe("upper-base");
     });
-    const page = await context.newPage();
-    await page.goto("http://127.0.0.1:3000/");
-    await page.route("/users", async (r) => {
-      await r.fulfill({ status: 200, body: "upper-base" });
-    });
-    const result = await page.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.text();
-    }, `${UPSTREAM}/users`);
-    expect(result).toBe("upper-base");
-    await context.close();
   });
 });

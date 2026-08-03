@@ -462,18 +462,20 @@ URL glob matching follows a Playwright-like algorithm (`*` / `**`). Method and c
 
 ---
 
-## Application WebSockets (Step 2 draft)
+## Application WebSockets (Step 2)
 
-Control-plane traffic above is unrelated to **application** WebSockets. App sockets need a session-oriented companion to HTTP pause/settle. Exact Zod schemas land with the rewrite; shapes below mirror Playwright’s `WebSocketRoute` channel / injected mock (see [`playwright-network-parity.md`](./playwright-network-parity.md) §1b / §8).
+Control-plane traffic above is unrelated to **application** WebSockets. App sockets use a session-oriented companion to HTTP pause/settle. Zod schemas land in `packages/protocol` during Step 2; message shapes below are the intended wire contract (mirror Playwright’s `WebSocketRoute` channel / injected mock — see [`playwright-network-parity.md`](./playwright-network-parity.md) §1b / §8).
+
+**Coverage:** only `globalThis.WebSocket` (WHATWG). npm `ws` and direct-import constructors bypass interception — document loudly (rewrite-spec §4).
 
 ### Registration
 
 - Playwright registers WS handlers similarly to HTTP routes (`kind: "websocket"` or dedicated `wsRoute:*` messages).
 - `unrouteAll` **must not** clear WebSocket routes (Playwright quirk).
 - Matching uses Playwright-like URL rules with `webSocket=true`; predicates stay on the worker via claim broadcast.
-- Zero matches → passthrough (real upstream). One owning `testId` → newest handler. Multiple `testId`s → `ambiguous_route`.
+- Zero matches → passthrough (real upstream). One owning `testId` → newest handler only (no WS fallback chain). Multiple `testId`s → `ambiguous_route`.
 
-### Node → Proxy → Playwright (illustrative)
+### Node → Proxy → Playwright
 
 ```ts
 { type: "ws:connection"; socketId: string; url: string; protocols: string[]; clientId: string }
@@ -483,7 +485,7 @@ Control-plane traffic above is unrelated to **application** WebSockets. App sock
 { type: "ws:closeServer"; socketId: string; code?: number; reason?: string; wasClean: boolean }
 ```
 
-### Playwright → Proxy → Node (illustrative)
+### Playwright → Proxy → Node
 
 ```ts
 { type: "ws:passthrough"; socketId: string }
@@ -495,7 +497,7 @@ Control-plane traffic above is unrelated to **application** WebSockets. App sock
 { type: "ws:closeServer"; socketId: string; code?: number; reason?: string; wasClean: boolean }
 ```
 
-Node applies these via `@mswjs/interceptors` `WebSocketInterceptor` plus a product bridge for Playwright open/close timing (`ensureOpened`, send-during-`CONNECTING`, connect-then-real-`onopen`). Only `globalThis.WebSocket` is in scope.
+Node applies these via `@mswjs/interceptors` `WebSocketInterceptor` plus a product bridge for Playwright open/close timing (`ensureOpened`, send-during-`CONNECTING`, connect-then-real-`onopen`).
 
 ## Compatibility
 

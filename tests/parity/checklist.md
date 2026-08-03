@@ -107,6 +107,8 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | npm `ws` / non-global WebSocket constructors             | Step 2 divergence — `globalThis.WebSocket` only             |
 | General `APIRequestContext` client                       | OOS except as `route.fetch` engine                          |
 | Resource timing / TLS                                    | Browser / TLS                                               |
+| WS DOM `error` event / post-connect `binaryType` change  | Not on dual-mode `DownstreamSocket` surface                 |
+| Sync DOM `CLOSING` / Blob-vs-text overtake races         | Browser WebSocket client quirks; not portable via harness   |
 
 ## Library-only (not in this suite)
 

@@ -73,6 +73,7 @@ ${sharedWs}
               statusText: xhr.statusText,
               headers: headersObj,
               raw: xhr.responseText,
+              bodyBase64: btoa(xhr.responseText),
               data,
             });
           };

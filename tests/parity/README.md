@@ -12,6 +12,10 @@ Step 1 of the rewrite ([`research/rewrite-specification.md`](../../research/rewr
 
 See [`research/playwright-network-parity.md`](../../research/playwright-network-parity.md) for HTTP + WebSocket source mapping. Bump pins deliberately when refreshing the oracle against a newer Playwright.
 
+## Dual-mode philosophy
+
+Specs exercise **one** developer-facing routing surface through `harness.ts`. Upstream is always Node. Downstream outbound code is always `fixtures/downstream`. Only the host switches (`PARITY_MODE=browser|node`). See [`downstream.md`](./downstream.md).
+
 ## Modes
 
 ```bash
@@ -20,13 +24,11 @@ pnpm test:parity:node       # PARITY_MODE=node — Node downstream control plane
 PARITY_NODE_FULL=1 pnpm test:parity:node   # full suite in node mode (mostly red until Step 2)
 ```
 
-Browser mode imports **only** `@playwright/test` for routing. Node mode uses the same specs; `route` / waiters throw until Step 2 wires `backendMocks`.
-
-See [`downstream.md`](./downstream.md) for the shared downstream + control-plane WebSocket design.
+Browser mode imports **only** `@playwright/test` for routing (via the harness). Node mode uses the same specs; routing fixtures throw until Step 2 wires `backendMocks`.
 
 ## Layout
 
-- `harness.ts` — thin dual-mode seam (`route` / `routeFromHAR` / `trigger` / `openDownstreamSocket` / waiters / …)
+- `harness.ts` — thin dual-mode seam (`route` / `routeWebSocket` / `routeFromHAR` / `trigger` / `openDownstreamSocket` / waiters / `withIsolatedDownstream`)
 - `node-control.ts` — Playwright ↔ Node control-plane client
 - `specs/` — scenarios adapted from Playwright’s network suite + checklist gaps
 - `specs/smoke-passthrough.spec.ts` — HTTP + WS passthrough green in both modes

@@ -1,5 +1,7 @@
 # Public API Plan
 
+Aligned with [`rewrite-specification.md`](./rewrite-specification.md) §4 and the living oracle in [`tests/parity/`](../tests/parity/).
+
 ## Packages
 
 | Package                                | Purpose                              | Publish                                          |
@@ -77,11 +79,33 @@ type BackendMocksWorkerOptions = {
 
 ```ts
 interface BackendMocks {
-  route(url: string | RegExp | RouteMatcherObject, handler: RouteHandler): Promise<void>;
+  route(
+    url: string | RegExp | ((url: URL) => boolean) | URLPattern | RouteMatcherObject,
+    handler: RouteHandler,
+    options?: { times?: number },
+  ): Promise<{ [Symbol.dispose](): void }>;
 
   unroute(
     url?: string | RegExp | RouteMatcherObject,
     handler?: RouteHandler,
+  ): Promise<void>;
+
+  unrouteAll(options?: { behavior?: "wait" | "ignoreErrors" | "default" }): Promise<void>;
+
+  /**
+   * Playwright-compatible HAR record/replay.
+   * Same HAR files / options as `page.routeFromHAR`
+   * (`url`, `update`, `updateMode`, `updateContent`, `notFound`).
+   */
+  routeFromHAR(
+    file: string,
+    options?: {
+      url?: string | RegExp | ((url: URL) => boolean);
+      update?: boolean;
+      updateMode?: "full" | "minimal";
+      updateContent?: "embed" | "attach";
+      notFound?: "abort" | "fallback";
+    },
   ): Promise<void>;
 
   /**
@@ -94,11 +118,15 @@ interface BackendMocks {
     handler: (ws: WebSocketRoute) => void | Promise<void>,
   ): Promise<void>;
 
-  /** Wait for a matching request observed by the proxy. */
   waitForRequest(
-    url: string | RegExp | RouteMatcherObject,
-    options?: { timeout?: number; method?: string },
+    url: string | RegExp | ((request: BackendRequest) => boolean | Promise<boolean>),
+    options?: { timeout?: number; signal?: AbortSignal },
   ): Promise<BackendRequest>;
+
+  waitForResponse(
+    url: string | RegExp | ((response: BackendResponse) => boolean | Promise<boolean>),
+    options?: { timeout?: number; signal?: AbortSignal },
+  ): Promise<BackendResponse>;
 
   /** Snapshot of requests observed during this test (optionally filtered). */
   requests(
@@ -111,13 +139,13 @@ interface BackendMocks {
 
 ```ts
 interface RouteMatcherObject {
-  readonly url?: string | RegExp;
+  readonly url?: string | RegExp | ((url: URL) => boolean) | URLPattern;
   readonly method?: string | readonly string[];
   readonly clientId?: string | readonly string[];
 }
 ```
 
-String matchers use Playwright-style globs (`*`, `**`). RegExp is serialized by `source` + `flags`.
+String matchers use Playwright-style globs (`*`, `**`). RegExp is serialized by `source` + `flags`. Predicates stay in the Playwright worker (claim broadcast).
 
 ### `Route` (handler argument)
 
@@ -131,6 +159,7 @@ interface BackendRoute {
   request(): BackendRequest;
   fulfill(options?: FulfillOptions): Promise<void>;
   continue(options?: ContinueOptions): Promise<void>;
+  fallback(options?: ContinueOptions): Promise<void>;
   fetch(options?: FetchOptions): Promise<BackendResponse>;
   abort(errorCode?: BackendErrorCode): Promise<void>;
 }
@@ -141,52 +170,94 @@ interface FulfillOptions {
   readonly body?: string | Buffer | Uint8Array;
   readonly json?: unknown;
   readonly contentType?: string;
-  readonly path?: string; // read file and use as body
-  readonly response?: BackendResponse; // from fetch()
+  readonly path?: string;
+  readonly response?: BackendResponse;
 }
 
 interface ContinueOptions {
   readonly url?: string;
   readonly method?: string;
   readonly headers?: Record<string, string>;
-  readonly postData?: string | Buffer | Uint8Array;
+  readonly postData?: string | Buffer | Uint8Array | object;
 }
 
 interface FetchOptions extends ContinueOptions {
   readonly timeout?: number;
+  readonly maxRedirects?: number;
+  readonly maxRetries?: number;
 }
 
 type BackendErrorCode =
   | "failed"
   | "aborted"
-  | "timedout"
+  | "accessdenied"
+  | "addressunreachable"
+  | "blockedbyclient"
+  | "blockedbyresponse"
+  | "connectionaborted"
+  | "connectionclosed"
+  | "connectionfailed"
   | "connectionrefused"
   | "connectionreset"
-  | "namenotresolved";
+  | "internetdisconnected"
+  | "namenotresolved"
+  | "timedout";
 ```
+
+### `WebSocketRoute`
+
+Mirrors Playwright’s `WebSocketRoute`:
+
+```ts
+interface WebSocketRoute {
+  url(): string;
+  protocols(): string[];
+  connectToServer(): WebSocketRoute;
+  send(message: string | Buffer): void;
+  close(options?: { code?: number; reason?: string }): Promise<void>;
+  onMessage(handler: (message: string | Buffer) => void): void;
+  onClose(handler: (code?: number, reason?: string) => void): void;
+}
+```
+
+Newest matching WS handler wins (no fallback chain). Installing `onMessage` / `onClose` disables that direction’s auto-forward after `connectToServer()`.
 
 ### `BackendRequest` / `BackendResponse`
 
 ```ts
 interface BackendRequest {
-  readonly url: string;
-  readonly method: string;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly postData: string | null;
-  readonly postDataBuffer: Buffer | null;
+  url(): string;
+  method(): string;
+  headers(): Record<string, string>;
+  allHeaders(): Promise<Record<string, string>>;
+  headersArray(): Promise<Array<{ name: string; value: string }>>;
+  headerValue(name: string): Promise<string | null>;
+  postData(): string | null;
+  postDataBuffer(): Buffer | null;
+  postDataJSON(): unknown;
   readonly clientId: string;
-  json(): unknown;
+  failure(): { errorText: string } | null;
+  response(): Promise<BackendResponse | null>;
+  // Redirect chain helpers where the library observes them:
+  redirectedFrom(): BackendRequest | null;
+  redirectedTo(): BackendRequest | null;
 }
 
 interface BackendResponse {
-  readonly status: number;
-  readonly statusText: string;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: Buffer;
-  text(): string;
-  json(): unknown;
+  url(): string;
+  status(): number;
+  statusText(): string;
+  ok(): boolean;
+  headers(): Record<string, string>;
+  headersArray(): Array<{ name: string; value: string }>;
+  body(): Promise<Buffer>;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+  dispose(): Promise<void>;
 }
 ```
+
+Exact helper surface should track the oracle (`tests/parity/specs/inspection.spec.ts`, `fetch.spec.ts`) during Step 2.
 
 ---
 
