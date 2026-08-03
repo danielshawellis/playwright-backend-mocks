@@ -101,4 +101,5 @@ These behaviors are sufficient for the v1 design.
 
 ## Related plans
 
+- [Rewrite Specification](./rewrite-specification.md) — archive the prototype, oracle suite against Playwright, then high-parity reimplementation (the plan to execute).
 - [Playwright Parity via Oracle-Suite TDD](./playwright-parity-tdd.md) — write the request-routing suite against Playwright itself first, then switch the same suite onto this library.
