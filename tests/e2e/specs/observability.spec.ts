@@ -7,7 +7,7 @@ test.describe("proxy observability", () => {
     expect(health.status()).toBe(200);
     expect(await health.json()).toMatchObject({
       ok: true,
-      protocolVersion: 1,
+      protocolVersion: 2,
     });
   });
 

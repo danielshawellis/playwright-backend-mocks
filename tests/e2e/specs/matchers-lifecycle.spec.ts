@@ -78,6 +78,65 @@ test.describe("matchers", () => {
     expect(workerBody.clientId).toBe("job-worker");
     expect(workerBody.data).toEqual([{ id: 3, name: "WorkerOnly" }]);
   });
+
+  test("matches Playwright-style URL predicates", async ({ request, backendMocks }) => {
+    await backendMocks.route(
+      (url) => url.hostname === "127.0.0.1" && url.pathname === "/users",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          json: [{ id: 4, name: "Predicate" }],
+        });
+      },
+    );
+
+    const response = await callVia(request, "fetch", "/users");
+    const body = await readProxyJson(response);
+    expect(body.data).toEqual([{ id: 4, name: "Predicate" }]);
+  });
+
+  test("combines predicates with method filters", async ({ request, backendMocks }) => {
+    await backendMocks.route(
+      {
+        url: (url) => url.pathname === "/echo",
+        method: "POST",
+      },
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          json: { mocked: true, via: "predicate" },
+        });
+      },
+    );
+
+    const getResponse = await callVia(request, "fetch", "/echo");
+    const getBody = await readProxyJson(getResponse);
+    expect(getBody.data).toMatchObject({ method: "GET" });
+    expect(getBody.data).not.toMatchObject({ mocked: true });
+
+    const postResponse = await callVia(request, "fetch", "/echo", {
+      method: "POST",
+      data: { hello: "predicate" },
+    });
+    const postBody = await readProxyJson(postResponse);
+    expect(postBody.data).toEqual({ mocked: true, via: "predicate" });
+  });
+
+  test("non-matching predicates pass through", async ({ request, backendMocks }) => {
+    await backendMocks.route(
+      (url) => url.pathname === "/never-matches",
+      async (route) => {
+        await route.fulfill({ json: { mocked: true } });
+      },
+    );
+
+    const response = await callVia(request, "fetch", "/users");
+    const body = await readProxyJson(response);
+    expect(body.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
 });
 
 test.describe("lifecycle", () => {

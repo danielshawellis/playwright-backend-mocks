@@ -10,7 +10,6 @@ v1 optimizes for the common Playwright + Node HTTP mocking case. Unsupported beh
 | WebSockets                        | App WS traffic is not intercepted                               |
 | gRPC / raw TCP                    | HTTP/HTTPS only                                                 |
 | Streaming request/response bodies | Bodies are fully buffered; streaming failures surface as errors |
-| Predicate matchers                | Matchers must be serializable (string / RegExp / object)        |
 | Auto-reconnect                    | If the proxy dies, restart the agent against a running proxy    |
 
 ## Interception coverage

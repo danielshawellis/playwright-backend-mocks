@@ -11,6 +11,7 @@ Options:
   --history-limit <n>        In-memory history size (default: 1000)
   --heartbeat-ms <ms>        Ping interval (default: 15000)
   --idle-timeout-ms <ms>     Idle disconnect timeout (default: 60000)
+  --claim-timeout-ms <ms>    Wait for Playwright route claims (default: 5000)
   --log-level <level>        silent|error|warn|info|debug (default: info)
   -h, --help                 Show help
 `);
@@ -55,6 +56,12 @@ function parseArgs(argv: string[]) {
     throw new Error(`Invalid --idle-timeout-ms: ${idleRaw}`);
   }
 
+  const claimRaw = readFlag(argv, "--claim-timeout-ms") ?? "5000";
+  const claimTimeoutMs = Number(claimRaw);
+  if (!Number.isInteger(claimTimeoutMs) || claimTimeoutMs <= 0) {
+    throw new Error(`Invalid --claim-timeout-ms: ${claimRaw}`);
+  }
+
   const logLevel = (readFlag(argv, "--log-level") ?? "info") as LogLevel;
   const allowed: LogLevel[] = ["silent", "error", "warn", "info", "debug"];
   if (!allowed.includes(logLevel)) {
@@ -69,6 +76,7 @@ function parseArgs(argv: string[]) {
     historyLimit,
     heartbeatMs,
     idleTimeoutMs,
+    claimTimeoutMs,
     logLevel,
     ...(token !== undefined ? { token } : {}),
   };

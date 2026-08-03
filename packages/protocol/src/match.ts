@@ -29,6 +29,12 @@ export function matchSerializedMatcher(
   matcher: SerializedMatcher,
   input: MatchInput,
 ): boolean {
+  // Predicate bodies only exist in Playwright workers. A serialized marker must
+  // not behave like an unconstrained matcher in the proxy or other processes.
+  if (matcher.predicate === true) {
+    return false;
+  }
+
   const { request, clientId } = input;
 
   if (matcher.methods !== undefined && matcher.methods.length > 0) {

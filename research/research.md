@@ -11,7 +11,7 @@ Playwright’s browser-side routing is the DX target:
 - Terminal actions: `fulfill`, `continue`, `abort`
 - Non-terminal: `fetch` (perform upstream, return response for modification), `fallback` (next handler)
 
-Matchers may be a string glob, RegExp, or predicate function. Predicate functions are not serializable across process boundaries, so v1 supports string globs and RegExp (serialized as `{ source, flags }`).
+Matchers may be a string glob, RegExp, or predicate function. Predicates are evaluated in Playwright workers during claim broadcast; the proxy only stores a `predicate: true` marker for diagnostics.
 
 `mergeTests()` composes fixture modules. Exporting a fixture-enabled `test` from `@playwright-backend-mocks/playwright` is the right integration point. Proxy URL is configured via a Playwright fixture option (`backendMocksProxyUrl`) with an env-var fallback.
 

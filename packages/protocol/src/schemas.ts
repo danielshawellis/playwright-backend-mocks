@@ -48,6 +48,8 @@ export const serializedMatcherSchema = z.object({
   urlRegex: urlRegexSchema.optional(),
   methods: z.array(z.string()).optional(),
   clientIds: z.array(z.string()).optional(),
+  /** Present when the live matcher is a predicate evaluated in Playwright. */
+  predicate: z.boolean().optional(),
 });
 
 export type SerializedMatcher = z.infer<typeof serializedMatcherSchema>;
@@ -206,6 +208,16 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
     ]),
   }),
   z.object({
+    type: z.literal("request:claim-result"),
+    requestId: z.string(),
+    testId: z.string(),
+    matches: z.array(
+      z.object({
+        routeId: z.string(),
+      }),
+    ),
+  }),
+  z.object({
     type: z.literal("history:query"),
     queryId: z.string(),
     testId: z.string().optional(),
@@ -266,9 +278,21 @@ export const proxyToClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("decision:error"),
     requestId: z.string(),
-    code: z.enum(["ambiguous_route", "handler_failed", "disconnected", "internal"]),
+    code: z.enum([
+      "ambiguous_route",
+      "handler_failed",
+      "disconnected",
+      "internal",
+      "claim_timeout",
+    ]),
     message: z.string(),
     matches: z.array(routeMatchDiagnosticSchema).optional(),
+  }),
+  z.object({
+    type: z.literal("request:claim"),
+    requestId: z.string(),
+    request: serializedRequestSchema,
+    clientId: z.string(),
   }),
   z.object({
     type: z.literal("request:matched"),

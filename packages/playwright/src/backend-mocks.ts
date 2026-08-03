@@ -4,7 +4,6 @@ import {
   decodeBody,
   decodeBodyText,
   encodeBody,
-  matchSerializedMatcher,
   normalizeHeaders,
   type HistoryEntry,
   type ProxyToClientMessage,
@@ -13,12 +12,14 @@ import {
   type SerializedResponse,
 } from "@playwright-backend-mocks/protocol";
 import type { PlaywrightProxyConnection } from "./connection.js";
+import { matchRouteMatcher } from "./match.js";
 import {
   createRouteFromJSONSession,
   flushRouteFromJSONSession,
   type RouteFromJSONSession,
 } from "./route-from-json.js";
 import {
+  getRouteUrlPredicate,
   toSerializedMatcher,
   type BackendMocks,
   type BackendRequest,
@@ -64,6 +65,29 @@ export function createBackendMocks(options: {
 
   async function handleMessage(message: ProxyToClientMessage): Promise<void> {
     switch (message.type) {
+      case "request:claim": {
+        if (routes.length === 0) {
+          return;
+        }
+        const matches: Array<{ routeId: string }> = [];
+        for (const route of routes) {
+          if (
+            matchRouteMatcher(route.matcherInput, {
+              request: message.request,
+              clientId: message.clientId,
+            })
+          ) {
+            matches.push({ routeId: route.routeId });
+          }
+        }
+        connection.send({
+          type: "request:claim-result",
+          requestId: message.requestId,
+          testId,
+          matches,
+        });
+        return;
+      }
       case "request:matched": {
         if (message.testId !== testId) {
           return;
@@ -255,21 +279,24 @@ export function createBackendMocks(options: {
     },
 
     async waitForRequest(url, options = {}) {
-      const matcher = toSerializedMatcher(url, options.method);
       const timeout = options.timeout ?? 30_000;
       const started = Date.now();
 
       while (Date.now() - started < timeout) {
         const found = observed.find((request) =>
-          matchSerializedMatcher(matcher, {
-            request: {
-              url: request.url,
-              method: request.method,
-              headers: { ...request.headers },
-              bodyBase64: encodeBody(request.postDataBuffer),
+          matchRouteMatcher(
+            url,
+            {
+              request: {
+                url: request.url,
+                method: request.method,
+                headers: { ...request.headers },
+                bodyBase64: encodeBody(request.postDataBuffer),
+              },
+              clientId: request.clientId,
             },
-            clientId: request.clientId,
-          }),
+            options.method,
+          ),
         );
         if (found) {
           return found;
@@ -278,7 +305,7 @@ export function createBackendMocks(options: {
       }
 
       throw new Error(
-        `Timed out waiting for backend request matching ${JSON.stringify(matcher)}`,
+        `Timed out waiting for backend request matching ${describeMatcher(url, options.method)}`,
       );
     },
 
@@ -286,9 +313,8 @@ export function createBackendMocks(options: {
       if (url === undefined) {
         return [...observed];
       }
-      const matcher = toSerializedMatcher(url);
       return observed.filter((request) =>
-        matchSerializedMatcher(matcher, {
+        matchRouteMatcher(url, {
           request: {
             url: request.url,
             method: request.method,
@@ -332,9 +358,46 @@ export function createBackendMocks(options: {
 }
 
 function matcherEquals(a: RouteMatcherInput, b: RouteMatcherInput): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  const predicateA = getRouteUrlPredicate(a);
+  const predicateB = getRouteUrlPredicate(b);
+  if (predicateA !== undefined || predicateB !== undefined) {
+    if (predicateA !== predicateB) {
+      return false;
+    }
+    return (
+      JSON.stringify(toSerializedMatcher(stripMatcherUrl(a))) ===
+      JSON.stringify(toSerializedMatcher(stripMatcherUrl(b)))
+    );
+  }
+
   return (
     JSON.stringify(toSerializedMatcher(a)) === JSON.stringify(toSerializedMatcher(b))
   );
+}
+
+function stripMatcherUrl(input: RouteMatcherInput): RouteMatcherInput {
+  if (typeof input === "function") {
+    return {};
+  }
+  if (typeof input === "object" && !(input instanceof RegExp)) {
+    return {
+      ...(input.method !== undefined ? { method: input.method } : {}),
+      ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+    };
+  }
+  return input;
+}
+
+function describeMatcher(input: RouteMatcherInput, methodFilter?: string): string {
+  if (getRouteUrlPredicate(input) !== undefined) {
+    const serialized = toSerializedMatcher(input, methodFilter);
+    return `predicate${serialized.methods ? ` methods=${serialized.methods.join(",")}` : ""}`;
+  }
+  return JSON.stringify(toSerializedMatcher(input, methodFilter));
 }
 
 function toBackendRequest(request: SerializedRequest, clientId: string): BackendRequest {

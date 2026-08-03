@@ -17,8 +17,8 @@ flowchart TB
 ```
 
 1. **Node agent** pauses an outbound request and asks the proxy what to do.
-2. **Proxy** matches the request against routes registered by Playwright tests.
-3. **Playwright fixture** runs your route handler and returns a decision (`fulfill`, `continue`, `abort`, or a `fetch` round-trip).
+2. **Proxy** asks every Playwright test with active routes whether it claims the request, waits for all replies, then picks an owner (or passthrough / ambiguous failure).
+3. **Playwright fixture** evaluates matchers locally, runs the winning route handler, and returns a decision (`fulfill`, `continue`, `abort`, or a `fetch` round-trip).
 
 You almost never interact with the protocol directly. You write tests against `backendMocks` and start the agent + proxy around your app.
 
@@ -36,9 +36,9 @@ You almost never interact with the protocol directly. You write tests against `b
 ## Route lifecycle
 
 1. A test calls `backendMocks.route(matcher, handler)`.
-2. The fixture registers that matcher with the proxy for the current `testId`.
-3. When a Node agent reports an outbound request, the proxy finds matching routes.
-4. On a single match, your handler runs and must settle with `fulfill`, `continue`, or `abort`.
+2. The fixture keeps the matcher/handler locally and registers the route with the proxy for the current `testId`.
+3. When a Node agent reports an outbound request, the proxy broadcasts a claim to every test with active routes and waits for all replies.
+4. On a single claim, your handler runs and must settle with `fulfill`, `continue`, or `abort`.
 5. When the test ends, routes are unregistered automatically.
 
 ## Matching outcomes
