@@ -39,11 +39,30 @@ Boundary detail: [`research/rewrite-specification.md`](./research/rewrite-specif
 
 ## 3. Code tracks Playwright one-to-one
 
-Because the DX is one-to-one, the implementation should be too.
+Because the DX is one-to-one, the implementation should stay as close as practical to Playwright’s.
 
-Playwright’s structure makes that feasible. When working on any feature, keep the analogous Playwright core code in view and align naming, layering, and control flow with it deliberately. Do not invent a parallel design where a Playwright-shaped one exists.
+Keep the analogous Playwright core beside you while coding. Align naming, layering, and control flow deliberately. Do not invent a parallel design where a Playwright-shaped one exists. Do not vendor Playwright source — reimplement against the pinned revision.
 
-Do not vendor Playwright source. Reimplement, with reference paths documented beside our modules. Parity research: [`research/playwright-network-parity.md`](./research/playwright-network-parity.md).
+### Reference and divergence comments
+
+Every module that mirrors Playwright must make the mapping obvious in source:
+
+1. **Link the Playwright file(s).** At the top of the module (and on non-obvious local analogues), comment the exact GitHub blob URL(s) at the pinned Playwright SHA — path plus revision, not a floating `main` link. Example shape:
+
+   ```ts
+   // Playwright: https://github.com/microsoft/playwright/blob/<pinned-sha>/packages/playwright-core/src/client/network.ts
+   ```
+
+2. **Mark divergences in a searchable way.** Where we intentionally differ, use an all-caps `DIVERGENCE` comment (and close the span with `DIVERGENCE END` when it covers a block). State *what* differs and *why* in one or two lines:
+
+   ```ts
+   // DIVERGENCE: Playwright scopes routes to a page; we scope to Node + testId.
+   // Fail loud on multi-test claim instead of page-local LIFO.
+   ...
+   // DIVERGENCE END
+   ```
+
+No silent drift. If the code is not following Playwright, the comment must say so. Pins and module map: [`research/playwright-network-parity.md`](./research/playwright-network-parity.md).
 
 ---
 
