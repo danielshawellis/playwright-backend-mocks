@@ -36,6 +36,17 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
+  // Minimal document so relative WebSocket URLs resolve against this origin.
+  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/page")) {
+    const body = "<!doctype html><html><body><h1>ws-upstream page</h1></body></html>";
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-length": Buffer.byteLength(body),
+    });
+    res.end(body);
+    return;
+  }
+
   res.writeHead(404);
   res.end();
 });
@@ -65,9 +76,19 @@ httpServer.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit("connection", ws, req);
-  });
+  const upgrade = () => {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  };
+
+  // Delay the upgrade so connectToServer can observe CONNECTING-side buffering.
+  if (url.pathname === "/slow-upgrade") {
+    setTimeout(upgrade, 300);
+    return;
+  }
+
+  upgrade();
 });
 
 wss.on("connection", (ws, req) => {

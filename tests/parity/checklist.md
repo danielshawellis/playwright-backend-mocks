@@ -63,6 +63,18 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | `baseURL` relative pattern (+ uppercase scheme)        | covered |
 | `context.routeWebSocket` + page-over-context win       | covered |
 | Pending async handler stays CONNECTING; `send` opens   | covered |
+| Mock selects first protocol / empty extensions         | covered |
+| Server-side `connectToServer` throws                   | covered |
+| Page send CONNECTING/CLOSED throws; close code rules   | covered |
+| `binaryType=blob` delivery; Blob async reorder         | covered |
+| TypedArray `byteOffset`/`byteLength` slicing           | covered |
+| Relative + `http→ws` constructor URL rewrite           | covered |
+| Predicate catch-all intercept + auto-passthrough       | covered |
+| Invalid glob throws at registration                    | covered |
+| `URLPattern` matcher                                   | covered |
+| Buffer `server.send` while upstream CONNECTING         | covered |
+| `onMessage` not awaited (async non-blocking)           | covered |
+| Empty-string matcher matches all                       | covered |
 
 ## routeFromHAR → routeFromJSON portable cases
 
@@ -76,16 +88,16 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 
 ## Intentional skips
 
-| Topic                                                 | Reason                                                                      |
-| ----------------------------------------------------- | --------------------------------------------------------------------------- |
-| CORS auto-headers, cookie jar, SW, navigation/favicon | Browser-only                                                                |
-| WS frame navigation/detach close, page-closure races  | Browser lifecycle                                                           |
-| DOM `binaryType` Blob vs ArrayBuffer object identity  | Client-specific; shared suite asserts bytes                                 |
-| npm `ws` / non-global WebSocket constructors          | Step 2 divergence — `globalThis.WebSocket` only                             |
-| HAR zip / attach / navigation HAR                     | Non-portable                                                                |
-| Page vs context HTTP precedence                       | Product single `backendMocks` scope (HTTP); WS precedence covered in oracle |
-| General `APIRequestContext` client                    | OOS except as `route.fetch` engine                                          |
-| Resource timing / TLS                                 | Browser / TLS                                                               |
+| Topic                                                 | Reason                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| CORS auto-headers, cookie jar, SW, navigation/favicon | Browser-only                                                                          |
+| WS frame navigation/detach close                      | Browser document lifecycle (`_executionContextGone`); no Node WebSocketRoute analogue |
+| WS page-closure send races                            | Browser `page.close()` lifecycle; no Node WebSocketRoute analogue                     |
+| npm `ws` / non-global WebSocket constructors          | Step 2 divergence — `globalThis.WebSocket` only                                       |
+| HAR zip / attach / navigation HAR                     | Non-portable                                                                          |
+| Page vs context HTTP precedence                       | Product single `backendMocks` scope (HTTP); WS precedence covered in oracle           |
+| General `APIRequestContext` client                    | OOS except as `route.fetch` engine                                                    |
+| Resource timing / TLS                                 | Browser / TLS                                                                         |
 
 ## Library-only (not in this suite)
 

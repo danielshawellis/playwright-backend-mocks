@@ -11,8 +11,13 @@ import type { Page, WebSocketRoute } from "@playwright/test";
  * Portable for later Node `globalThis.WebSocket` parity
  * (see research/rewrite-specification.md §4 — partial client coverage + loud docs).
  *
- * Skips: frame navigation/detach close, page-closure races, DOM binaryType
- * object-identity quirks.
+ * Sourced from Playwright `WebSocketRoute` client (`network.ts`), dispatcher, and
+ * injected `webSocketMock.ts` — including mock open/protocol, Blob async encoding,
+ * TypedArray byteOffset slicing, close-code validation, and predicate catch-all
+ * interception (function matchers expand to all URLs).
+ *
+ * Still skipped (browser document lifecycle only — no Node WebSocketRoute analogue):
+ * frame navigation/detach close, page-closure send races.
  */
 
 async function gotoHarness(page: Page) {
@@ -41,18 +46,26 @@ async function openPageSocket(
       );
       ws.addEventListener("message", (event) => {
         const data = event.data;
-        let rendered: string;
+        const push = (rendered: string) => {
+          (window as unknown as { log: string[] }).log.push(`message:${rendered}`);
+        };
         if (typeof data === "string") {
-          rendered = data;
+          push(data);
         } else if (data instanceof ArrayBuffer) {
           const bytes = Array.from(new Uint8Array(data))
             .map((b) => b.toString(16).padStart(2, "0"))
             .join("");
-          rendered = `buf:${bytes}`;
+          push(`buf:${bytes}`);
+        } else if (typeof Blob !== "undefined" && data instanceof Blob) {
+          void data.arrayBuffer().then((buffer) => {
+            const bytes = Array.from(new Uint8Array(buffer))
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join("");
+            push(`blob:${bytes}`);
+          });
         } else {
-          rendered = `blob`;
+          push("unknown");
         }
-        (window as unknown as { log: string[] }).log.push(`message:${rendered}`);
       });
       ws.addEventListener("close", (event) => {
         (window as unknown as { log: string[] }).log.push(
@@ -984,5 +997,415 @@ test.describe("routeWebSocket", () => {
       .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
       .toEqual(["open", "message:forced"]);
     release();
+  });
+
+  test("mock without server selects the first requested protocol", async ({ page }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {});
+    await gotoHarness(page);
+
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`, {
+      protocols: ["chat.v1", "chat.v2"],
+    });
+    const protocol = await page.evaluate(
+      () => (window as unknown as { ws: WebSocket }).ws.protocol,
+    );
+    expect(protocol).toBe("chat.v1");
+  });
+
+  test("mock without server leaves extensions empty", async ({ page }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {});
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    const extensions = await page.evaluate(
+      () => (window as unknown as { ws: WebSocket }).ws.extensions,
+    );
+    expect(extensions).toBe("");
+  });
+
+  test("server-side connectToServer throws", async ({ page }) => {
+    let message = "";
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      const server = ws.connectToServer();
+      try {
+        server.connectToServer();
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    expect(message).toMatch(/connectToServer must be called on the page-side/i);
+  });
+
+  test("page send while CONNECTING throws", async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, async () => {
+      await gate;
+    });
+    await gotoHarness(page);
+
+    const error = await page.evaluate(async (url) => {
+      const ws = new WebSocket(url);
+      (window as unknown as { ws: WebSocket }).ws = ws;
+      try {
+        ws.send("too-early");
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    }, `${WS_UPSTREAM}/echo`);
+
+    expect(error).toMatch(/CONNECTING/i);
+    release();
+  });
+
+  test("page send after close throws", async ({ page }) => {
+    let route!: WebSocketRoute;
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      route = ws;
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await route.close({ code: 3000, reason: "done" });
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.readyState),
+      )
+      .toBe(3);
+
+    const error = await page.evaluate(() => {
+      try {
+        (window as unknown as { ws: WebSocket }).ws.send("nope");
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    });
+    expect(error).toMatch(/CLOSING or CLOSED/i);
+  });
+
+  test("page close rejects invalid close codes", async ({ page }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {});
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+
+    const error = await page.evaluate(() => {
+      try {
+        (window as unknown as { ws: WebSocket }).ws.close(1001, "bad");
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    });
+    expect(error).toMatch(/close code must be either 1000, or between 3000 and 4999/i);
+  });
+
+  test("page close allows code 1000", async ({ page }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {});
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await page.evaluate(() =>
+      (window as unknown as { ws: WebSocket }).ws.close(1000, "normal"),
+    );
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "close code=1000 reason=normal wasClean=true"]);
+  });
+
+  test("route.close marks wasClean true", async ({ page }) => {
+    let route!: WebSocketRoute;
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      route = ws;
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await route.close({ code: 3005, reason: "clean" });
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "close code=3005 reason=clean wasClean=true"]);
+  });
+
+  test("delivers binary as Blob when binaryType is blob", async ({ page }) => {
+    const bytes = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.onMessage(() => ws.send(bytes));
+    });
+    await gotoHarness(page);
+
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`, { binaryType: "blob" });
+    await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("go"));
+
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", `message:blob:${bytes.toString("hex")}`]);
+  });
+
+  test("Blob sends are encoded asynchronously and can reorder after sync frames", async ({
+    page,
+  }) => {
+    // webSocketMock.messageToData uses Blob.arrayBuffer().then(...) while string
+    // frames call the binding synchronously — pin that observed ordering.
+    const seen: string[] = [];
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.onMessage((message) => {
+        if (typeof message === "string") {
+          seen.push(`str:${message}`);
+        } else {
+          seen.push(`bin:${Buffer.from(message).toString("hex")}`);
+        }
+      });
+    });
+    await gotoHarness(page);
+
+    await page.evaluate(async (url) => {
+      const ws = new WebSocket(url);
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve());
+        ws.addEventListener("error", () => reject(new Error("ws error")));
+      });
+      ws.send(new Blob([new Uint8Array([1, 2, 3])]));
+      ws.send("sync-after-blob");
+    }, `${WS_UPSTREAM}/echo`);
+
+    await expect.poll(() => seen.length).toBe(2);
+    expect(seen).toEqual(["str:sync-after-blob", "bin:010203"]);
+  });
+
+  test("TypedArray send uses byteOffset and byteLength, not the whole buffer", async ({
+    page,
+  }) => {
+    const seen: string[] = [];
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.onMessage((message) => {
+        if (typeof message !== "string") {
+          seen.push(Buffer.from(message).toString("hex"));
+        }
+      });
+    });
+    await gotoHarness(page);
+
+    await page.evaluate(async (url) => {
+      const ws = new WebSocket(url);
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve());
+        ws.addEventListener("error", () => reject(new Error("ws error")));
+      });
+      const buffer = new ArrayBuffer(8);
+      const full = new Uint8Array(buffer);
+      full.set([0xaa, 0xbb, 0x01, 0x02, 0x03, 0xcc, 0xdd, 0xee]);
+      const view = new Uint8Array(buffer, 2, 3); // only 01 02 03
+      ws.send(view);
+    }, `${WS_UPSTREAM}/echo`);
+
+    await expect.poll(() => seen).toEqual(["010203"]);
+  });
+
+  test("resolves relative WebSocket URLs against the page and rewrites http→ws", async ({
+    page,
+  }) => {
+    let seenUrl = "";
+    await page.routeWebSocket("**/echo", (ws) => {
+      seenUrl = ws.url();
+      ws.onMessage((message) => ws.send(String(message)));
+    });
+    // Load a document from the WS upstream origin so relative `/echo` resolves there.
+    await page.goto("http://127.0.0.1:4002/page", { waitUntil: "domcontentloaded" });
+
+    const result = await page.evaluate(async () => {
+      return new Promise<string>((resolve, reject) => {
+        // Relative path → resolved against document, then http→ws rewrite in the mock.
+        const ws = new WebSocket("/echo");
+        ws.addEventListener("open", () => ws.send("rel"));
+        ws.addEventListener("message", (e) => resolve(String(e.data)));
+        ws.addEventListener("error", () => reject(new Error("error")));
+      });
+    });
+    expect(result).toBe("rel");
+    expect(seenUrl).toBe(`${WS_UPSTREAM}/echo`);
+  });
+
+  test("accepts http(s) WebSocket constructor URLs and rewrites to ws(s)", async ({
+    page,
+  }) => {
+    let seenUrl = "";
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      seenUrl = ws.url();
+    });
+    await gotoHarness(page);
+
+    await page.evaluate(async () => {
+      const ws = new WebSocket("http://127.0.0.1:4002/echo");
+      (window as unknown as { ws: WebSocket }).ws = ws;
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve());
+        ws.addEventListener("error", () => reject(new Error("ws error")));
+      });
+    });
+    expect(seenUrl).toBe(`${WS_UPSTREAM}/echo`);
+  });
+
+  test("predicate matcher installs catch-all interception and unmatched sockets pass through", async ({
+    page,
+  }) => {
+    // Function matchers serialize as catch-all patterns. Unmatched URLs still
+    // get a route event and Playwright auto-connectToServer()s them.
+    let matched = 0;
+    await page.routeWebSocket(
+      (url) => url.pathname === "/mock-only",
+      (ws) => {
+        matched += 1;
+        ws.onMessage(() => ws.send("mocked"));
+      },
+    );
+    await gotoHarness(page);
+
+    const results = await page.evaluate(async (base) => {
+      const mock = new Promise<string>((resolve) => {
+        const ws = new WebSocket(`${base}/mock-only`);
+        ws.addEventListener("open", () => ws.send("x"));
+        ws.addEventListener("message", (e) => resolve(String(e.data)));
+      });
+      const real = new Promise<string>((resolve) => {
+        const ws = new WebSocket(`${base}/echo?mode=prefix`);
+        ws.addEventListener("open", () => ws.send("y"));
+        ws.addEventListener("message", (e) => resolve(String(e.data)));
+      });
+      return { mock: await mock, real: await real };
+    }, WS_UPSTREAM);
+
+    expect(results.mock).toBe("mocked");
+    expect(results.real).toBe("echo:y");
+    expect(matched).toBe(1);
+  });
+
+  test("invalid glob pattern throws at routeWebSocket registration", async ({ page }) => {
+    let error: Error | undefined;
+    try {
+      await page.routeWebSocket("http://127.0.0.1:4002/{unclosed", () => {});
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeTruthy();
+  });
+
+  test("URLPattern matcher matches WebSocket URLs", async ({ page }) => {
+    const { URLPattern } = await import("urlpattern-polyfill");
+    // playwright-core Page.routeWebSocket accepts URLPattern; some test typings omit it.
+    const routeWebSocket = page.routeWebSocket.bind(page) as (
+      url: string | RegExp | URLPattern | ((url: URL) => boolean),
+      handler: (ws: WebSocketRoute) => void,
+    ) => Promise<void>;
+    await routeWebSocket(
+      new URLPattern({
+        protocol: "ws",
+        hostname: "127.0.0.1",
+        port: "4002",
+        pathname: "/echo",
+      }),
+      (ws) => {
+        ws.onMessage(() => ws.send("urlpattern"));
+      },
+    );
+    await gotoHarness(page);
+
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("x"));
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "message:urlpattern"]);
+  });
+
+  test("buffers server.send while the upstream handshake is still CONNECTING", async ({
+    page,
+  }) => {
+    const upstreamSeen: string[] = [];
+    await page.routeWebSocket(`${WS_UPSTREAM}/slow-upgrade`, (ws) => {
+      const server = ws.connectToServer();
+      server.onMessage((message) => {
+        upstreamSeen.push(String(message));
+        ws.send(`got:${String(message)}`);
+      });
+      // Upstream upgrade is delayed 300ms — this must buffer, then flush on open.
+      server.send("early");
+    });
+    await gotoHarness(page);
+
+    await openPageSocket(page, `${WS_UPSTREAM}/slow-upgrade`);
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "message:got:early"]);
+    expect(upstreamSeen).toEqual(["early"]);
+  });
+
+  test("onMessage handlers are not awaited (async handler does not block next frame)", async ({
+    page,
+  }) => {
+    const order: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.onMessage(async (message) => {
+        if (message === "block") {
+          order.push("block-enter");
+          await gate;
+          order.push("block-exit");
+          return;
+        }
+        order.push(`msg:${String(message)}`);
+      });
+    });
+    await gotoHarness(page);
+
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await page.evaluate(() => {
+      const ws = (window as unknown as { ws: WebSocket }).ws;
+      ws.send("block");
+      ws.send("next");
+    });
+
+    await expect.poll(() => order.includes("msg:next")).toBe(true);
+    expect(order.indexOf("block-enter")).toBeLessThan(order.indexOf("msg:next"));
+    expect(order.includes("block-exit")).toBe(false);
+    release();
+    await expect.poll(() => order.includes("block-exit")).toBe(true);
+  });
+
+  test("server.close without options closes the upstream socket", async ({ page }) => {
+    await page.request.post("http://127.0.0.1:4002/reset-last-close");
+    let server!: WebSocketRoute;
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      server = ws.connectToServer();
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await server.close();
+
+    await expect
+      .poll(async () => {
+        const res = await page.request.get("http://127.0.0.1:4002/last-close");
+        const body = (await res.json()) as {
+          lastClose: { code: number; reason: string } | null;
+        };
+        return body.lastClose !== null;
+      })
+      .toBe(true);
+  });
+
+  test("empty string matcher matches every WebSocket URL", async ({ page }) => {
+    await page.routeWebSocket("", (ws) => {
+      ws.onMessage(() => ws.send("empty-match"));
+    });
+    await gotoHarness(page);
+
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("x"));
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "message:empty-match"]);
   });
 });
