@@ -10,9 +10,13 @@ Further assertions will be added over time. Start here.
 
 We practice test-driven development against **Playwright itself**.
 
-Before (and while) implementing this library, we write an end-to-end suite that exercises Playwright’s own network DX — HTTP route interception and browser-side WebSockets: matching, fulfill / continue / fetch / abort, inspection and spying, record / replay, and the rest of the surface we intend to mirror.
+Before (and while) implementing this library, we write a **complete** end-to-end suite against Playwright’s own network DX — for every API we intend to mirror: matching, fulfill / continue / fetch / abort, inspection and spying, record / replay, WebSockets, and the rest.
 
-That suite is the contract. It pins Playwright’s developer experience in executable form. Our library’s job is to make the same contract pass when the downstream actor is a Node process instead of a browser page.
+Completeness is the point. Happy paths are not enough. Edge cases, awkward semantics, and lesser-used options belong in the suite too. Sparse coverage defeats oracle TDD.
+
+That suite is the developer-experience contract. It pins Playwright’s behavior in executable form. The same tests are reused as we implement the library: only the downstream actor changes (browser → Node). The library is done for a surface when those tests pass against it.
+
+Scope the suite to the APIs we will develop analogously — not all of Playwright, but all of the contract we claim.
 
 The living suite is [`tests/parity/`](./tests/parity/). Details: [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md).
 
