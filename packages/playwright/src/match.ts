@@ -32,10 +32,7 @@ export function matchRouteMatcher(
     return url !== null && predicate(url);
   }
 
-  return matchSerializedMatcher(
-    toSerializedMatcher(input, methodFilter),
-    matchInput,
-  );
+  return matchSerializedMatcher(toSerializedMatcher(input, methodFilter), matchInput);
 }
 
 function stripUrl(input: RouteMatcherInput): RouteMatcherInput {

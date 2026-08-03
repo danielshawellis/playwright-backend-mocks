@@ -57,19 +57,19 @@ All message schemas are Zod-derived and re-exported (e.g. `clientToProxyMessageS
 
 ## Core wire types
 
-| Type                   | Role                                                |
-| ---------------------- | --------------------------------------------------- |
-| `SerializedRequest`    | URL, method, headers, `bodyBase64`                  |
-| `SerializedResponse`   | status, statusText, headers, `bodyBase64`           |
-| `SerializedError`      | name, message, optional stack/code                  |
+| Type                   | Role                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `SerializedRequest`    | URL, method, headers, `bodyBase64`                                             |
+| `SerializedResponse`   | status, statusText, headers, `bodyBase64`                                      |
+| `SerializedError`      | name, message, optional stack/code                                             |
 | `SerializedMatcher`    | `urlGlob` / `urlRegex` / `methods` / `clientIds` / optional `predicate` marker |
-| `RequestOverrides`     | Optional URL/method/headers/body for continue/fetch |
-| `HistoryEntry`         | Dashboard/history record + outcome                  |
-| `ConnectionRole`       | `"node"` \| `"playwright"`                          |
-| `ClientToProxyMessage` | Discriminated union of client messages              |
-| `ProxyToClientMessage` | Discriminated union of proxy messages               |
-| `RouteMatchDiagnostic` | Match debugging metadata                            |
-| `BackendErrorCode`     | Abort code union                                    |
+| `RequestOverrides`     | Optional URL/method/headers/body for continue/fetch                            |
+| `HistoryEntry`         | Dashboard/history record + outcome                                             |
+| `ConnectionRole`       | `"node"` \| `"playwright"`                                                     |
+| `ClientToProxyMessage` | Discriminated union of client messages                                         |
+| `ProxyToClientMessage` | Discriminated union of proxy messages                                          |
+| `RouteMatchDiagnostic` | Match debugging metadata                                                       |
+| `BackendErrorCode`     | Abort code union                                                               |
 
 ## Message families (summary)
 

@@ -62,9 +62,7 @@ describe("protocol contract", () => {
         bodyBase64: null,
       },
     };
-    expect(parseProxyToClientMessage(JSON.parse(stringifyMessage(claim)))).toEqual(
-      claim,
-    );
+    expect(parseProxyToClientMessage(JSON.parse(stringifyMessage(claim)))).toEqual(claim);
 
     const result = {
       type: "request:claim-result" as const,

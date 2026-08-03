@@ -293,8 +293,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       if (!pending.has(message.requestId)) {
         return;
       }
-      const errorMessage =
-        error instanceof Error ? error.message : "Route claim failed";
+      const errorMessage = error instanceof Error ? error.message : "Route claim failed";
       const code =
         error instanceof Error && error.name === "ClaimTimeoutError"
           ? "claim_timeout"
@@ -474,9 +473,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         });
       }
 
-      if (
-        [...expectedTestIds].every((testId) => respondedTestIds.has(testId))
-      ) {
+      if ([...expectedTestIds].every((testId) => respondedTestIds.has(testId))) {
         settle();
       }
     });
@@ -505,9 +502,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     }
 
     if (
-      [...claim.expectedTestIds].every((testId) =>
-        claim.respondedTestIds.has(testId),
-      )
+      [...claim.expectedTestIds].every((testId) => claim.respondedTestIds.has(testId))
     ) {
       claim.resolve([...claim.matches]);
     }
@@ -519,9 +514,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         continue;
       }
       claim.respondedTestIds.add(testId);
-      if (
-        [...claim.expectedTestIds].every((id) => claim.respondedTestIds.has(id))
-      ) {
+      if ([...claim.expectedTestIds].every((id) => claim.respondedTestIds.has(id))) {
         claim.resolve([...claim.matches]);
       }
     }
