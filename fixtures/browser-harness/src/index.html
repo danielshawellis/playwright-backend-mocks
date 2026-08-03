@@ -6,54 +6,9 @@
   </head>
   <body>
     <h1>Parity browser harness</h1>
-    <script type="module">
-      import { triggerHttp } from "/downstream/http.js";
-      import { connectWebSocket } from "/downstream/ws.js";
-
-      // Shared fetch / WebSocket path (same modules as Node downstream).
-      window.trigger = (url, init) => triggerHttp(url, init);
-      window.connectWebSocket = connectWebSocket;
-      window.__parityReady = true;
-
-      // Browser-only transport — not part of the shared isomorphic core.
-      window.triggerXhr = function triggerXhr(url, init = {}) {
-        return new Promise((resolve) => {
-          const xhr = new XMLHttpRequest();
-          const method = init.method ?? "GET";
-          xhr.open(method, url);
-          const headers = init.headers ?? {};
-          for (const [name, value] of Object.entries(headers)) {
-            xhr.setRequestHeader(name, value);
-          }
-          xhr.onload = () => {
-            const rawHeaders = xhr.getAllResponseHeaders();
-            const headersObj = {};
-            for (const line of rawHeaders.trim().split(/[\r\n]+/)) {
-              const parts = line.split(": ");
-              const key = parts.shift();
-              if (key) headersObj[key.toLowerCase()] = parts.join(": ");
-            }
-            let data = null;
-            try {
-              data = JSON.parse(xhr.responseText);
-            } catch {
-              data = null;
-            }
-            resolve({
-              ok: xhr.status >= 200 && xhr.status < 300,
-              status: xhr.status,
-              statusText: xhr.statusText,
-              headers: headersObj,
-              raw: xhr.responseText,
-              data,
-            });
-          };
-          xhr.onerror = () => {
-            resolve({ ok: false, error: "xhr_error" });
-          };
-          xhr.send(init.body ?? null);
-        });
-      };
-    </script>
+    <p>
+      Served dynamically by <code>server.js</code>, which inlines
+      <code>fixtures/downstream</code> helpers into a classic script.
+    </p>
   </body>
 </html>

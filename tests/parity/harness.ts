@@ -96,18 +96,40 @@ type ParityFixtures = {
   upstream: (path?: string) => string;
 };
 
-async function ensureHarness(page: Page) {
-  if (!page.url().startsWith(HARNESS)) {
-    await page.goto(HARNESS + "/", { waitUntil: "domcontentloaded" });
-  }
-  // Module script is deferred past DOMContentLoaded — wait for shared helpers.
-  await page.waitForFunction(
-    () =>
-      typeof (globalThis as unknown as { trigger?: unknown }).trigger ===
-        "function" &&
-      typeof (globalThis as unknown as { connectWebSocket?: unknown })
-        .connectWebSocket === "function",
+/** Serialize harness navigation per page (concurrent trigger() must not multi-goto). */
+const harnessLoads = new WeakMap<Page, Promise<void>>();
+
+function harnessHelpersReady(): boolean {
+  return (
+    typeof (globalThis as unknown as { trigger?: unknown }).trigger ===
+      "function" &&
+    typeof (globalThis as unknown as { connectWebSocket?: unknown })
+      .connectWebSocket === "function"
   );
+}
+
+async function ensureHarness(page: Page) {
+  const ready = await page.evaluate(harnessHelpersReady).catch(() => false);
+  if (ready) return;
+
+  let loading = harnessLoads.get(page);
+  if (!loading) {
+    loading = (async () => {
+      await page.goto(HARNESS + "/", { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(harnessHelpersReady);
+    })();
+    harnessLoads.set(page, loading);
+  }
+  try {
+    await loading;
+  } finally {
+    // Allow a later retry if this load failed or the page navigated away.
+    const stillReady = await page.evaluate(harnessHelpersReady).catch(() => false);
+    if (!stillReady) harnessLoads.delete(page);
+  }
+  if (!(await page.evaluate(harnessHelpersReady).catch(() => false))) {
+    throw new Error("browser harness helpers failed to load");
+  }
 }
 
 function triggerPayload(init: TriggerInit): {
@@ -141,7 +163,10 @@ export const test = base.extend<ParityFixtures>({
     await use(page);
   },
 
-  route: async ({ page }, use) => {
+  // Depend on harnessPage so the shared downstream is loaded *before* tests
+  // install catch-all routes that would otherwise intercept the harness document.
+  route: async ({ page, harnessPage }, use) => {
+    void harnessPage;
     if (parityMode !== "browser") {
       await use(async () => notWired("route"));
       return;
@@ -151,7 +176,8 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  unroute: async ({ page }, use) => {
+  unroute: async ({ page, harnessPage }, use) => {
+    void harnessPage;
     if (parityMode !== "browser") {
       await use(async () => notWired("unroute"));
       return;
@@ -165,7 +191,8 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  unrouteAll: async ({ page }, use) => {
+  unrouteAll: async ({ page, harnessPage }, use) => {
+    void harnessPage;
     if (parityMode !== "browser") {
       await use(async () => notWired("unrouteAll"));
       return;
@@ -175,7 +202,8 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  routeFromHAR: async ({ page }, use) => {
+  routeFromHAR: async ({ page, harnessPage }, use) => {
+    void harnessPage;
     if (parityMode !== "browser") {
       await use(async () => notWired("routeFromHAR"));
       return;
@@ -185,7 +213,8 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  trigger: async ({ page }, use) => {
+  trigger: async ({ page, harnessPage }, use) => {
+    void harnessPage;
     await use(async (path, init = {}) => {
       const url = path.startsWith("http") ? path : `${UPSTREAM}${path}`;
       const payload = triggerPayload(init);
@@ -194,9 +223,7 @@ export const test = base.extend<ParityFixtures>({
         const control = await getNodeControl();
         return control.httpRequest({
           url,
-          method: payload.method,
-          headers: payload.headers,
-          body: payload.body,
+          ...payload,
         });
       }
 
@@ -224,22 +251,40 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  openDownstreamSocket: async ({ page }, use) => {
+  openDownstreamSocket: async ({ page, harnessPage }, use) => {
+    void harnessPage;
     await use(async (url, options) => {
       if (parityMode === "node") {
         const control = await getNodeControl();
-        return control.openSocket({
-          url,
-          protocols: options?.protocols,
-          binaryType: options?.binaryType,
-        });
+        const openInit: {
+          url: string;
+          protocols?: string | string[];
+          binaryType?: BinaryType;
+        } = { url };
+        if (options?.protocols !== undefined) {
+          openInit.protocols = options.protocols;
+        }
+        if (options?.binaryType !== undefined) {
+          openInit.binaryType = options.binaryType;
+        }
+        return control.openSocket(openInit);
       }
 
       await ensureHarness(page);
       // Browser: drive a real page WebSocket, mirror the DownstreamSocket surface.
       const socketId = `browser-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const connectOpts: {
+        protocols?: string | string[];
+        binaryType?: BinaryType;
+      } = {};
+      if (options?.protocols !== undefined) {
+        connectOpts.protocols = options.protocols;
+      }
+      if (options?.binaryType !== undefined) {
+        connectOpts.binaryType = options.binaryType;
+      }
       await page.evaluate(
-        ({ url, protocols, binaryType, socketId }) => {
+        ({ url, connectOpts, socketId }) => {
           const connect = (
             globalThis as unknown as {
               connectWebSocket: (
@@ -256,7 +301,7 @@ export const test = base.extend<ParityFixtures>({
               >;
             }
           ).__paritySockets ??= {});
-          const ws = connect(url, { protocols, binaryType });
+          const ws = connect(url, connectOpts);
           const events: Array<Record<string, unknown>> = [];
           store[socketId] = { ws, events };
           ws.addEventListener("message", (event) => {
@@ -280,12 +325,7 @@ export const test = base.extend<ParityFixtures>({
             events.push({ event: "error" });
           });
         },
-        {
-          url,
-          protocols: options?.protocols,
-          binaryType: options?.binaryType,
-          socketId,
-        },
+        { url, connectOpts, socketId },
       );
 
       await page.waitForFunction((id) => {
@@ -303,6 +343,7 @@ export const test = base.extend<ParityFixtures>({
             __paritySockets: Record<string, { ws: WebSocket }>;
           }
         ).__paritySockets[id];
+        if (!entry) throw new Error(`missing socket ${id}`);
         return {
           protocol: entry.ws.protocol,
           extensions: entry.ws.extensions,
@@ -327,6 +368,7 @@ export const test = base.extend<ParityFixtures>({
                   __paritySockets: Record<string, { ws: WebSocket }>;
                 }
               ).__paritySockets[id];
+              if (!entry) throw new Error(`missing socket ${id}`);
               entry.ws.send(text);
             },
             { id: socketId, text },
@@ -340,6 +382,7 @@ export const test = base.extend<ParityFixtures>({
                   __paritySockets: Record<string, { ws: WebSocket }>;
                 }
               ).__paritySockets[id];
+              if (!entry) throw new Error(`missing socket ${id}`);
               if (code !== undefined) entry.ws.close(code, reason ?? "");
               else entry.ws.close();
             },
@@ -353,6 +396,7 @@ export const test = base.extend<ParityFixtures>({
                 __paritySockets: Record<string, { ws: WebSocket }>;
               }
             ).__paritySockets[id];
+            if (!entry) throw new Error(`missing socket ${id}`);
             return {
               readyState: entry.ws.readyState,
               protocol: entry.ws.protocol,
@@ -372,6 +416,7 @@ export const test = base.extend<ParityFixtures>({
                   >;
                 }
               ).__paritySockets[id];
+              if (!entry) throw new Error(`missing socket ${id}`);
               const idx = entry.events.findIndex((e) => e.event === "message");
               if (idx < 0) return null;
               return entry.events.splice(idx, 1)[0] ?? null;
@@ -429,4 +474,3 @@ test.afterEach(async () => {
 
 export { expect };
 export { UPSTREAM, HARNESS, WS_UPSTREAM, NODE_DOWNSTREAM } from "./helpers.js";
-export { parityMode };
