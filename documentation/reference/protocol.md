@@ -62,7 +62,7 @@ All message schemas are Zod-derived and re-exported (e.g. `clientToProxyMessageS
 | `SerializedRequest`    | URL, method, headers, `bodyBase64`                  |
 | `SerializedResponse`   | status, statusText, headers, `bodyBase64`           |
 | `SerializedError`      | name, message, optional stack/code                  |
-| `SerializedMatcher`    | `urlGlob` / `urlRegex` / `methods` / `clientIds`    |
+| `SerializedMatcher`    | `urlGlob` / `urlRegex` / `methods` / `clientIds` / optional `predicate` marker |
 | `RequestOverrides`     | Optional URL/method/headers/body for continue/fetch |
 | `HistoryEntry`         | Dashboard/history record + outcome                  |
 | `ConnectionRole`       | `"node"` \| `"playwright"`                          |

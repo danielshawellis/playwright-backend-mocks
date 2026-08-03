@@ -60,4 +60,13 @@ describe("matchSerializedMatcher", () => {
       ),
     ).toBe(true);
   });
+
+  it("never matches serialized predicate markers", () => {
+    expect(
+      matchSerializedMatcher(
+        { predicate: true },
+        { request, clientId: "api-server" },
+      ),
+    ).toBe(false);
+  });
 });

@@ -48,6 +48,8 @@ export const serializedMatcherSchema = z.object({
   urlRegex: urlRegexSchema.optional(),
   methods: z.array(z.string()).optional(),
   clientIds: z.array(z.string()).optional(),
+  /** Present when the live matcher is a predicate evaluated in Playwright. */
+  predicate: z.boolean().optional(),
 });
 
 export type SerializedMatcher = z.infer<typeof serializedMatcherSchema>;

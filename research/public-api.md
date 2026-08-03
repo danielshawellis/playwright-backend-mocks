@@ -212,7 +212,6 @@ Options:
 ## Unsupported behavior (clear errors)
 
 - Streaming request/response bodies
-- Predicate-function matchers
 - Application WebSocket / gRPC / raw sockets
 - Traffic outside `@mswjs/interceptors` coverage
 - Protocol version mismatches

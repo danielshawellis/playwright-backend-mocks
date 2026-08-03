@@ -827,9 +827,9 @@ Likely concepts include:
 
 Support the most valuable matcher forms and handler operations without substantially complicating the implementation.
 
-Matcher definitions sent to the proxy must be serializable.
+Serializable matcher metadata may still be registered with the proxy for diagnostics and history filters.
 
-Predicate functions cannot be transparently executed inside the proxy unless the design introduces a deliberate alternative mechanism. Prefer serializable matcher forms in version 1.
+Predicate functions are evaluated in Playwright workers during claim broadcast. The proxy never executes predicate bodies.
 
 ## Unmatched Requests
 

@@ -19,6 +19,7 @@ import {
   type RouteFromJSONSession,
 } from "./route-from-json.js";
 import {
+  getRouteUrlPredicate,
   toSerializedMatcher,
   type BackendMocks,
   type BackendRequest,
@@ -357,17 +358,46 @@ export function createBackendMocks(options: {
 }
 
 function matcherEquals(a: RouteMatcherInput, b: RouteMatcherInput): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  const predicateA = getRouteUrlPredicate(a);
+  const predicateB = getRouteUrlPredicate(b);
+  if (predicateA !== undefined || predicateB !== undefined) {
+    if (predicateA !== predicateB) {
+      return false;
+    }
+    return (
+      JSON.stringify(toSerializedMatcher(stripMatcherUrl(a))) ===
+      JSON.stringify(toSerializedMatcher(stripMatcherUrl(b)))
+    );
+  }
+
   return (
     JSON.stringify(toSerializedMatcher(a)) === JSON.stringify(toSerializedMatcher(b))
   );
 }
 
-function describeMatcher(input: RouteMatcherInput, methodFilter?: string): string {
-  try {
-    return JSON.stringify(toSerializedMatcher(input, methodFilter));
-  } catch {
-    return String(input);
+function stripMatcherUrl(input: RouteMatcherInput): RouteMatcherInput {
+  if (typeof input === "function") {
+    return {};
   }
+  if (typeof input === "object" && !(input instanceof RegExp)) {
+    return {
+      ...(input.method !== undefined ? { method: input.method } : {}),
+      ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+    };
+  }
+  return input;
+}
+
+function describeMatcher(input: RouteMatcherInput, methodFilter?: string): string {
+  if (getRouteUrlPredicate(input) !== undefined) {
+    const serialized = toSerializedMatcher(input, methodFilter);
+    return `predicate${serialized.methods ? ` methods=${serialized.methods.join(",")}` : ""}`;
+  }
+  return JSON.stringify(toSerializedMatcher(input, methodFilter));
 }
 
 function toBackendRequest(request: SerializedRequest, clientId: string): BackendRequest {

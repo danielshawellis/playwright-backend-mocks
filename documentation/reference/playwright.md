@@ -66,7 +66,9 @@ interface BackendMocks {
 
 ### `route(matcher, handler)`
 
-Register a test-scoped route. The matcher is serialized and sent to the proxy. When a single match occurs, `handler` runs in the Playwright worker.
+Register a test-scoped route. The matcher is kept locally for claim evaluation; serializable metadata is also registered with the proxy for diagnostics. When this route uniquely claims a request, `handler` runs in the Playwright worker.
+
+Matchers may be a URL glob string, `RegExp`, Playwright-style predicate `(url: URL) => boolean`, or an object with `url` / `method` / `clientId` filters.
 
 The handler **must** settle with `fulfill`, `continue`, or `abort`. See [Mocking requests](/guide/mocking-requests).
 

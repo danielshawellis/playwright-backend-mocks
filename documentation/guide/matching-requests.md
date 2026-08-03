@@ -5,11 +5,14 @@ Matchers decide which outbound Node requests your handler receives. Matching run
 ## Matcher forms
 
 ```ts
+type RouteUrlPredicate = (url: URL) => boolean;
+
 type RouteMatcherInput =
   | string // URL glob
   | RegExp // URL regex
+  | RouteUrlPredicate // Playwright-style predicate
   | {
-      url?: string | RegExp;
+      url?: string | RegExp | RouteUrlPredicate;
       method?: string | readonly string[];
       clientId?: string | readonly string[];
     };
@@ -41,6 +44,31 @@ await backendMocks.route(/\/users$/, async (route) => {
 ```
 
 The regex is tested against the full request URL.
+
+## Predicate functions
+
+Predicate matchers receive a parsed `URL` (same shape as Playwright's `page.route` predicates) and run in the Playwright worker during claim evaluation:
+
+```ts
+await backendMocks.route(
+  (url) => url.hostname === "api.example.test" && url.pathname.startsWith("/users"),
+  async (route) => {
+    await route.fulfill({ json: [] });
+  },
+);
+```
+
+Combine with method / `clientId` filters via the object form:
+
+```ts
+await backendMocks.route(
+  {
+    url: (url) => url.searchParams.get("debug") === "1",
+    method: "GET",
+  },
+  handler,
+);
+```
 
 ## Method filters
 
@@ -106,7 +134,6 @@ Fix by narrowing URL patterns, adding `method` / `clientId`, or `unroute` before
 
 ## What is not supported
 
-- Predicate / function matchers (`(url) => boolean`) — not serializable across processes
-- Matching on arbitrary header predicates in v1 — use the handler to inspect headers and `continue` / `abort` as needed
+- Matching on arbitrary header predicates at route-registration time — use a URL predicate and/or inspect headers in the handler, then `continue` / `abort` as needed
 
 For `waitForRequest` method filtering, pass `{ method }` in the options object — see [Inspecting requests](/guide/inspecting-requests).

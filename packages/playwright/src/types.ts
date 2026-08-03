@@ -3,7 +3,10 @@ import type {
   SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 
-export type RouteUrl = string | RegExp;
+/** Playwright-style URL predicate. Receives a parsed `URL` for the request. */
+export type RouteUrlPredicate = (url: URL) => boolean;
+
+export type RouteUrl = string | RegExp | RouteUrlPredicate;
 
 export interface RouteMatcherObject {
   readonly url?: RouteUrl;
@@ -110,11 +113,11 @@ export function toSerializedMatcher(
   methodFilter?: string,
 ): SerializedMatcher {
   const methods =
-    typeof input === "object" && !(input instanceof RegExp)
+    typeof input === "object" && !(input instanceof RegExp) && typeof input !== "function"
       ? normalizeList(input.method)
       : undefined;
   const clientIds =
-    typeof input === "object" && !(input instanceof RegExp)
+    typeof input === "object" && !(input instanceof RegExp) && typeof input !== "function"
       ? normalizeList(input.clientId)
       : undefined;
 
@@ -127,6 +130,10 @@ export function toSerializedMatcher(
 
   const clientField = clientIds !== undefined ? { clientIds } : {};
 
+  if (typeof input === "function") {
+    return { predicate: true, ...methodField, ...clientField };
+  }
+
   if (typeof input === "string") {
     return { urlGlob: input, ...methodField, ...clientField };
   }
@@ -137,6 +144,10 @@ export function toSerializedMatcher(
       ...methodField,
       ...clientField,
     };
+  }
+
+  if (typeof input.url === "function") {
+    return { predicate: true, ...methodField, ...clientField };
   }
 
   if (typeof input.url === "string") {
@@ -152,6 +163,22 @@ export function toSerializedMatcher(
   }
 
   return { ...methodField, ...clientField };
+}
+
+export function getRouteUrlPredicate(
+  input: RouteMatcherInput,
+): RouteUrlPredicate | undefined {
+  if (typeof input === "function") {
+    return input;
+  }
+  if (
+    typeof input === "object" &&
+    !(input instanceof RegExp) &&
+    typeof input.url === "function"
+  ) {
+    return input.url;
+  }
+  return undefined;
 }
 
 function normalizeList(
