@@ -6,10 +6,10 @@
 
 ## Hosts
 
-| Mode                  | Host                         | How Playwright drives it                                      |
-| --------------------- | ---------------------------- | ------------------------------------------------------------- |
-| `PARITY_MODE=browser` | `fixtures/browser-harness`   | `page.evaluate` → `window.trigger` / page WebSocket (shared helpers inlined into one classic script so catch-all `page.route` cannot strand module imports) |
-| `PARITY_MODE=node`    | `fixtures/node-downstream`   | **Control-plane WebSocket** `ws://127.0.0.1:3001/control`     |
+| Mode                  | Host                       | How Playwright drives it                                                                                                                                    |
+| --------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PARITY_MODE=browser` | `fixtures/browser-harness` | `page.evaluate` → `window.trigger` / page WebSocket (shared helpers inlined into one classic script so catch-all `page.route` cannot strand module imports) |
+| `PARITY_MODE=node`    | `fixtures/node-downstream` | **Control-plane WebSocket** `ws://127.0.0.1:3001/control`                                                                                                   |
 
 ## Why a control-plane WebSocket (not one-shot HTTP)
 

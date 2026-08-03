@@ -6,12 +6,7 @@ import {
   type Response,
   type Route,
 } from "@playwright/test";
-import {
-  HARNESS,
-  UPSTREAM,
-  WS_UPSTREAM,
-  type TriggerResult,
-} from "./helpers.js";
+import { HARNESS, UPSTREAM, type TriggerResult } from "./helpers.js";
 import {
   getNodeControl,
   resetNodeControl,
@@ -80,17 +75,12 @@ type ParityFixtures = {
     options?: { protocols?: string | string[]; binaryType?: BinaryType },
   ) => Promise<DownstreamSocket>;
   waitForRequest: (
-    urlOrPredicate:
-      | string
-      | RegExp
-      | ((request: Request) => boolean | Promise<boolean>),
+    urlOrPredicate: string | RegExp | ((request: Request) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Request>;
   waitForResponse: (
     urlOrPredicate:
-      | string
-      | RegExp
-      | ((response: Response) => boolean | Promise<boolean>),
+      string | RegExp | ((response: Response) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Response>;
   upstream: (path?: string) => string;
@@ -101,10 +91,9 @@ const harnessLoads = new WeakMap<Page, Promise<void>>();
 
 function harnessHelpersReady(): boolean {
   return (
-    typeof (globalThis as unknown as { trigger?: unknown }).trigger ===
-      "function" &&
-    typeof (globalThis as unknown as { connectWebSocket?: unknown })
-      .connectWebSocket === "function"
+    typeof (globalThis as unknown as { trigger?: unknown }).trigger === "function" &&
+    typeof (globalThis as unknown as { connectWebSocket?: unknown }).connectWebSocket ===
+      "function"
   );
 }
 
@@ -232,9 +221,8 @@ export const test = base.extend<ParityFixtures>({
       if (transport === "xhr") {
         return page.evaluate(
           ({ url, payload }) => {
-            const triggerXhr = (
-              globalThis as unknown as { triggerXhr: BrowserTriggerFn }
-            ).triggerXhr;
+            const triggerXhr = (globalThis as unknown as { triggerXhr: BrowserTriggerFn })
+              .triggerXhr;
             return triggerXhr(url, payload);
           },
           { url, payload },

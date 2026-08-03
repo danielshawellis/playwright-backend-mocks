@@ -46,8 +46,7 @@ const sharedServers = [
 const downstreamServer =
   mode === "node"
     ? {
-        command:
-          "pnpm --filter @playwright-backend-mocks/fixture-node-downstream start",
+        command: "pnpm --filter @playwright-backend-mocks/fixture-node-downstream start",
         url: `${nodeDownstreamUrl}/health`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
@@ -57,8 +56,7 @@ const downstreamServer =
         },
       }
     : {
-        command:
-          "pnpm --filter @playwright-backend-mocks/fixture-browser-harness start",
+        command: "pnpm --filter @playwright-backend-mocks/fixture-browser-harness start",
         url: `${browserHarnessUrl}/health`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
@@ -77,9 +75,7 @@ export default defineConfig({
     timeout: 10_000,
   },
   // Until Step 2 wires backendMocks, node mode defaults to passthrough smokes only.
-  ...(mode === "node" && !nodeFull
-    ? { testMatch: "**/smoke-passthrough.spec.ts" }
-    : {}),
+  ...(mode === "node" && !nodeFull ? { testMatch: "**/smoke-passthrough.spec.ts" } : {}),
   use: {
     ...devices["Desktop Chrome"],
     baseURL: mode === "node" ? nodeDownstreamUrl : browserHarnessUrl,

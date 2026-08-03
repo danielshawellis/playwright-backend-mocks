@@ -204,13 +204,13 @@ Switch the same suite to library mode and implement until green.
 
 ### What changes in node / library mode
 
-| Piece         | Change                                                                                          |
-| ------------- | ----------------------------------------------------------------------------------------------- |
-| Routing API   | `page.route` / `routeFromHAR` / … → `backendMocks.route` / `routeFromHAR` / …                   |
-| Downstream    | Same shared modules; host swaps browser page → Node process + `startBackendMocks`               |
-| Trigger       | Same `trigger` / `openDownstreamSocket`; transport swaps `page.evaluate` → control-plane WS     |
-| Record/replay | Same dual-mode HAR specs via harness `routeFromHAR`                           |
-| Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer`      |
+| Piece         | Change                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| Routing API   | `page.route` / `routeFromHAR` / … → `backendMocks.route` / `routeFromHAR` / …               |
+| Downstream    | Same shared modules; host swaps browser page → Node process + `startBackendMocks`           |
+| Trigger       | Same `trigger` / `openDownstreamSocket`; transport swaps `page.evaluate` → control-plane WS |
+| Record/replay | Same dual-mode HAR specs via harness `routeFromHAR`                                         |
+| Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer`                    |
 
 ### What must not change
 

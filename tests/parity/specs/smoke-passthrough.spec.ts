@@ -7,9 +7,7 @@
 import { test, expect, WS_UPSTREAM, parityMode } from "../harness.js";
 
 test.describe(`passthrough smoke (${parityMode})`, () => {
-  test("downstream HTTP fetch reaches upstream without mocks", async ({
-    trigger,
-  }) => {
+  test("downstream HTTP fetch reaches upstream without mocks", async ({ trigger }) => {
     const result = await trigger("/users");
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);

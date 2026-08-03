@@ -41,9 +41,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 if (process.env.ENABLE_BACKEND_MOCKS === "1") {
   // Step 2: dynamic import so Step 1 does not require the library package.
   const mod = await import(
-    pathToFileURL(
-      join(__dirname, "../../../packages/node/src/index.js"),
-    ).href
+    pathToFileURL(join(__dirname, "../../../packages/node/src/index.js")).href
   ).catch(() => null);
   if (!mod?.startBackendMocks) {
     console.error(
@@ -103,9 +101,7 @@ wss.on("connection", (control) => {
       return;
     }
     if (msg.v !== 1 || typeof msg.id !== "string" || typeof msg.op !== "string") {
-      control.send(
-        JSON.stringify({ v: 1, op: "error", message: "invalid_envelope" }),
-      );
+      control.send(JSON.stringify({ v: 1, op: "error", message: "invalid_envelope" }));
       return;
     }
     try {
@@ -135,9 +131,7 @@ async function handleControl(control, msg) {
         headers: msg.headers,
         body: msg.body,
       });
-      control.send(
-        JSON.stringify({ v: 1, id: msg.id, op: "http.response", result }),
-      );
+      control.send(JSON.stringify({ v: 1, id: msg.id, op: "http.response", result }));
       return;
     }
     case "ws.open": {
@@ -163,7 +157,16 @@ async function handleControl(control, msg) {
         }
       };
 
+      let settled = false;
+      const failOpen = (message) => {
+        if (settled) return;
+        settled = true;
+        sockets.delete(socketId);
+        control.send(JSON.stringify({ v: 1, id: msg.id, op: "error", message }));
+      };
       ws.addEventListener("open", () => {
+        if (settled) return;
+        settled = true;
         control.send(
           JSON.stringify({
             v: 1,
@@ -208,6 +211,10 @@ async function handleControl(control, msg) {
       });
       ws.addEventListener("close", (event) => {
         sockets.delete(socketId);
+        if (!settled) {
+          // Handshake never completed — fail the open RPC instead of hanging.
+          failOpen(`ws_open_failed:${event.code}:${event.reason || "closed"}`);
+        }
         sendEvent("close", {
           code: event.code,
           reason: event.reason,
@@ -215,6 +222,7 @@ async function handleControl(control, msg) {
         });
       });
       ws.addEventListener("error", () => {
+        if (!settled) failOpen("ws_open_failed:error");
         sendEvent("error");
       });
       return;
