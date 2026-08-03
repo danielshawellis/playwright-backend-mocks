@@ -1,8 +1,18 @@
 # Development Philosophy
 
-How this repository is developed. Product intent lives in [`SPECIFICATION.md`](./SPECIFICATION.md); this document is the developer’s north star.
+How this repository is developed. This document is the developer’s north star. Product detail: [`SPECIFICATION.md`](./SPECIFICATION.md). Homepage framing: [`documentation/index.md`](./documentation/index.md), [`documentation/guide/why.md`](./documentation/guide/why.md).
 
-Further assertions will be added over time. Start here.
+Further development assertions follow. Start here.
+
+---
+
+## Intention
+
+**Run the real app. Mock only the outside world.**
+
+Good e2e tests cover the whole application — UI and server — and fake third parties at the boundary. In practice Playwright suites rarely do that: browser `page.route` cannot see outbound Node HTTP, so teams stub the server, hit real services, or plant test seams in app code.
+
+This library makes the server half as easy as the browser half: a Playwright-shaped `backendMocks` API, nearly exact parity with Playwright interception, and no test litter in your Node.js code.
 
 ---
 

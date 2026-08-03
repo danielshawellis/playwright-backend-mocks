@@ -1,6 +1,6 @@
 # Agent notes
 
-Read [`PHILOSOPHY.md`](./PHILOSOPHY.md) first. It states how this repository is developed.
+Read [`PHILOSOPHY.md`](./PHILOSOPHY.md) first. Intention: run the real app, mock only the outside world — then the development assertions.
 
 Key pointers:
 
