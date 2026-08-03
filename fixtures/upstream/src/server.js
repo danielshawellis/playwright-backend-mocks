@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { gzipSync } from "node:zlib";
+import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
 
 const port = Number(process.env.PORT ?? 4001);
 const flakyHits = new Map();
@@ -124,6 +124,55 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/brotli") {
+    const payload = JSON.stringify({ brotli: true, message: "hello" });
+    const compressed = brotliCompressSync(Buffer.from(payload, "utf8"));
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "content-encoding": "br",
+      "content-length": compressed.length,
+      "x-upstream": "real",
+    });
+    res.end(compressed);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/deflate") {
+    const payload = JSON.stringify({ deflated: true, message: "hello" });
+    const compressed = deflateSync(Buffer.from(payload, "utf8"));
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "content-encoding": "deflate",
+      "content-length": compressed.length,
+      "x-upstream": "real",
+    });
+    res.end(compressed);
+    return;
+  }
+
+  // Redirect to localhost (different origin hostname) for Authorization strip tests.
+  if (url.pathname === "/redirect-to-localhost") {
+    const code = Number(url.searchParams.get("code") ?? "302");
+    res.writeHead(code, {
+      location: `http://localhost:${port}/echo`,
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
+  // Relative Location for HAR / fetch redirect resolution.
+  if (url.pathname === "/redirect-relative") {
+    res.writeHead(302, {
+      location: "echo",
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/redirect") {
     res.writeHead(302, {
       location: "/users",
@@ -136,6 +185,19 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/redirect-echo") {
     res.writeHead(302, {
+      location: "/echo",
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
+  // Any method: /redirect-by-status?code=301|302|303|307|308 → Location: /echo
+  // Used to pin route.fetch redirect method rewrite rules.
+  if (url.pathname === "/redirect-by-status") {
+    const code = Number(url.searchParams.get("code") ?? "302");
+    res.writeHead(code, {
       location: "/echo",
       "access-control-allow-origin": "*",
       "access-control-expose-headers": "*",
@@ -234,6 +296,25 @@ const server = createServer(async (req, res) => {
       return;
     }
     json(res, 200, { ok: true, attempts: hits + 1, key });
+    return;
+  }
+
+  // Same flaky pattern for POST — pins that retries reuse the original body.
+  if (req.method === "POST" && url.pathname === "/flaky") {
+    const key = url.searchParams.get("key") ?? "default";
+    const failTimes = Number(url.searchParams.get("fail") ?? "1");
+    const hits = flakyHits.get(key) ?? 0;
+    flakyHits.set(key, hits + 1);
+    if (hits < failTimes) {
+      req.socket.destroy();
+      return;
+    }
+    json(res, 200, {
+      ok: true,
+      attempts: hits + 1,
+      key,
+      body: bodyBuf.length > 0 ? bodyText : null,
+    });
     return;
   }
 

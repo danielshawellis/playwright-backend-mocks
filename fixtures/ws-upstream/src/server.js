@@ -108,6 +108,12 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
+    // Abrupt TCP destroy — unclean close (wasClean=false).
+    if (!isBinary && asText === "die-unclean") {
+      ws.terminate();
+      return;
+    }
+
     if (mode === "prefix") {
       if (isBinary) {
         ws.send(Buffer.concat([Buffer.from("BIN:"), Buffer.from(data)]));

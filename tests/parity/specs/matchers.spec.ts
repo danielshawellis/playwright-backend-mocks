@@ -291,4 +291,51 @@ test.describe("matchers", () => {
       interceptedPath: "/simple.json",
     });
   });
+
+  test("character classes in globs are literal, not regex syntax", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/item[0-9]`, async (r) => {
+      await r.fulfill({ status: 200, body: "class-literal" });
+    });
+
+    // Literal brackets in the URL match; a digit-only path does not.
+    expect((await trigger("/item[0-9]")).raw).toBe("class-literal");
+
+    // /item5 must miss the literal [0-9] pattern and hit upstream 404.
+    const miss = await trigger("/item5");
+    expect(miss.status).toBe(404);
+  });
+
+  test("nested braces in a glob throw at registration", async ({ page }) => {
+    await expect(
+      page.route("http://example.com/{a{b,c}}", async (r) => r.fallback()),
+    ).rejects.toThrow(/nested/i);
+  });
+
+  test("unmatched closing brace in a glob throws at registration", async ({ page }) => {
+    await expect(
+      page.route("http://example.com/a}", async (r) => r.fallback()),
+    ).rejects.toThrow(/}/);
+  });
+
+  test("HTTP relative matcher works with an uppercase-scheme baseURL", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      baseURL: "HTTP://127.0.0.1:4001/",
+    });
+    const page = await context.newPage();
+    await page.goto("http://127.0.0.1:3000/");
+    await page.route("/users", async (r) => {
+      await r.fulfill({ status: 200, body: "upper-base" });
+    });
+    const result = await page.evaluate(async (url) => {
+      const response = await fetch(url);
+      return response.text();
+    }, `${UPSTREAM}/users`);
+    expect(result).toBe("upper-base");
+    await context.close();
+  });
 });

@@ -248,4 +248,40 @@ test.describe("route times", () => {
     ]);
     expect(invocations).toBe(1);
   });
+
+  test("times: -1 still runs once and is then removed", async ({ route, trigger }) => {
+    let invocations = 0;
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        invocations += 1;
+        await r.fulfill({ status: 200, body: "neg-ran-once" });
+      },
+      { times: -1 },
+    );
+
+    expect((await trigger("/users")).raw).toBe("neg-ran-once");
+    expect((await trigger("/users")).data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+    expect(invocations).toBe(1);
+  });
+
+  test("times: NaN never expires", async ({ route, trigger }) => {
+    let invocations = 0;
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        invocations += 1;
+        await r.fulfill({ status: 200, body: `nan-${invocations}` });
+      },
+      { times: Number.NaN },
+    );
+
+    expect((await trigger("/users")).raw).toBe("nan-1");
+    expect((await trigger("/users")).raw).toBe("nan-2");
+    expect((await trigger("/users")).raw).toBe("nan-3");
+    expect(invocations).toBe(3);
+  });
 });

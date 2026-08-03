@@ -1255,4 +1255,196 @@ test.describe("routeWebSocket", () => {
       .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
       .toEqual(["open", "message:empty-match"]);
   });
+
+  test("second route.close is a no-op once the page socket is CLOSED", async ({
+    page,
+  }) => {
+    let route!: WebSocketRoute;
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      route = ws;
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await route.close({ code: 3000, reason: "once" });
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "close code=3000 reason=once wasClean=true"]);
+
+    await route.close({ code: 3001, reason: "twice" });
+    await page.waitForTimeout(100);
+    const log = await page.evaluate(() => (window as unknown as { log: string[] }).log);
+    expect(log).toEqual(["open", "close code=3000 reason=once wasClean=true"]);
+  });
+
+  test("page close while CONNECTING still closes with code and reason", async ({
+    page,
+  }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, async () => {
+      await gate;
+    });
+    await gotoHarness(page);
+
+    await page.evaluate((url) => {
+      (window as unknown as { log: string[] }).log = [];
+      const ws = new WebSocket(url);
+      (window as unknown as { ws: WebSocket }).ws = ws;
+      ws.addEventListener("open", () =>
+        (window as unknown as { log: string[] }).log.push("open"),
+      );
+      ws.addEventListener("close", (e) =>
+        (window as unknown as { log: string[] }).log.push(
+          `close code=${e.code} reason=${e.reason} wasClean=${e.wasClean}`,
+        ),
+      );
+      ws.close(3007, "early");
+    }, `${WS_UPSTREAM}/echo`);
+
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["close code=3007 reason=early wasClean=true"]);
+    release();
+  });
+
+  test("mock page socket.protocol uses a single string protocol argument", async ({
+    page,
+  }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {});
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`, { protocols: "chat.v1" });
+    const protocol = await page.evaluate(
+      () => (window as unknown as { ws: WebSocket }).ws.protocol,
+    );
+    expect(protocol).toBe("chat.v1");
+  });
+
+  test("unclean upstream close forwards wasClean=false to the page", async ({ page }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.connectToServer();
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+
+    await page.evaluate(() =>
+      (window as unknown as { ws: WebSocket }).ws.send("die-unclean"),
+    );
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual([
+        "open",
+        expect.stringMatching(/^close code=\d+ reason=.*wasClean=false/),
+      ]);
+  });
+
+  test("throwing routeWebSocket handler leaves the socket CONNECTING", async ({
+    page,
+  }) => {
+    // Playwright reports the handler exception as a test failure; pin CONNECTING.
+    test.fail();
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {
+      throw new Error("ws-handler-boom");
+    });
+    await gotoHarness(page);
+
+    await page.evaluate((url) => {
+      (window as unknown as { log: string[] }).log = [];
+      const ws = new WebSocket(url);
+      (window as unknown as { ws: WebSocket }).ws = ws;
+      ws.addEventListener("open", () =>
+        (window as unknown as { log: string[] }).log.push("open"),
+      );
+      ws.addEventListener("error", () =>
+        (window as unknown as { log: string[] }).log.push("error"),
+      );
+      ws.addEventListener("close", () =>
+        (window as unknown as { log: string[] }).log.push("close"),
+      );
+    }, `${WS_UPSTREAM}/echo`);
+
+    await page.waitForTimeout(300);
+    const state = await page.evaluate(
+      () => (window as unknown as { ws: WebSocket }).ws.readyState,
+    );
+    expect(state).toBe(0); // CONNECTING — ensureOpened never ran
+    const log = await page.evaluate(() => (window as unknown as { log: string[] }).log);
+    expect(log).not.toContain("open");
+  });
+
+  test("upstream handshake failure dispatches an error event on the page socket", async ({
+    page,
+  }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/reject`, (ws) => {
+      ws.connectToServer();
+    });
+    await gotoHarness(page);
+
+    await page.evaluate((url) => {
+      (window as unknown as { log: string[] }).log = [];
+      const ws = new WebSocket(url);
+      (window as unknown as { ws: WebSocket }).ws = ws;
+      ws.addEventListener("open", () =>
+        (window as unknown as { log: string[] }).log.push("open"),
+      );
+      ws.addEventListener("error", () =>
+        (window as unknown as { log: string[] }).log.push("error"),
+      );
+      ws.addEventListener("close", (e) =>
+        (window as unknown as { log: string[] }).log.push(
+          `close code=${e.code} wasClean=${e.wasClean}`,
+        ),
+      );
+    }, `${WS_UPSTREAM}/reject`);
+
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["error", expect.stringMatching(/^close code=\d+ wasClean=/)]);
+  });
+
+  test("changing binaryType after connect affects subsequent binary frames", async ({
+    page,
+  }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.onMessage((msg) => {
+        if (typeof msg === "string") ws.send(Buffer.from([1, 2, 3]));
+      });
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`, { binaryType: "blob" });
+
+    await page.evaluate(() => {
+      const ws = (window as unknown as { ws: WebSocket }).ws;
+      ws.binaryType = "arraybuffer";
+      ws.send("ping");
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const log = (window as unknown as { log: string[] }).log;
+          return log.find((entry) => entry.startsWith("message:"));
+        }),
+      )
+      .toBe("message:buf:010203");
+  });
+
+  test("route.send after the page socket is closed does not throw", async ({ page }) => {
+    let route!: WebSocketRoute;
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      route = ws;
+    });
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+    await route.close({ code: 3000, reason: "done" });
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
+      .toEqual(["open", "close code=3000 reason=done wasClean=true"]);
+
+    expect(() => route.send("after-close")).not.toThrow();
+    await page.waitForTimeout(100);
+    const log = await page.evaluate(() => (window as unknown as { log: string[] }).log);
+    expect(log.filter((e) => e.startsWith("message:"))).toHaveLength(0);
+  });
 });

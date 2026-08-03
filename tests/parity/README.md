@@ -25,8 +25,10 @@ Browser mode imports **only** `@playwright/test`. No `@playwright-backend-mocks/
 - `harness.ts` — thin dual-mode seam (`route` / `trigger` / `unroute` / …)
 - `specs/` — scenarios adapted from Playwright’s network suite + checklist gaps
 - `checklist.md` — guaranteed API surface coverage and intentional skips
+- `source-coverage-pass.md` — fine-tooth Playwright source ↔ suite branch map
 - Shared upstream: `fixtures/upstream`
 - Browser downstream: `fixtures/browser-harness`
+- WebSocket upstream: `fixtures/ws-upstream`
 
 ## Running
 

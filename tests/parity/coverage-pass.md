@@ -1,13 +1,14 @@
 # Oracle coverage pass — Playwright interception APIs
 
-Date: 2026-08-03 (updated same day after WS + HTTP gap implementation)  
+Date: 2026-08-03 (updated after source fine-tooth comb)  
 Pin: `@playwright/test@1.62.1` / research commit `15b1aec`  
-Suite at latest green run: **238** browser-mode tests
+Suite at latest green run: **299** browser-mode tests
 
-**Status update:** WebSockets stay on the rewrite roadmap with **loud docs caveats** (HTTP ≈ all clients; WS = `globalThis.WebSocket` only — see rewrite-spec §4). Oracle `route-websocket.spec.ts` pins Playwright `WebSocketRoute` + injected `webSocketMock.ts` edge cases (62 WS cases). Remaining WS skips are only browser document-lifecycle (`_executionContextGone` / `page.close`).
+**Authoritative source-branch report:** [`source-coverage-pass.md`](./source-coverage-pass.md).
 
-This document is the methodical docs → implementation → suite comparison requested for Step 1. It invents no new product API; it inventories Playwright’s interception surface, maps our suite, and lists remaining gaps needed for near-complete behavioral parity (Ajax + WebSockets), excluding browser-only concerns (cookies, CORS auto-headers, navigation, service workers, favicon, TLS/timing).
+**Status:** WebSockets stay on the rewrite roadmap with **loud docs caveats** (HTTP ≈ all clients; WS = `globalThis.WebSocket` only — see rewrite-spec §4). Oracle `route-websocket.spec.ts` pins Playwright `WebSocketRoute` + injected `webSocketMock.ts` (64 WS cases). Remaining WS skips are only browser document-lifecycle (`_executionContextGone` / `page.close`).
 
+This document is the methodical docs → implementation → suite comparison for Step 1. Prefer `source-coverage-pass.md` for the latest branch-by-branch gap list after the Playwright source audit.
 ---
 
 ## Method
