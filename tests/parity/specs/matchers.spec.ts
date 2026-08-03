@@ -40,6 +40,27 @@ test.describe("matchers", () => {
     expect(result.data).toEqual([{ id: 4, name: "Predicate" }]);
   });
 
+  test("matches URLPattern", async ({ route, trigger }) => {
+    const { URLPattern } = await import("urlpattern-polyfill");
+    await route(
+      new URLPattern({
+        protocol: "http",
+        hostname: "127.0.0.1",
+        port: "4001",
+        pathname: "/users",
+      }) as unknown as Parameters<typeof route>[0],
+      async (r) => {
+        await r.fulfill({
+          status: 200,
+          json: [{ id: 5, name: "URLPattern" }],
+        });
+      },
+    );
+
+    const result = await trigger("/users");
+    expect(result.data).toEqual([{ id: 5, name: "URLPattern" }]);
+  });
+
   test("does not treat ? as a single-character wildcard", async ({ route, trigger }) => {
     // In Playwright globs, `?` is literal — not a wildcard.
     await route("http://127.0.0.1:4001/user?", async (r) => {
@@ -53,8 +74,54 @@ test.describe("matchers", () => {
     ]);
   });
 
+  test("single-star does not cross path segments", async ({ route, trigger }) => {
+    await route("http://127.0.0.1:4001/a/*", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "single-star" } });
+    });
+
+    const hit = await trigger("/a/b");
+    expect(hit.data).toEqual({ matched: "single-star" });
+
+    // `/a/b/c` would cross another segment — create via absolute path that
+    // doesn't exist upstream; single-star should not match `/a` alone either
+    // when requesting a deeper path through a different pattern.
+    await route("http://127.0.0.1:4001/*", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "one-segment" } });
+    });
+    // `/users` is one segment under host — matches `/*`
+    // But `/**` style is needed for nested; `http://127.0.0.1:4001/*` matches
+    // exactly one path segment after origin.
+    const one = await trigger("/foo");
+    expect(one.data).toEqual({ matched: "one-segment" });
+  });
+
+  test("double-star matches across path segments", async ({ route, trigger }) => {
+    await route("http://127.0.0.1:4001/a/**", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "double-star" } });
+    });
+
+    const result = await trigger("/a/b");
+    expect(result.data).toEqual({ matched: "double-star" });
+  });
+
+  test("supports brace groups in globs", async ({ route, trigger }) => {
+    await route("http://127.0.0.1:4001/{foo,bar}", async (r) => {
+      await r.fulfill({ status: 200, json: { matched: "brace" } });
+    });
+
+    const foo = await trigger("/foo");
+    expect(foo.data).toEqual({ matched: "brace" });
+    const bar = await trigger("/bar");
+    expect(bar.data).toEqual({ matched: "brace" });
+
+    const users = await trigger("/users");
+    expect(users.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
   test("throws on an invalid glob pattern", async ({ page }) => {
-    // Playwright validates glob patterns at registration time.
     let error: Error | undefined;
     try {
       await page.route("http://127.0.0.1:4001/{unclosed", async (r) => {
@@ -79,5 +146,51 @@ test.describe("matchers", () => {
     const result = await trigger("/users");
     expect(result.data).toEqual([{ id: 1, name: "OnlyUsers" }]);
     expect(chargesHit).toBe(false);
+  });
+
+  test("works with encoded URL paths", async ({ route, trigger }) => {
+    await route("**/with%20space", async (r) => {
+      await r.fulfill({ status: 200, json: { mocked: true } });
+    });
+
+    const result = await trigger("/with%20space");
+    expect(result.data).toEqual({ mocked: true });
+  });
+
+  test("resolves relative glob strings against baseURL", async ({ browser }) => {
+    const context = await browser.newContext({ baseURL: UPSTREAM });
+    const page = await context.newPage();
+    await page.goto("http://127.0.0.1:3000/");
+    await page.route("/users", async (r) => {
+      await r.fulfill({ status: 200, json: { via: "baseURL" } });
+    });
+
+    const result = await page.evaluate(async (url) => {
+      const response = await fetch(url);
+      return response.json();
+    }, `${UPSTREAM}/users`);
+    expect(result).toEqual({ via: "baseURL" });
+    await context.close();
+  });
+
+  test("route() returns a Disposable that unregisters the handler", async ({
+    page,
+    trigger,
+    harnessPage,
+  }) => {
+    void harnessPage;
+    const registration = await page.route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ status: 200, body: "disposable" });
+    });
+
+    const first = await trigger("/users");
+    expect(first.raw).toBe("disposable");
+
+    await registration.dispose();
+    const second = await trigger("/users");
+    expect(second.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
   });
 });

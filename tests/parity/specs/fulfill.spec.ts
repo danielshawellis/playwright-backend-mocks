@@ -190,4 +190,146 @@ test.describe("route.fulfill", () => {
     expect(result.status).toBe(200);
     expect(result.data).toEqual([{ id: 1, name: "XHR" }]);
   });
+
+  test("defaults status to 200 when omitted", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ body: "default-status" });
+    });
+
+    const result = await trigger("/users");
+    expect(result.status).toBe(200);
+    expect(result.raw).toBe("default-status");
+  });
+
+  test("infers content-type from path extension", async ({ route, trigger, page }) => {
+    const jsonPath = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../testdata/payload.json",
+    );
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ path: jsonPath });
+    });
+
+    const pending = page.waitForResponse(`${UPSTREAM}/users`);
+    const result = await trigger("/users");
+    const response = await pending;
+    expect(result.data).toEqual({ kind: "json-file" });
+    expect(response.headers()["content-type"]).toContain("application/json");
+  });
+
+  test("infers text content-type from .txt path", async ({ route, trigger, page }) => {
+    const txtPath = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../testdata/payload.txt",
+    );
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ path: txtPath });
+    });
+
+    const pending = page.waitForResponse(`${UPSTREAM}/users`);
+    const result = await trigger("/users");
+    const response = await pending;
+    expect(result.raw?.trim()).toBe("plain-file-body");
+    expect(response.headers()["content-type"]).toContain("text/plain");
+  });
+
+  test("coerces header values to strings", async ({ route, trigger, page }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({
+        status: 200,
+        headers: {
+          // Playwright docs: header values are converted to a string.
+          "x-count": 42 as unknown as string,
+          "access-control-expose-headers": "x-count",
+        },
+        body: "ok",
+      });
+    });
+
+    const pending = page.waitForResponse(`${UPSTREAM}/users`);
+    await trigger("/users");
+    const response = await pending;
+    expect(response.headers()["x-count"]).toBe("42");
+  });
+
+  test("json sets application/json when content-type is unset", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ json: { a: 1 } });
+    });
+
+    const pending = page.waitForResponse(`${UPSTREAM}/users`);
+    const result = await trigger("/users");
+    const response = await pending;
+    expect(result.data).toEqual({ a: 1 });
+    expect(response.headers()["content-type"]).toContain("application/json");
+  });
+
+  test("json respects an explicit content-type override", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({
+        contentType: "text/plain",
+        json: { a: 1 },
+      });
+    });
+
+    const pending = page.waitForResponse(`${UPSTREAM}/users`);
+    const result = await trigger("/users");
+    const response = await pending;
+    expect(result.raw).toBe(JSON.stringify({ a: 1 }));
+    expect(response.headers()["content-type"]).toContain("text/plain");
+  });
+
+  test("can fulfill with a redirect status for the caller", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    // Fulfilling with 302 returns that status to the intercepted request.
+    // Browser fetch may follow it; we assert via Playwright's Response.
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({
+        status: 302,
+        headers: {
+          location: `${UPSTREAM}/echo`,
+          "access-control-expose-headers": "*",
+        },
+        body: "",
+      });
+    });
+
+    const pending = page.waitForResponse(
+      (response) => response.url() === `${UPSTREAM}/users` && response.status() === 302,
+    );
+    void trigger("/users");
+    const response = await pending;
+    expect(response.status()).toBe(302);
+    expect(response.headers().location).toBe(`${UPSTREAM}/echo`);
+  });
+
+  test("fulfills with response body override as text", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      const response = await r.fetch();
+      let body = await response.text();
+      body = body.replace("Ada", "Ada-patched");
+      await r.fulfill({
+        response,
+        body,
+        headers: {
+          ...response.headers(),
+          "content-type": "application/json",
+        },
+      });
+    });
+
+    const result = await trigger("/users");
+    expect(result.raw).toContain("Ada-patched");
+  });
 });

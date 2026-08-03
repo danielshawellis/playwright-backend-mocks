@@ -264,4 +264,79 @@ test.describe("route.fallback", () => {
     const result = await trigger("/echo");
     expect(result.data).toEqual({ via: "dynamic" });
   });
+
+  test("amends binary post data", async ({ route, trigger }) => {
+    const bytes = Buffer.from(Array.from(Array(256).keys()));
+    let observed: Buffer | undefined;
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      observed = r.request().postDataBuffer() ?? undefined;
+      await r.continue();
+    });
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.fallback({ postData: bytes });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      body: "birdy",
+    });
+    expect(observed).toBeTruthy();
+    expect(observed!.equals(bytes)).toBe(true);
+    const echoed = result.data as {
+      bodyBase64: string;
+      bodyByteLength: number;
+    };
+    expect(echoed.bodyByteLength).toBe(bytes.length);
+    expect(Buffer.from(echoed.bodyBase64, "base64").equals(bytes)).toBe(true);
+  });
+
+  test("URL override re-targets subsequent handler matching", async ({
+    route,
+    trigger,
+  }) => {
+    // Observed Playwright behavior: after fallback({ url }), later handlers are
+    // considered against the overridden URL (echo-alt handler runs next).
+    const seen: string[] = [];
+
+    await route(`${UPSTREAM}/echo-alt`, async (r) => {
+      seen.push("echo-alt-only");
+      await r.fulfill({ status: 200, json: { via: "echo-alt-only" } });
+    });
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      seen.push("echo-continue");
+      await r.continue();
+    });
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      seen.push("echo-fallback");
+      await r.fallback({ url: `${UPSTREAM}/echo-alt` });
+    });
+
+    const result = await trigger("/echo");
+    expect(seen).toEqual(["echo-fallback", "echo-alt-only"]);
+    expect(result.data).toEqual({ via: "echo-alt-only" });
+  });
+
+  test("handler can fall back based on method", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      if (r.request().method() !== "GET") {
+        await r.fallback();
+        return;
+      }
+      await r.fulfill({ status: 200, json: { only: "GET" } });
+    });
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      if (r.request().method() !== "POST") {
+        await r.fallback();
+        return;
+      }
+      await r.fulfill({ status: 200, json: { only: "POST" } });
+    });
+
+    const getResult = await trigger("/echo");
+    // LIFO: POST handler runs first, falls back; GET handler fulfills.
+    expect(getResult.data).toEqual({ only: "GET" });
+
+    const postResult = await trigger("/echo", { method: "POST", body: "x" });
+    expect(postResult.data).toEqual({ only: "POST" });
+  });
 });

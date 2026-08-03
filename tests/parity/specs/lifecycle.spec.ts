@@ -224,4 +224,111 @@ test.describe("route lifecycle", () => {
     expect(results.every((r) => r.status === 200)).toBe(true);
     expect(maxActive).toBeGreaterThan(1);
   });
+
+  test("unroute(url) without handler removes all handlers for that url", async ({
+    route,
+    unroute,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ status: 200, body: "first" });
+    });
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ status: 200, body: "second" });
+    });
+
+    await unroute(`${UPSTREAM}/users`);
+    const result = await trigger("/users");
+    expect(result.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
+  test("unrouteAll({ behavior: 'default' }) does not wait for handlers", async ({
+    route,
+    unrouteAll,
+    trigger,
+    page,
+  }) => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let fulfillError = "";
+
+    await route(`${UPSTREAM}/users`, async (r) => {
+      entered();
+      await barrier;
+      try {
+        await r.fulfill({ status: 200, body: "late" });
+      } catch (e) {
+        // After default unrouteAll, Playwright may already settle the route.
+        fulfillError = e instanceof Error ? e.message : String(e);
+      }
+    });
+
+    const pending = trigger("/users");
+    await enteredPromise;
+
+    let didUnroute = false;
+    const unroutePromise = unrouteAll({ behavior: "default" }).then(() => {
+      didUnroute = true;
+    });
+    await page.waitForTimeout(100);
+    await unroutePromise;
+    expect(didUnroute).toBe(true);
+    release();
+    await pending.catch(() => undefined);
+    expect(fulfillError.length).toBeGreaterThanOrEqual(0);
+  });
+
+  test("double-settle throws for fulfill after continue", async ({ route, trigger }) => {
+    let settleError: string | undefined;
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.continue();
+      try {
+        await r.fulfill({ status: 200, body: "nope" });
+      } catch (e) {
+        settleError = e instanceof Error ? e.message : String(e);
+      }
+    });
+
+    await trigger("/users");
+    expect(settleError).toMatch(/already handled/i);
+  });
+
+  test("double-settle throws for abort after continue", async ({ route, trigger }) => {
+    let settleError: string | undefined;
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.continue();
+      try {
+        await r.abort();
+      } catch (e) {
+        settleError = e instanceof Error ? e.message : String(e);
+      }
+    });
+
+    await trigger("/users");
+    expect(settleError).toMatch(/already handled/i);
+  });
+
+  test("fallback then fulfill is allowed (fallback is non-terminal)", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ status: 200, body: "after-fallback" });
+    });
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fallback();
+    });
+
+    const result = await trigger("/users");
+    expect(result.raw).toBe("after-fallback");
+  });
 });

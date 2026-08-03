@@ -13,7 +13,7 @@ export const parityMode: ParityMode =
   process.env.PARITY_MODE === "backend" ? "backend" : "browser";
 
 type RouteHandler = (route: Route, request: Request) => unknown;
-type RouteUrl = string | RegExp | ((url: URL) => boolean);
+type RouteUrl = Parameters<Page["route"]>[0];
 
 export type TriggerInit = {
   method?: string;
@@ -55,7 +55,7 @@ type ParityFixtures = {
   trigger: (path: string, init?: TriggerInit) => Promise<TriggerResult>;
   waitForRequest: (
     urlOrPredicate: string | RegExp | ((request: Request) => boolean),
-    options?: { timeout?: number },
+    options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Request>;
   /** Absolute upstream URL helper. */
   upstream: (path?: string) => string;

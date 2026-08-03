@@ -8,6 +8,7 @@
     "test:browser": "PARITY_MODE=browser playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1"
+    "@playwright/test": "1.62.1",
+    "urlpattern-polyfill": "10.1.0"
   }
 }

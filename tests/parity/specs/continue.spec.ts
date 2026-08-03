@@ -167,4 +167,134 @@ test.describe("route.continue", () => {
       { id: 2, name: "Grace" },
     ]);
   });
+
+  test("amends json post data via Serializable", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        method: "POST",
+        postData: { foo: "bar" },
+      });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      body: "birdy",
+    });
+    expect(result.data).toMatchObject({
+      body: JSON.stringify({ foo: "bar" }),
+    });
+  });
+
+  test("overrides method alone", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({ method: "POST" });
+    });
+
+    const result = await trigger("/echo");
+    expect(result.data).toMatchObject({ method: "POST" });
+  });
+
+  test("overrides headers alone", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        headers: {
+          ...r.request().headers(),
+          "x-only": "header",
+        },
+      });
+    });
+
+    const result = await trigger("/echo");
+    const echoHeaders = (result.data as { headers: Record<string, string> }).headers;
+    expect(echoHeaders["x-only"]).toBe("header");
+  });
+
+  test("ignores forbidden Host header override", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        headers: {
+          ...r.request().headers(),
+          host: "evil.example",
+        },
+      });
+    });
+
+    const result = await trigger("/echo");
+    const echoHeaders = (result.data as { headers: Record<string, string> }).headers;
+    // Forbidden Host override is ignored; original host is used.
+    expect(echoHeaders.host).toContain("127.0.0.1");
+    expect(echoHeaders.host).not.toBe("evil.example");
+  });
+
+  test("headers overrides apply to the continued request", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        headers: {
+          ...r.request().headers(),
+          "x-continued": "yes",
+        },
+      });
+    });
+
+    const result = await trigger("/echo");
+    expect(result.status).toBe(200);
+    const echoHeaders = (result.data as { headers: Record<string, string> }).headers;
+    expect(echoHeaders["x-continued"]).toBe("yes");
+  });
+
+  test("fetch header overrides apply across redirects", async ({ route, trigger }) => {
+    // route.fetch uses APIRequestContext; its headers option applies to the
+    // fetched request and redirects it initiates (per Route.fetch docs).
+    await route(`${UPSTREAM}/redirect-echo`, async (r) => {
+      const response = await r.fetch({
+        headers: {
+          ...r.request().headers(),
+          "x-redirected": "yes",
+        },
+      });
+      await r.fulfill({
+        status: 200,
+        json: await response.json(),
+      });
+    });
+
+    const result = await trigger("/redirect-echo");
+    expect(result.status).toBe(200);
+    expect(
+      (result.data as { headers: Record<string, string> }).headers["x-redirected"],
+    ).toBe("yes");
+  });
+
+  test("url override does not carry onto redirected requests", async ({
+    route,
+    trigger,
+  }) => {
+    // Continue to /redirect with a url override already applied; after the
+    // server 302, method/url overrides from the original continue do not apply
+    // to the redirected hop — only the Location target is fetched.
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.continue({ url: `${UPSTREAM}/redirect` });
+    });
+
+    const result = await trigger("/users");
+    // fetch follows redirect → /users real data
+    expect(result.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
+  test("skips remaining handlers (unlike fallback)", async ({ route, trigger }) => {
+    let laterCalled = false;
+    await route(`${UPSTREAM}/users`, async () => {
+      laterCalled = true;
+    });
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.continue();
+    });
+
+    const result = await trigger("/users");
+    expect(result.status).toBe(200);
+    expect(laterCalled).toBe(false);
+  });
 });

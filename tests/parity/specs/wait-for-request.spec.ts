@@ -67,8 +67,42 @@ test.describe("waitForRequest", () => {
       message = e instanceof Error ? e.message : String(e);
     }
 
-    // Make sure the page is alive / harness works.
     await trigger("/users");
     expect(message).toMatch(/Timeout|timeout/i);
+  });
+
+  test("supports AbortSignal cancellation", async ({ waitForRequest, trigger }) => {
+    const controller = new AbortController();
+    const pending = waitForRequest(`${UPSTREAM}/missing`, {
+      signal: controller.signal,
+      timeout: 30_000,
+    });
+    controller.abort();
+
+    let message = "";
+    try {
+      await pending;
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message.length).toBeGreaterThan(0);
+    await trigger("/users");
+  });
+
+  test("timeout 0 waits indefinitely until a match", async ({
+    route,
+    trigger,
+    waitForRequest,
+    page,
+  }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.fulfill({ status: 200, json: [] });
+    });
+
+    const pending = waitForRequest(`${UPSTREAM}/users`, { timeout: 0 });
+    await page.waitForTimeout(100);
+    await trigger("/users");
+    const seen = await pending;
+    expect(seen.url()).toContain("/users");
   });
 });

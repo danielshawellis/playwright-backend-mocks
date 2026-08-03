@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { gzipSync } from "node:zlib";
 
 const port = Number(process.env.PORT ?? 4001);
+const flakyHits = new Map();
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
@@ -83,6 +84,32 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/a/b") {
+    json(res, 200, { path: "/a/b" });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/a/c") {
+    json(res, 200, { path: "/a/c" });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/foo") {
+    json(res, 200, { path: "/foo" });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/bar") {
+    json(res, 200, { path: "/bar" });
+    return;
+  }
+
+  // Encoded path segment: /with%20space
+  if (req.method === "GET" && url.pathname === "/with space") {
+    json(res, 200, { path: "/with space", encoded: true });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/gzip") {
     const payload = JSON.stringify({ gzipped: true, message: "hello" });
     const compressed = gzipSync(Buffer.from(payload, "utf8"));
@@ -100,6 +127,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(302, {
       location: "/users",
       "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
     });
     res.end();
     return;
@@ -109,6 +137,17 @@ const server = createServer(async (req, res) => {
     res.writeHead(302, {
       location: "/echo",
       "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/redirect-chain") {
+    res.writeHead(302, {
+      location: "/redirect",
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "*",
     });
     res.end();
     return;
@@ -116,6 +155,21 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/slow") {
     // Intentionally never responds — used by route.fetch timeout tests.
+    return;
+  }
+
+  // First N hits destroy the socket (ECONNRESET); then succeed.
+  // Keyed by query ?n= to allow independent tests.
+  if (req.method === "GET" && url.pathname === "/flaky") {
+    const key = url.searchParams.get("key") ?? "default";
+    const failTimes = Number(url.searchParams.get("fail") ?? "1");
+    const hits = flakyHits.get(key) ?? 0;
+    flakyHits.set(key, hits + 1);
+    if (hits < failTimes) {
+      req.socket.destroy();
+      return;
+    }
+    json(res, 200, { ok: true, attempts: hits + 1, key });
     return;
   }
 
@@ -137,6 +191,16 @@ const server = createServer(async (req, res) => {
       "x-upstream": "real",
     });
     res.end(bytes);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/form") {
+    json(res, 200, {
+      method: req.method,
+      contentType: req.headers["content-type"] ?? null,
+      body: bodyText,
+      parsed: Object.fromEntries(new URLSearchParams(bodyText).entries()),
+    });
     return;
   }
 

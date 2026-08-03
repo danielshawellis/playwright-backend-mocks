@@ -166,12 +166,137 @@ test.describe("route.fetch", () => {
   }) => {
     await route(`${UPSTREAM}/gzip`, async (r) => {
       const response = await r.fetch();
-      // APIRequestContext decompresses; page route fulfill serves decoded JSON.
       const json = await response.json();
       await r.fulfill({ json });
     });
 
     const result = await trigger("/gzip");
     expect(result.data).toEqual({ gzipped: true, message: "hello" });
+  });
+
+  test("follows redirects by default", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/redirect`, async (r) => {
+      const response = await r.fetch();
+      expect(response.status()).toBe(200);
+      expect(response.url()).toContain("/users");
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/redirect");
+    expect(result.data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+  });
+
+  test("supports maxRetries for transient connection resets", async ({
+    route,
+    trigger,
+  }) => {
+    const key = `retry-${Date.now()}`;
+    await route(`**/flaky*`, async (r) => {
+      const response = await r.fetch({ maxRetries: 2 });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger(`/flaky?key=${key}&fail=1`);
+    expect(result.status).toBe(200);
+    expect(result.data).toMatchObject({ ok: true });
+  });
+
+  test("fails without maxRetries when the connection resets", async ({
+    route,
+    trigger,
+  }) => {
+    const key = `noretry-${Date.now()}`;
+    await route(`**/flaky*`, async (r) => {
+      let message = "";
+      try {
+        await r.fetch({ maxRetries: 0 });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message.length).toBeGreaterThan(0);
+      await r.fulfill({ status: 502, body: "reset" });
+    });
+
+    const result = await trigger(`/flaky?key=${key}&fail=1`);
+    expect(result.status).toBe(502);
+  });
+
+  test("supports AbortSignal cancellation", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/slow`, async (r) => {
+      const controller = new AbortController();
+      const pending = r.fetch({ signal: controller.signal, timeout: 0 });
+      controller.abort();
+      let message = "";
+      try {
+        await pending;
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message.length).toBeGreaterThan(0);
+      await r.fulfill({ status: 499, body: "aborted-fetch" });
+    });
+
+    const result = await trigger("/slow");
+    expect(result.status).toBe(499);
+    expect(result.raw).toBe("aborted-fetch");
+  });
+
+  test("timeout 0 disables the fetch timeout", async ({ route, trigger }) => {
+    // Pair with a fast upstream so we only assert that timeout:0 is accepted
+    // and completes (a true hang would never finish).
+    await route(`${UPSTREAM}/users`, async (r) => {
+      const response = await r.fetch({ timeout: 0 });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/users");
+    expect(result.status).toBe(200);
+  });
+
+  test("supports headers-only fetch override", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      const response = await r.fetch({
+        headers: {
+          ...r.request().headers(),
+          "x-fetch-only": "1",
+        },
+      });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo");
+    expect(
+      (result.data as { headers: Record<string, string> }).headers["x-fetch-only"],
+    ).toBe("1");
+  });
+
+  test("supports method-only fetch override", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      const response = await r.fetch({ method: "POST" });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo");
+    expect(result.data).toMatchObject({ method: "POST" });
+  });
+
+  test("APIResponse exposes statusText, headersArray, and body buffer", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/simple.json`, async (r) => {
+      const response = await r.fetch();
+      expect(response.statusText().length).toBeGreaterThan(0);
+      expect(response.headersArray().length).toBeGreaterThan(0);
+      const buf = await response.body();
+      expect(buf.includes(Buffer.from("foo")[0]!)).toBe(true);
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/simple.json");
+    expect(result.data).toEqual({ foo: "bar" });
   });
 });
