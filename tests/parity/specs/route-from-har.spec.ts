@@ -256,30 +256,6 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     await replayContext.close();
   });
 
-  test("updateContent embed stores bodies inline", async ({ browser }, testInfo) => {
-    const outHar = testInfo.outputPath("embedded.har");
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    await page.goto("http://127.0.0.1:3000/");
-    await page.routeFromHAR(outHar, {
-      url: "**/simple.json",
-      update: true,
-      updateMode: "minimal",
-      updateContent: "embed",
-    });
-
-    const live = await page.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.json();
-    }, `${UPSTREAM}/simple.json`);
-    expect(live).toEqual({ foo: "bar" });
-    await context.close();
-
-    const raw = fs.readFileSync(outHar, "utf8");
-    expect(raw).toContain("foo");
-    expect(raw).toContain("bar");
-  });
-
   test("GET to a POST-only HAR entry does not reuse the wrong method", async ({
     page,
     trigger,
@@ -338,43 +314,6 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     });
     expect(result.status).toBe(200);
     expect(result.data).toEqual({ multipart: "matched" });
-  });
-
-  test("updateMode full records a replayable HAR", async ({ browser }, testInfo) => {
-    const outHar = testInfo.outputPath("full-mode.har");
-    const recordContext = await browser.newContext();
-    const recordPage = await recordContext.newPage();
-    await recordPage.goto("http://127.0.0.1:3000/");
-    await recordPage.routeFromHAR(outHar, {
-      url: "**/simple.json",
-      update: true,
-      updateMode: "full",
-      updateContent: "embed",
-    });
-
-    const live = await recordPage.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.json();
-    }, `${UPSTREAM}/simple.json`);
-    expect(live).toEqual({ foo: "bar" });
-    await recordContext.close();
-
-    const replayContext = await browser.newContext();
-    const replayPage = await replayContext.newPage();
-    await replayPage.goto("http://127.0.0.1:3000/");
-    await replayPage.routeFromHAR(outHar, {
-      url: "**/simple.json",
-      update: false,
-      notFound: "abort",
-    });
-
-    const result = await replayPage.evaluate(async (url) => {
-      const response = await fetch(url);
-      return { status: response.status, data: await response.json() };
-    }, `${UPSTREAM}/simple.json`);
-    expect(result.status).toBe(200);
-    expect(result.data).toEqual({ foo: "bar" });
-    await replayContext.close();
   });
 
   test("update records with url filter and override options then replays", async ({

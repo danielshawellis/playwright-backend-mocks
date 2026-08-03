@@ -259,16 +259,14 @@ test.describe("route lifecycle", () => {
     const enteredPromise = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    let fulfillError = "";
 
     await route(`${UPSTREAM}/users`, async (r) => {
       entered();
       await barrier;
       try {
         await r.fulfill({ status: 200, body: "late" });
-      } catch (e) {
+      } catch {
         // After default unrouteAll, Playwright may already settle the route.
-        fulfillError = e instanceof Error ? e.message : String(e);
       }
     });
 
@@ -284,7 +282,6 @@ test.describe("route lifecycle", () => {
     expect(didUnroute).toBe(true);
     release();
     await pending.catch(() => undefined);
-    expect(fulfillError.length).toBeGreaterThanOrEqual(0);
   });
 
   test("double-settle throws for fulfill after continue", async ({ route, trigger }) => {

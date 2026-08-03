@@ -3,7 +3,7 @@
 Guaranteed API surface from [`research/rewrite-specification.md`](../../research/rewrite-specification.md) §4.
 Scenarios adapted from Playwright’s network suite at research commit `15b1aec` and the public Route / Page / Request / Mock / WebSocketRoute API docs.
 
-**Coverage analysis:** [`coverage-pass.md`](./coverage-pass.md) (updated after WebSocket + HTTP gap wave).
+**Coverage analysis:** [`coverage-pass.md`](./coverage-pass.md).
 
 ## In-scope surface
 
@@ -14,7 +14,7 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | `fulfill` from `route.fetch` / APIResponse + overrides                                       | `fetch.spec.ts`, `fulfill.spec.ts`                      | covered |
 | `continue` (+ overrides, utf8, forbidden headers, redirect header/method semantics)          | `continue.spec.ts`                                      | covered |
 | Same-protocol URL constraints (`continue` / `fetch` / `fallback`)                            | `continue.spec.ts`, `fetch.spec.ts`, `fallback.spec.ts` | covered |
-| `abort` (+ documented codes, XHR)                                                            | `abort.spec.ts`                                         | covered |
+| `abort` (+ documented codes accepted; distinguishable failure text)                          | `abort.spec.ts`                                         | covered |
 | `fallback` LIFO / overrides / URL rematch                                                    | `fallback.spec.ts`                                      | covered |
 | `route.fetch` (+ redirects, retries, CT defaults, headers `{}`, no HTTP-500 retry)           | `fetch.spec.ts`                                         | covered |
 | `APIResponse` ok / json / dispose / statusText / body                                        | `fetch.spec.ts`                                         | covered |
@@ -36,14 +36,13 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | ------------------------------------------------------ | ------- |
 | Full mock without server                               | covered |
 | Empty handler opens mock                               | covered |
-| `url()` / `protocols()` (+ string protocol arg)        | covered |
+| `url()` / `protocols()` (+ string / empty / array)     | covered |
 | Proactive `send` without inbound message               | covered |
 | Text + binary `send` to page                           | covered |
-| Binary frames from page into `onMessage`               | covered |
+| Binary / Blob frames from page into `onMessage`        | covered |
 | Binary default-forward through `connectToServer`       | covered |
 | `connectToServer` default bidirectional forward        | covered |
-| Explicit pass-through `onMessage` both directions      | covered |
-| Bidirectional block/modify matrix                      | covered |
+| Server inject + local respond without upstream         | covered |
 | `onMessage` disables that direction’s auto-forward     | covered |
 | Second `onMessage` replaces first                      | covered |
 | `close()` / `close({code,reason})`                     | covered |
@@ -54,22 +53,20 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | `connectToServer` twice throws                         | covered |
 | Glob / RegExp / predicate / newest-match / passthrough | covered |
 | Host URL with no trailing slash                        | covered |
-| Only sockets after registration (+ re-nav for inject)  | covered |
+| Only sockets after registration                        | covered |
 | Concurrent sockets isolated                            | covered |
 | Upstream handshake failure                             | covered |
 | Negotiated subprotocol pass-through                    | covered |
 | Server-side `protocols()` mirrors page request         | covered |
 | `unrouteAll` does not clear WS routes                  | covered |
 | `baseURL` relative pattern (+ uppercase scheme)        | covered |
-| `context.routeWebSocket` + page-over-context win       | covered |
 | Pending async handler stays CONNECTING; `send` opens   | covered |
 | Mock selects first protocol / empty extensions         | covered |
 | Server-side `connectToServer` throws                   | covered |
 | Page send CONNECTING/CLOSED throws; close code rules   | covered |
-| `binaryType=blob` delivery; Blob async reorder         | covered |
 | TypedArray `byteOffset`/`byteLength` slicing           | covered |
-| Relative + `http→ws` constructor URL rewrite           | covered |
-| Predicate catch-all intercept + auto-passthrough       | covered |
+| Absolute `http→ws` constructor URL rewrite             | covered |
+| Predicate miss → passthrough                           | covered |
 | Invalid glob throws at registration                    | covered |
 | `URLPattern` matcher                                   | covered |
 | Buffer `server.send` while upstream CONNECTING         | covered |
@@ -83,21 +80,24 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | Method / body / header score / multipart  | covered |
 | `notFound` abort / fallback / **default** | covered |
 | Fallback → next route handler             | covered |
-| Update / full / embed / abort markers     | covered |
+| Update / abort markers                    | covered |
 | `unrouteAll` stops replay                 | covered |
 
-## Intentional skips
+## Intentional skips / removed from oracle
 
-| Topic                                                 | Reason                                                                                |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| CORS auto-headers, cookie jar, SW, navigation/favicon | Browser-only                                                                          |
-| WS frame navigation/detach close                      | Browser document lifecycle (`_executionContextGone`); no Node WebSocketRoute analogue |
-| WS page-closure send races                            | Browser `page.close()` lifecycle; no Node WebSocketRoute analogue                     |
-| npm `ws` / non-global WebSocket constructors          | Step 2 divergence — `globalThis.WebSocket` only                                       |
-| HAR zip / attach / navigation HAR                     | Non-portable                                                                          |
-| Page vs context HTTP precedence                       | Product single `backendMocks` scope (HTTP); WS precedence covered in oracle           |
-| General `APIRequestContext` client                    | OOS except as `route.fetch` engine                                                    |
-| Resource timing / TLS                                 | Browser / TLS                                                                         |
+| Topic                                                    | Reason                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------- |
+| CORS auto-headers, cookie jar, SW, navigation/favicon    | Browser-only                                                |
+| WS frame navigation/detach close                         | Browser document lifecycle; no Node WebSocketRoute analogue |
+| WS page-closure send races                               | Browser `page.close()` lifecycle                            |
+| Page vs context HTTP/WS dual scope                       | Product single `backendMocks` scope                         |
+| XHR transport matrix                                     | No Node analogue                                            |
+| `request.resourceType` / `frame` / `isNavigationRequest` | Browser request model only                                  |
+| Relative WS URL via `document.baseURI`                   | Node requires absolute (or `http→ws`) URLs                  |
+| HAR `updateContent` / `updateMode: full` storage shape   | HAR-format specific; portable `update: true` remains        |
+| npm `ws` / non-global WebSocket constructors             | Step 2 divergence — `globalThis.WebSocket` only             |
+| General `APIRequestContext` client                       | OOS except as `route.fetch` engine                          |
+| Resource timing / TLS                                    | Browser / TLS                                               |
 
 ## Library-only (not in this suite)
 

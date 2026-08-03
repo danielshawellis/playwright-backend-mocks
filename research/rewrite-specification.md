@@ -70,7 +70,7 @@ Behavior for **already-intercepted** outbound HTTP **and** application WebSocket
 
 - `route` / `unroute` / `unrouteAll`
 - `fulfill` / `continue` / `abort` / `fallback` / `fetch`
-- Matcher forms: glob, RegExp, predicate (plus our `method` / `clientId` object filters)
+- Matcher forms: glob, RegExp, predicate, URLPattern (plus our `method` / `clientId` object filters)
 - LIFO registration, `times`, override accumulation across `fallback`
 - Stall until settle; double-settle throws
 - Glob semantics aligned with Playwright
@@ -80,7 +80,7 @@ Behavior for **already-intercepted** outbound HTTP **and** application WebSocket
 
 **WebSockets** (same DX philosophy as Playwright `routeWebSocket` / `WebSocketRoute`)
 
-- `routeWebSocket(matcher, handler)` with glob / RegExp / predicate matchers (plus our `clientId` filter where applicable)
+- `routeWebSocket(matcher, handler)` with glob / RegExp / predicate / URLPattern matchers (plus our `clientId` filter where applicable)
 - Newest matching handler only (no WS fallback chain — mirror Playwright)
 - Full mock without upstream (`onMessage` / `send` / `close` / `onClose` / `url` / `protocols`)
 - `connectToServer()` with default bidirectional forwarding

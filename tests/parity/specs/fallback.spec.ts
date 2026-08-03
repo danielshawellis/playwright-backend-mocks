@@ -253,18 +253,6 @@ test.describe("route.fallback", () => {
     });
   });
 
-  test("chains fallback with a dynamic URL change", async ({ route, trigger }) => {
-    await route("**/echo-alt", async (r) => {
-      await r.fulfill({ status: 200, json: { via: "dynamic" } });
-    });
-    await route("**/echo", async (r) => {
-      await r.fallback({ url: `${UPSTREAM}/echo-alt` });
-    });
-
-    const result = await trigger("/echo");
-    expect(result.data).toEqual({ via: "dynamic" });
-  });
-
   test("amends binary post data", async ({ route, trigger }) => {
     const bytes = Buffer.from(Array.from(Array(256).keys()));
     let observed: Buffer | undefined;

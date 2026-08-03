@@ -42,49 +42,37 @@ test.describe("request inspection", () => {
   });
 
   test("headerValue is case-insensitive", async ({ route, trigger }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
-      const viaHeader = await request.headerValue("OrIgIn");
-      const viaHeaders = request.headers().origin;
-      expect(viaHeader || viaHeaders).toBeTruthy();
+    await route(`${UPSTREAM}/echo`, async (r, request) => {
+      expect(await request.headerValue("CoNtEnT-TyPe")).toContain("application/json");
+      expect(await request.headerValue("content-type")).toContain("application/json");
       await r.fulfill({ status: 200, json: { ok: true } });
     });
 
-    const result = await trigger("/users");
+    const result = await trigger("/echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     expect(result.data).toEqual({ ok: true });
   });
 
   test("allHeaders and headersArray are available", async ({ route, trigger }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
+    await route(`${UPSTREAM}/echo`, async (r, request) => {
       const all = await request.allHeaders();
       expect(Object.keys(all).length).toBeGreaterThan(0);
-      expect(all.origin || all.accept || all["user-agent"]).toBeTruthy();
+      expect(all["content-type"]).toContain("application/json");
       const arr = await request.headersArray();
       expect(arr.length).toBeGreaterThan(0);
+      expect(arr.some((h) => h.name.toLowerCase() === "content-type")).toBe(true);
       await r.fulfill({ status: 200, json: { ok: true } });
     });
 
-    const result = await trigger("/users");
+    const result = await trigger("/echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     expect(result.data).toEqual({ ok: true });
-  });
-
-  test("resourceType is present for Ajax requests", async ({ route, trigger }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
-      expect(["xhr", "fetch"].includes(request.resourceType())).toBe(true);
-      await r.continue();
-    });
-
-    const result = await trigger("/users");
-    expect(result.status).toBe(200);
-  });
-
-  test("frame is available on the request", async ({ route, trigger, page }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
-      expect(request.frame()).toBe(page.mainFrame());
-      await r.fulfill({ status: 200, body: "framed" });
-    });
-
-    const result = await trigger("/users");
-    expect(result.raw).toBe("framed");
   });
 
   test("request.response() resolves after fulfill", async ({ route, trigger }) => {
@@ -159,30 +147,6 @@ test.describe("request inspection", () => {
     expect(result.data).toMatchObject({
       body: JSON.stringify({ a: 2, inspected: true }),
     });
-  });
-
-  test("isNavigationRequest is false for Ajax", async ({ route, trigger }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
-      expect(request.isNavigationRequest()).toBe(false);
-      await r.fulfill({ status: 200, body: "ajax" });
-    });
-
-    const result = await trigger("/users");
-    expect(result.raw).toBe("ajax");
-  });
-
-  test("redirectedFrom / redirectedTo are null without redirects", async ({
-    route,
-    trigger,
-  }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
-      expect(request.redirectedFrom()).toBeNull();
-      expect(request.redirectedTo()).toBeNull();
-      await r.continue();
-    });
-
-    const result = await trigger("/users");
-    expect(result.status).toBe(200);
   });
 
   test("postData() is null when the request has no body", async ({ route, trigger }) => {

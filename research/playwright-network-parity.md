@@ -268,7 +268,7 @@ backendMocks.routeFromJSON(path, { url?, update?, notFound? })
 | Glob string                 | ✅                    | ✅ (algorithm should be aligned)  |
 | RegExp                      | ✅                    | ✅                                |
 | `(url: URL) => boolean`     | ✅                    | ✅                                |
-| `URLPattern`                | ✅                    | ❌ (optional later)               |
+| `URLPattern`                | ✅                    | ✅ (in rewrite-spec §4)           |
 | `{ url, method, clientId }` | ❌ (PW uses URL only) | ✅ keep — multi-process necessity |
 
 ### Abort codes

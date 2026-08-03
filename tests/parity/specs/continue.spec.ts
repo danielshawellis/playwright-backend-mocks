@@ -226,22 +226,6 @@ test.describe("route.continue", () => {
     expect(echoHeaders.host).not.toBe("evil.example");
   });
 
-  test("headers overrides apply to the continued request", async ({ route, trigger }) => {
-    await route(`${UPSTREAM}/echo`, async (r) => {
-      await r.continue({
-        headers: {
-          ...r.request().headers(),
-          "x-continued": "yes",
-        },
-      });
-    });
-
-    const result = await trigger("/echo");
-    expect(result.status).toBe(200);
-    const echoHeaders = (result.data as { headers: Record<string, string> }).headers;
-    expect(echoHeaders["x-continued"]).toBe("yes");
-  });
-
   test("fetch header overrides apply across redirects", async ({ route, trigger }) => {
     // route.fetch uses APIRequestContext; its headers option applies to the
     // fetched request and redirects it initiates (per Route.fetch docs).
@@ -389,7 +373,7 @@ test.describe("route.continue", () => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
-  test("ignores forbidden Cookie and Content-Length header overrides", async ({
+  test("ignores forbidden Content-Length header overrides", async ({
     route,
     trigger,
   }) => {
@@ -399,7 +383,6 @@ test.describe("route.continue", () => {
         postData: "abcd",
         headers: {
           ...r.request().headers(),
-          cookie: "evil=1",
           "content-length": "1",
           trailer: "should-be-ignored",
         },
@@ -421,8 +404,6 @@ test.describe("route.continue", () => {
     expect(echoed.body).toBe("abcd");
     expect(echoed.bodyByteLength).toBe(4);
     expect(echoed.headers.trailer).toBeFalsy();
-    // Cookie override is forbidden for continue; original request had no Cookie.
-    expect(echoed.headers.cookie ?? echoed.headers.Cookie).toBeFalsy();
   });
 
   test("amends utf-8 / non-ASCII post data", async ({ route, trigger }) => {

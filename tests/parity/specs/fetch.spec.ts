@@ -30,7 +30,6 @@ test.describe("route.fetch", () => {
         headers: {
           "content-type": "application/json",
           foo: "bar",
-          "access-control-expose-headers": "foo",
         },
         json: users,
       });
@@ -144,10 +143,10 @@ test.describe("route.fetch", () => {
   test("can fulfill with a separately fetched APIResponse", async ({
     route,
     trigger,
-    request,
   }) => {
-    const sample = await request.get(`${UPSTREAM}/simple.json`);
+    // Acquire an APIResponse via route.fetch of a different URL (not page.request).
     await route(`${UPSTREAM}/users`, async (r) => {
+      const sample = await r.fetch({ url: `${UPSTREAM}/simple.json` });
       await r.fulfill({
         response: sample,
         status: 201,
