@@ -127,6 +127,10 @@ Supported codes: `failed` (default), `aborted`, `timedout`, `connectionrefused`,
 
 See [Errors](/reference/errors) for default messages and how they surface in the app.
 
+## Record and replay JSON
+
+For a Playwright-style cassette workflow (record once with `update: true`, replay from a committed JSON file), see [Record and replay with JSON](/guide/route-from-json).
+
 ## unroute
 
 Remove routes mid-test to restore passthrough:

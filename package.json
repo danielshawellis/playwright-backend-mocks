@@ -27,7 +27,9 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@iconify/vue": "^5.0.1",
+    "@playwright-backend-mocks/playwright": "workspace:*",
     "@playwright-backend-mocks/protocol": "workspace:*",
+    "@playwright/test": "^1.54.1",
     "@types/node": "^22.16.5",
     "eslint": "^9.32.0",
     "globals": "^17.8.0",

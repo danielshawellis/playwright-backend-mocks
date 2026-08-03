@@ -45,6 +45,7 @@ export default defineConfig({
           text: "Using mocks",
           items: [
             { text: "Mocking requests", link: "/guide/mocking-requests" },
+            { text: "Record and replay JSON", link: "/guide/route-from-json" },
             { text: "Matching requests", link: "/guide/matching-requests" },
             { text: "Inspecting requests", link: "/guide/inspecting-requests" },
             { text: "Multiple processes", link: "/guide/multiple-processes" },

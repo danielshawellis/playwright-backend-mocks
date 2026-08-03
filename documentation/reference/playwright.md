@@ -20,6 +20,7 @@ Peer dependency: `@playwright/test` ≥ 1.40.
 | `RouteHandler`              | type     | `(route, request) => void \| Promise<void>`              |
 | `RouteMatcherInput`         | type     | Matcher union                                            |
 | `RouteMatcherObject`        | type     | Object matcher shape                                     |
+| `RouteFromJSONOptions`      | type     | `routeFromJSON` options                                  |
 | `FulfillOptions`            | type     | `route.fulfill` options                                  |
 | `ContinueOptions`           | type     | `route.continue` options                                 |
 | `FetchOptions`              | type     | `route.fetch` options                                    |
@@ -53,6 +54,7 @@ Set via Playwright config `use` (see [Configuration](/guide/configuration)).
 interface BackendMocks {
   route(url: RouteMatcherInput, handler: RouteHandler): Promise<void>;
   unroute(url?: RouteMatcherInput, handler?: RouteHandler): Promise<void>;
+  routeFromJSON(path: string, options?: RouteFromJSONOptions): Promise<void>;
   waitForRequest(
     url: RouteMatcherInput,
     options?: { timeout?: number; method?: string },
@@ -67,6 +69,24 @@ interface BackendMocks {
 Register a test-scoped route. The matcher is serialized and sent to the proxy. When a single match occurs, `handler` runs in the Playwright worker.
 
 The handler **must** settle with `fulfill`, `continue`, or `abort`. See [Mocking requests](/guide/mocking-requests).
+
+### `routeFromJSON(path, options?)`
+
+Record or replay outbound backend requests from a JSON cassette file. See [Record and replay with JSON](/guide/route-from-json) for matching rules and file format.
+
+```ts
+interface RouteFromJSONOptions {
+  readonly url?: string | RegExp;
+  readonly update?: boolean;
+  readonly notFound?: "abort" | "fallback";
+}
+```
+
+| Option     | Default       | Description                                                                   |
+| ---------- | ------------- | ----------------------------------------------------------------------------- |
+| `url`      | every request | Only record/replay matching URLs                                              |
+| `update`   | `false`       | When `true`, capture upstream traffic and rewrite the file on fixture dispose |
+| `notFound` | `"abort"`     | Replay behavior when no entry matches (`"fallback"` continues upstream)       |
 
 ### `unroute(matcher?, handler?)`
 
