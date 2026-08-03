@@ -96,6 +96,32 @@ Behavior for **already-intercepted** outbound HTTP: matchers, handler orchestrat
 
 Write the parity suite **against stock Playwright only**. No imports from `@playwright-backend-mocks/*`.
 
+### What this suite is for
+
+This suite is the **developer contract** for the API surface in §4 (in scope). It is not an internal unit-test dump and not a smoke check.
+
+- Test by **being the developer**: call the public routing APIs the way a careful Playwright user would; assert outcomes they would care about (status, body, headers, abort behavior, handler ordering, matcher rules, inspection helpers, record/replay control flow).
+- Prefer broad, real end-to-end scenarios (downstream process → upstream fake) over mocks of our own stack.
+- Specs should read like documentation: maximal public-API usage, minimal harness glue.
+- Stock Playwright runner only. Everything local; no public internet.
+- Encode **observed** Playwright behavior, including awkward edges. Surprises become parity targets unless listed as intentional divergences.
+
+When the same suite later runs in backend mode, a failure means we broke (or have not yet met) a guarantee we intend to make to library users.
+
+### How to build coverage (be comprehensive)
+
+Target **extreme completeness** for the in-scope API — every meaningful behavior we will guarantee should have a test. Sparse coverage defeats the point of oracle TDD.
+
+Practical approach:
+
+1. Inventory the public surface we guarantee (§4) as a checklist.
+2. Use Playwright’s **own** network/request-routing tests at the pinned commit as the primary source of scenarios. Read those specs in `microsoft/playwright` (e.g. `page-route`, fulfill/continue/fallback/intercept, unroute, wait-for-request, HAR replay). The title catalog in [`playwright-network-tests.json`](./playwright-network-tests.json) and the priority notes in the parity research are a map into that suite — not a substitute for reading the real tests.
+3. Port/adapt every in-scope case that applies to Node outbound HTTP mocking. Skip only browser-only or out-of-scope items, and record each skip with a reason.
+4. Fill any gaps in the checklist that Playwright’s suite does not exercise but our guaranteed API still requires.
+5. Do not invent a parallel, thinner idea of the API. Comprehensiveness over clever minimalism.
+
+Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects, dashboard) lives in a **separate** suite — not the oracle.
+
 ### Pin
 
 - Exact `@playwright/test` npm version (no floating `^` for the oracle).
@@ -124,18 +150,13 @@ Rules:
   - `routeFromHAR` → separately rewritten tests for `routeFromJSON` (portable cases only: method match, url filter, `notFound` abort/fallback, update, postData match, unroute stops replay).
   - Cookie jar, HAR zip, navigation-after-HAR, and other non-portable cases: omit from the initial suite.
 
-### Coverage
-
-Aim for a fairly complete contract of the in-scope surface above. Prefer adapting Playwright’s own network tests (catalog in `playwright-network-tests.json`; priority notes in the parity research) over inventing divergent scenarios.
-
-Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects, dashboard) lives in a **separate** suite — not the oracle.
-
 ### Step 1 done when
 
+- Checklist of the guaranteed API surface is covered (or each omission is explicitly justified).
 - Browser-mode suite is green against pinned Playwright + shared upstream.
 - Specs read like user code; harness glue stays thin.
 - Suite has no dependency on this library.
-- Intentional skip/divergence list is explicit for anything not ported.
+- Intentional skip/divergence list is explicit for anything not ported from Playwright’s tests.
 
 ---
 
