@@ -1,7 +1,7 @@
 {
   "name": "@playwright-backend-mocks/proxy",
   "version": "0.1.0",
-  "description": "Standalone proxy and coordinator for Playwright Backend Mocks",
+  "description": "Standalone proxy, coordinator, and REST API for Playwright Backend Mocks",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -87,5 +87,5 @@ Always pass a stable `clientId` when you have more than one process. See [Multip
 
 - **Bodies are buffered** in full before the proxy is consulted. Streaming bodies are not supported in v1.
 - **No auto-reconnect.** If the WebSocket drops, pending requests fail with an actionable message; restart the agent against a running proxy.
-- **Proxy URL traffic is skipped** so health checks / dashboard fetches from the app don't recurse.
+- **Proxy URL traffic is skipped** so health checks / REST API fetches from the app don't recurse.
 - **Upstream bypass** for `continue` overrides and `fetch` uses AsyncLocalStorage so those HTTP calls are not re-intercepted.

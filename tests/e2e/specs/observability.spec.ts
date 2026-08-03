@@ -11,17 +11,42 @@ test.describe("proxy observability", () => {
     });
   });
 
-  test("dashboard HTML is served and wires history polling", async ({ request }) => {
+  test("proxy does not serve the dashboard UI", async ({ request }) => {
     const dashboard = await request.get("http://127.0.0.1:4310/dashboard");
-    expect(dashboard.status()).toBe(200);
-    expect(dashboard.headers()["content-type"]).toMatch(/text\/html/);
-    const html = await dashboard.text();
+    expect(dashboard.status()).toBe(404);
+    expect(await dashboard.json()).toEqual({ error: "not_found" });
+  });
+
+  test("REST API enables CORS for separate dashboard origins", async ({ request }) => {
+    const history = await request.get("http://127.0.0.1:4310/api/history");
+    expect(history.status()).toBe(200);
+    expect(history.headers()["access-control-allow-origin"]).toBe("*");
+
+    const preflight = await request.fetch("http://127.0.0.1:4310/api/history", {
+      method: "OPTIONS",
+    });
+    expect(preflight.status()).toBe(204);
+    expect(preflight.headers()["access-control-allow-origin"]).toBe("*");
+    expect(preflight.headers()["access-control-allow-methods"]).toMatch(/GET/i);
+  });
+
+  test("dashboard process serves UI and points at the proxy", async ({ request }) => {
+    const health = await request.get("http://127.0.0.1:4311/health");
+    expect(health.status()).toBe(200);
+    expect(await health.json()).toMatchObject({
+      ok: true,
+      proxyUrl: "http://127.0.0.1:4310",
+    });
+
+    const config = await request.get("http://127.0.0.1:4311/config.json");
+    expect(config.status()).toBe(200);
+    expect(await config.json()).toEqual({ proxyUrl: "http://127.0.0.1:4310" });
+
+    const page = await request.get("http://127.0.0.1:4311/");
+    expect(page.status()).toBe(200);
+    expect(page.headers()["content-type"]).toMatch(/text\/html/);
+    const html = await page.text();
     expect(html).toContain("Playwright Backend Mocks");
-    expect(html).toContain("Request history");
-    expect(html).toContain("Connections");
-    expect(html).toContain("/api/history");
-    expect(html).toContain("/api/connections");
-    expect(html).toContain("setInterval(refresh");
   });
 
   test("history and connections APIs reflect mocked traffic", async ({

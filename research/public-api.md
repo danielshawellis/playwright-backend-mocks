@@ -202,10 +202,10 @@ Options:
 ### HTTP endpoints
 
 - `GET /health` → `{ ok: true, version, protocolVersion }`
-- `GET /dashboard` → read-only HTML dashboard
 - `GET /api/history` → JSON history
 - `GET /api/connections` → connected agents/workers
 - WebSocket at `/ws`
+- Dashboard UI is a separate optional package/process (`@playwright-backend-mocks/dashboard`)
 
 ---
 

@@ -4,7 +4,7 @@
 
 1. Confirm the proxy is up: `GET http://127.0.0.1:4310/health` → `{ ok: true, … }`.
 2. Confirm the app has `PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL` set and called `startBackendMocks`.
-3. Open `/dashboard` — do you see your Node `clientId` under connections?
+3. Check `GET /api/connections` (or the optional [dashboard](/reference/dashboard)) — do you see your Node `clientId`?
 4. Check the matcher: globs/regex match the **full absolute URL**, including scheme and host.
 5. Check method / `clientId` filters — a GET-only route will not catch POST.
 6. Look at history: `passthrough` means no route matched; `mocked` means one did.

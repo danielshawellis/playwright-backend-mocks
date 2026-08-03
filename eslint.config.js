@@ -14,6 +14,8 @@ export default tseslint.config(
       "documentation/.vitepress/cache/**",
       "documentation/.vitepress/dist/**",
       "documentation/.vitepress/theme/**",
+      "**/*.vue",
+      "packages/dashboard/vite.config.ts",
     ],
   },
   {

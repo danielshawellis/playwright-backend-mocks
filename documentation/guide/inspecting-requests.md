@@ -37,7 +37,7 @@ expect(seen.json()).toEqual({ amount: 99 });
 expect(seen.clientId).toBe("api-server");
 ```
 
-Only requests that **matched a route owned by this test** are observed. Passthrough traffic does not appear here — use the [proxy dashboard / history API](/reference/proxy#http-endpoints) for global visibility.
+Only requests that **matched a route owned by this test** are observed. Passthrough traffic does not appear here — use the [REST API](/reference/rest-api) or [dashboard](/reference/dashboard) for global visibility.
 
 ## requests
 
@@ -59,11 +59,11 @@ expect(errors[0]?.message).toMatch(/Ambiguous backend mock routing/i);
 
 Any errors **not** drained are thrown as an `AggregateError` during fixture teardown. Use `takeErrors()` when a test intentionally triggers a failure mode.
 
-## Dashboard and history
+## REST API and dashboard
 
 For a process-wide view while debugging:
 
-- UI: `http://127.0.0.1:4310/dashboard`
-- JSON: `GET /api/history`, `GET /api/connections`
+- JSON: `GET /api/history`, `GET /api/connections` on the proxy ([REST API](/reference/rest-api))
+- UI (optional separate process): [Dashboard](/reference/dashboard) at `http://127.0.0.1:4311/`
 
 History outcomes include `mocked`, `passthrough`, `continued`, `aborted`, `error`, and `pending`. History is in-memory and capped by `--history-limit` (default 1000).

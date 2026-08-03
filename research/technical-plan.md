@@ -97,8 +97,8 @@ Proxy package additionally exports a `bin` entry.
 - Route registry & matching
 - Request dispatch / pending map
 - History ring buffer
-- `/health`, `/dashboard`, `/api/*`
-- Dashboard: single HTML file with inline CSS/JS, polling `/api/history`
+- `/health`, `/api/*` (CORS-enabled read-only REST)
+- Dashboard: separate optional Vue package/process consuming `/api/*`
 
 ### node
 
@@ -165,7 +165,7 @@ E2E scenarios (minimum):
 - waitForRequest / requests()
 - multiple node clients
 - ambiguous route failure
-- health + dashboard reachable
+- health + REST API reachable; optional dashboard process
 
 ## CI
 
@@ -192,19 +192,18 @@ Root `package.json` version is source of truth; packages mirror `0.1.0` initiall
 
 ## Dashboard
 
-Plain HTML page:
+Separate package `@playwright-backend-mocks/dashboard` (Vue SPA + CLI):
 
 - Connected node agents / playwright workers
 - Recent history table (method, URL, client, outcome, test)
 - Detail pane for selected entry
-- Auto-refresh via `fetch('/api/history')`
-
-No SPA framework.
+- Auto-refresh via proxy `GET /api/history` and `GET /api/connections`
+- Not bundled with the proxy package
 
 ## Implementation order
 
 1. Protocol package + unit/contract tests
-2. Proxy server + CLI + health/dashboard
+2. Proxy server + CLI + health/REST API (+ optional dashboard package)
 3. Node agent
 4. Playwright fixtures
 5. Fixture apps

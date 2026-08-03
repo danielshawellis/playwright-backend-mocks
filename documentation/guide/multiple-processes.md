@@ -60,7 +60,7 @@ webServer: [
 ],
 ```
 
-Confirm both agents appear under **Connections** on the dashboard.
+Confirm both agents appear under **Connections** via `GET /api/connections` or the optional dashboard.
 
 ## Concurrent Playwright tests
 

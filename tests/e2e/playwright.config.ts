@@ -28,6 +28,12 @@ export default defineConfig<object, BackendMocksWorkerOptions>({
       timeout: 60_000,
     },
     {
+      command: `node ../../packages/dashboard/dist/cli.cjs --host 127.0.0.1 --port 4311 --proxy-url ${proxyUrl}`,
+      url: "http://127.0.0.1:4311/health",
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
       command: "pnpm --filter @playwright-backend-mocks/fixture-upstream start",
       url: `${upstreamUrl}/health`,
       reuseExistingServer: !process.env.CI,

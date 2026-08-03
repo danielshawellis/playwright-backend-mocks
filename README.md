@@ -10,7 +10,8 @@ The experience mirrors Playwright’s browser-side `route()` API, while intercep
 | -------------------------------------- | --------------------------------------------- |
 | `@playwright-backend-mocks/playwright` | Playwright fixtures (`backendMocks.route`, …) |
 | `@playwright-backend-mocks/node`       | Node agent that installs interceptors         |
-| `@playwright-backend-mocks/proxy`      | Standalone coordinator + dashboard CLI        |
+| `@playwright-backend-mocks/proxy`      | Standalone coordinator + REST API CLI         |
+| `@playwright-backend-mocks/dashboard`  | Optional Vue dashboard (separate process)     |
 | `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
 
 ## Quick start
@@ -91,9 +92,16 @@ export default defineConfig({
 });
 ```
 
-## Dashboard
+## Dashboard (optional)
 
-Open `http://127.0.0.1:4310/dashboard` while the proxy is running for a read-only view of connections and request history.
+The proxy exposes a read-only REST API (`/api/history`, `/api/connections`). For a UI, install and run the separate dashboard package:
+
+```bash
+npm install -D @playwright-backend-mocks/dashboard
+playwright-backend-mocks-dashboard --proxy-url http://127.0.0.1:4310
+```
+
+Then open `http://127.0.0.1:4311/`.
 
 ## Design docs
 

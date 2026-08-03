@@ -380,7 +380,7 @@ The proxy should:
 * Clean up disconnected clients
 * Record request and response history
 * Produce diagnostics
-* Expose health and dashboard endpoints
+* Expose health and REST observability endpoints
 
 The proxy should contain most distributed coordination behavior.
 
@@ -653,7 +653,7 @@ It should:
 * Return mocked responses
 * Coordinate supported failures
 * Record request and response history
-* Expose health and dashboard endpoints
+* Expose health and REST observability endpoints
 * Clean up disconnected workers, agents, and abandoned routes
 * Track request cancellation and pending work
 * Reject incompatible protocol versions
@@ -930,11 +930,7 @@ Prefer APIs that feel familiar to Playwright users and integrate naturally with 
 
 ## Dashboard
 
-The proxy should expose a lightweight, read-only dashboard, likely at:
-
-```text
-/dashboard
-```
+The proxy should expose a lightweight, read-only REST API for observability (for example `/api/history` and `/api/connections`). An optional dashboard UI may be shipped as a **separate package and process** that consumes that API, so installing the proxy does not require downloading UI assets.
 
 The dashboard should show useful observability information, including:
 
@@ -953,9 +949,7 @@ The dashboard should show useful observability information, including:
 
 The dashboard may allow downloading or exporting captured request data.
 
-Keep the dashboard extremely simple.
-
-Do not add a large frontend framework unless it provides clear value. Plain HTML, CSS, and JavaScript are acceptable and may be preferable.
+Keep the dashboard focused on read-only inspection.
 
 The dashboard should not manage routes or mutate proxy state in version 1.
 
