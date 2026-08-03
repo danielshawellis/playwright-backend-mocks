@@ -308,10 +308,11 @@ test.describe("route.fulfill", () => {
     const pending = page.waitForResponse(
       (response) => response.url() === `${UPSTREAM}/users` && response.status() === 302,
     );
-    void trigger("/users");
+    const pendingTrigger = trigger("/users");
     const response = await pending;
     expect(response.status()).toBe(302);
     expect(response.headers().location).toBe(`${UPSTREAM}/echo`);
+    await pendingTrigger;
   });
 
   test("fulfills with response body override as text", async ({ route, trigger }) => {
@@ -331,5 +332,122 @@ test.describe("route.fulfill", () => {
 
     const result = await trigger("/users");
     expect(result.raw).toContain("Ada-patched");
+  });
+
+  test("derives exact status text for standard status codes", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    await route("**/fulfill-status*", async (r, request) => {
+      const status = Number(new URL(request.url()).searchParams.get("code"));
+      await r.fulfill({ status, body: String(status) });
+    });
+
+    const cases = [
+      [200, "OK"],
+      [404, "Not Found"],
+      [422, "Unprocessable Entity"],
+    ] as const;
+
+    for (const [status, expectedStatusText] of cases) {
+      const url = `${UPSTREAM}/fulfill-status?code=${status}`;
+      const pendingResponse = page.waitForResponse(url);
+      const pendingTrigger = trigger(url);
+      const response = await pendingResponse;
+      await pendingTrigger;
+      expect(response.status()).toBe(status);
+      expect(response.statusText()).toBe(expectedStatusText);
+    }
+  });
+
+  test("preserves every byte in a binary Buffer body", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    const bytes = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
+    await route(`${UPSTREAM}/binary`, async (r) => {
+      await r.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: bytes,
+      });
+    });
+
+    const pendingResponse = page.waitForResponse(`${UPSTREAM}/binary`);
+    const pendingTrigger = trigger("/binary");
+    const response = await pendingResponse;
+    await pendingTrigger;
+
+    expect((await response.body()).equals(bytes)).toBe(true);
+  });
+
+  test("adds Content-Length for string and json bodies", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    const stringBody = "π-body";
+    const jsonBody = { value: "π" };
+
+    await route("**/auto-content-length*", async (r, request) => {
+      const kind = new URL(request.url()).searchParams.get("kind");
+      if (kind === "string") {
+        await r.fulfill({ body: stringBody });
+      } else {
+        await r.fulfill({ json: jsonBody });
+      }
+    });
+
+    for (const [kind, expectedLength] of [
+      ["string", Buffer.byteLength(stringBody)],
+      ["json", Buffer.byteLength(JSON.stringify(jsonBody))],
+    ] as const) {
+      const url = `${UPSTREAM}/auto-content-length?kind=${kind}`;
+      const pendingResponse = page.waitForResponse(url);
+      const pendingTrigger = trigger(url);
+      const response = await pendingResponse;
+      await pendingTrigger;
+      expect(response.headers()["content-length"]).toBe(String(expectedLength));
+    }
+  });
+
+  test("contentType takes precedence over a content-type header", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    await route(`${UPSTREAM}/text`, async (r) => {
+      await r.fulfill({
+        headers: { "content-type": "application/from-header" },
+        contentType: "text/from-option",
+        body: "precedence",
+      });
+    });
+
+    const pendingResponse = page.waitForResponse(`${UPSTREAM}/text`);
+    const pendingTrigger = trigger("/text");
+    const response = await pendingResponse;
+    await pendingTrigger;
+    expect(response.headers()["content-type"]).toBe("text/from-option");
+  });
+
+  test("throws when json and body are specified together", async ({ route, trigger }) => {
+    let message = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      try {
+        await r.fulfill({
+          body: "body",
+          json: { json: true },
+        });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+        await r.abort();
+      }
+    });
+
+    expect((await trigger("/users")).ok).toBe(false);
+    expect(message).toMatch(/either body or json/i);
   });
 });

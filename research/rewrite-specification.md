@@ -64,7 +64,9 @@ Do **not** vendor Playwright source. Reimplement. Keep analogous paths documente
 
 ### In scope (full parity)
 
-Behavior for **already-intercepted** outbound HTTP: matchers, handler orchestration, settle APIs, and inspection.
+Behavior for **already-intercepted** outbound HTTP **and** application WebSockets: matchers, handler orchestration, settle APIs, and inspection.
+
+**HTTP**
 
 - `route` / `unroute` / `unrouteAll`
 - `fulfill` / `continue` / `abort` / `fallback` / `fetch`
@@ -72,23 +74,37 @@ Behavior for **already-intercepted** outbound HTTP: matchers, handler orchestrat
 - LIFO registration, `times`, override accumulation across `fallback`
 - Stall until settle; double-settle throws
 - Glob semantics aligned with Playwright
-- `waitForRequest` and request/response inspection helpers that apply to this path
+- `waitForRequest` / `waitForResponse` and request/response inspection helpers that apply to this path
 - `route.fetch` options that apply to fetching **the current intercepted request** upstream: overrides, timeout, redirect handling (`maxRedirects`), response body usability (including compression where Playwright’s route path exposes decoded bodies)
 - `routeFromJSON` as the analogue of `routeFromHAR` (JSON cassettes, same control-flow shape)
+
+**WebSockets** (same DX philosophy as Playwright `routeWebSocket` / `WebSocketRoute`)
+
+- `routeWebSocket(matcher, handler)` with glob / RegExp / predicate matchers (plus our `clientId` filter where applicable)
+- Newest matching handler only (no WS fallback chain — mirror Playwright)
+- Full mock without upstream (`onMessage` / `send` / `close` / `onClose` / `url` / `protocols`)
+- `connectToServer()` with default bidirectional forwarding
+- Installing `onMessage` / `onClose` disables that direction’s auto-forward (handler must take over)
+- Text and binary frames; concurrent sockets remain isolated
+- Only sockets opened **after** registration are routed; unmatched passthrough
+
+Feasibility for Step 2: **conditional yes** for Node apps using `globalThis.WebSocket` (Node ≥22 / Undici global), via `@mswjs/interceptors` `WebSocketInterceptor` plus a product-owned upstream bridge for Playwright-compatible open/close semantics. npm `ws` and directly imported Undici constructors are **not** covered unless separately designed — document that divergence.
 
 ### Out of scope
 
 - General HTTP **initiation** APIs (`page.request` / `APIRequestContext` as a client)
-- Browser-only concerns: CORS auto-headers, cookie jar, service workers, navigation/`networkidle`, `routeWebSocket`, resource timing, favicon quirks, HAR zip/websocket HAR, etc.
+- Browser-only concerns: CORS auto-headers, cookie jar, service workers, navigation/`networkidle`, resource timing, favicon quirks, HAR zip/websocket HAR, frame-navigation WS close, DOM `binaryType` object-identity quirks, etc.
+- npm `ws` package clients and non-global WebSocket constructors (unless a future custom-client design lands)
 
 ### Required product divergences
 
-| Topic                        | Behavior                                                                                                       |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Multi-owner                  | If **two different tests** claim the same request → fail loud (`ambiguous_route`) with diagnostics + docs link |
-| Same test, multiple handlers | **Mirror Playwright**: LIFO + `fallback` within one `testId`                                                   |
-| Record/replay format         | `routeFromJSON` instead of `routeFromHAR`                                                                      |
-| Extra matchers               | Keep `method` / `clientId`                                                                                     |
+| Topic                        | Behavior                                                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Multi-owner                  | If **two different tests** claim the same request/socket → fail loud (`ambiguous_route`) with diagnostics + docs link |
+| Same test, multiple handlers | **Mirror Playwright**: HTTP LIFO + `fallback`; WS newest-match only (no fallback chain)                               |
+| Record/replay format         | `routeFromJSON` instead of `routeFromHAR`                                                                             |
+| Extra matchers               | Keep `method` / `clientId`                                                                                            |
+| WS constructor surface       | Guarantee `globalThis.WebSocket` only; document `ws` / direct-import bypass                                           |
 
 ---
 
@@ -131,8 +147,9 @@ Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects,
 ### Fixtures
 
 1. **Upstream fake** — local third-party HTTP server (status/body/header/echo variants).
-2. **Browser downstream** — minimal page that issues Ajax/`fetch`/XHR to the upstream on demand.
-3. Later for Step 2: **Node downstream** app(s) that call `startBackendMocks` and expose triggers equivalent to the browser harness.
+2. **WebSocket upstream** — local WS server (echo, binary, subprotocols, close codes, handshake failure).
+3. **Browser downstream** — minimal page that issues Ajax/`fetch`/XHR and opens WebSockets to the upstreams on demand.
+4. Later for Step 2: **Node downstream** app(s) that call `startBackendMocks` and expose HTTP + `globalThis.WebSocket` triggers equivalent to the browser harness.
 
 ### Dual-mode harness
 

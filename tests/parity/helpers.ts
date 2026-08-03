@@ -1,5 +1,6 @@
 export const UPSTREAM = "http://127.0.0.1:4001";
 export const HARNESS = "http://127.0.0.1:3000";
+export const WS_UPSTREAM = "ws://127.0.0.1:4002";
 
 export const ABORT_CODES = [
   "aborted",

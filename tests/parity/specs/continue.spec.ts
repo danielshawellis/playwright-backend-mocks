@@ -265,6 +265,47 @@ test.describe("route.continue", () => {
     ).toBe("yes");
   });
 
+  test("continue header overrides persist across redirects", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/redirect-echo`, async (r) => {
+      await r.continue({
+        headers: {
+          ...r.request().headers(),
+          "x-continued-across-redirect": "yes",
+        },
+      });
+    });
+
+    const result = await trigger("/redirect-echo");
+    expect(result.status).toBe(200);
+    const echoHeaders = (result.data as { headers: Record<string, string> }).headers;
+    expect(echoHeaders["x-continued-across-redirect"]).toBe("yes");
+  });
+
+  test("continue method and postData overrides are not reapplied to a redirected hop", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/redirect-echo`, async (r) => {
+      await r.continue({
+        method: "POST",
+        postData: "original-hop-only",
+      });
+    });
+
+    const result = await trigger("/redirect-echo");
+    expect(result.status).toBe(200);
+    // The 302 creates a GET redirect. Unlike headers, continue's method and
+    // postData overrides are not reapplied when Chromium requests /echo.
+    expect(result.data).toMatchObject({
+      method: "GET",
+      body: null,
+      bodyByteLength: 0,
+    });
+  });
+
   test("url override does not carry onto redirected requests", async ({
     route,
     trigger,

@@ -5,7 +5,7 @@ import {
   type Request,
   type Route,
 } from "@playwright/test";
-import { HARNESS, UPSTREAM, type TriggerResult } from "./helpers.js";
+import { HARNESS, UPSTREAM, WS_UPSTREAM, type TriggerResult } from "./helpers.js";
 
 export type ParityMode = "browser" | "backend";
 
@@ -164,4 +164,4 @@ export const test = base.extend<ParityFixtures>({
   },
 });
 
-export { expect, UPSTREAM, HARNESS };
+export { expect, UPSTREAM, HARNESS, WS_UPSTREAM };

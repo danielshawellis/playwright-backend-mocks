@@ -92,4 +92,36 @@ test.describe("waitForResponse", () => {
     const response = await pending;
     expect(response.url()).toContain("/users");
   });
+
+  test("only observes responses that arrive after the waiter", async ({
+    page,
+    trigger,
+  }) => {
+    await trigger("/echo?response=A");
+
+    const pending = page.waitForResponse((response) =>
+      response.url().includes("/echo?response="),
+    );
+    const beforeB = await Promise.race([
+      pending.then(() => "resolved"),
+      page.waitForTimeout(200).then(() => "pending"),
+    ]);
+    expect(beforeB).toBe("pending");
+
+    const triggerB = trigger("/echo?response=B");
+    const response = await pending;
+    await triggerB;
+    expect(response.url()).toBe(`${UPSTREAM}/echo?response=B`);
+  });
+
+  test("supports AbortSignal cancellation", async ({ page }) => {
+    const controller = new AbortController();
+    const pending = page.waitForResponse(`${UPSTREAM}/missing`, {
+      signal: controller.signal,
+      timeout: 30_000,
+    });
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/aborted/i);
+  });
 });

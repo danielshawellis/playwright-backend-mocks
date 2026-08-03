@@ -183,7 +183,7 @@ These are Playwright browser-network features. Near-full parity of _AJAX request
 - Service worker / shared worker / blob / data: URL quirks
 - `networkidle`, resource timing, transfer sizes from browser
 - Favicon auto-abort
-- `routeWebSocket` (app WebSockets are out of v1 scope; our WS is control-plane only)
+- ~~`routeWebSocket` (app WebSockets are out of v1 scope; our WS is control-plane only)~~ **Now in scope** for `globalThis.WebSocket` (see rewrite-specification §4). Control-plane WS remains separate from application sockets.
 - HAR recording format, HAR zip attach mode, tracing HAR
 - Global / context `APIRequestContext` as a general HTTP client (only needed as the engine behind `route.fetch`)
 
@@ -306,7 +306,7 @@ Full machine-readable dump: [`research/playwright-network-tests.json`](./playwri
 | `tests/page/network-post-data.spec.ts`                      |      6 | postData edge cases                                |
 | `tests/library/browsercontext-route.spec.ts`                |     20 | context.route + precedence                         |
 | `tests/library/unroute-behavior.spec.ts`                    |     16 | unroute / unrouteAll lifecycle                     |
-| `tests/library/route-web-socket.spec.ts`                    |     25 | `routeWebSocket` (out of scope)                    |
+| `tests/library/route-web-socket.spec.ts`                    |     25 | `routeWebSocket` — **now in oracle** (`route-websocket.spec.ts`) |
 | `tests/library/har.spec.ts`                                 |     63 | HAR recording                                      |
 | `tests/library/har-websocket.spec.ts`                       |     12 | HAR + WS                                           |
 | `tests/library/browsercontext-har.spec.ts`                  |     33 | `routeFromHAR` replay/update                       |
@@ -345,7 +345,7 @@ Port/adapt these first (behavior that applies to Node outbound HTTP mocking):
 
 **Skip (browser-only)**
 
-- CORS, service workers, favicon, networkidle, resource timing, HAR zip/websocket HAR, `routeWebSocket`, browser cookie jar redirect matrix, context vs page route precedence (we have a single `backendMocks` scope per test)
+- CORS, service workers, favicon, networkidle, resource timing, HAR zip/websocket HAR, browser cookie jar redirect matrix, context vs page route precedence (we have a single `backendMocks` scope per test), npm `ws` / non-global WebSocket constructors
 
 ### Complete title listing
 

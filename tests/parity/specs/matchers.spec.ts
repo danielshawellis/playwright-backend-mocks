@@ -257,4 +257,38 @@ test.describe("matchers", () => {
       { id: 2, name: "Grace" },
     ]);
   });
+
+  test("a pattern starting with * is not resolved against baseURL", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      baseURL: "http://base-url.invalid/nested/",
+    });
+    const page = await context.newPage();
+    await page.goto("http://127.0.0.1:3000/");
+    await page.route("**/users", async (r) => {
+      await r.fulfill({ status: 200, json: { matchedWithoutBaseURL: true } });
+    });
+
+    const result = await page.evaluate(async (url) => {
+      const response = await fetch(url);
+      return response.json();
+    }, `${UPSTREAM}/users`);
+    expect(result).toEqual({ matchedWithoutBaseURL: true });
+    await context.close();
+  });
+
+  test("an empty string matcher matches every URL", async ({ route, trigger }) => {
+    await route("", async (r, request) => {
+      await r.fulfill({
+        status: 200,
+        json: { interceptedPath: new URL(request.url()).pathname },
+      });
+    });
+
+    expect((await trigger("/users")).data).toEqual({ interceptedPath: "/users" });
+    expect((await trigger("/simple.json")).data).toEqual({
+      interceptedPath: "/simple.json",
+    });
+  });
 });

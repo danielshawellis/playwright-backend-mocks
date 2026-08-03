@@ -331,4 +331,121 @@ test.describe("route lifecycle", () => {
     const result = await trigger("/users");
     expect(result.raw).toBe("after-fallback");
   });
+
+  test("a handler that never settles leaves the request stalled", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    let entered!: () => void;
+    const handlerEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+
+    await route(`${UPSTREAM}/users`, async () => {
+      entered();
+      await new Promise<void>(() => {});
+    });
+
+    const pending = trigger("/users").then(
+      (result) => ({ kind: "result" as const, result }),
+      (error: unknown) => ({ kind: "error" as const, error }),
+    );
+    await handlerEntered;
+
+    const outcome = await Promise.race([
+      pending,
+      page.waitForTimeout(500).then(() => ({ kind: "timeout" as const })),
+    ]);
+    expect(outcome.kind).toBe("timeout");
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("a handler throw without settlement is reported as a test failure", async ({
+    route,
+    trigger,
+  }) => {
+    // The callback exception is not converted into an HTTP response/failure:
+    // Playwright reports it directly to the test runner.
+    test.fail(true, "stock Playwright propagates route handler exceptions");
+    await route(`${UPSTREAM}/users`, async () => {
+      throw new Error("route-handler-threw");
+    });
+    await trigger("/users");
+  });
+
+  test("route.fetch alone does not settle the intercepted request", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    let fetched!: () => void;
+    const fetchCompleted = new Promise<void>((resolve) => {
+      fetched = resolve;
+    });
+
+    await route(`${UPSTREAM}/users`, async (r) => {
+      const response = await r.fetch();
+      expect(response.status()).toBe(200);
+      fetched();
+    });
+
+    const pending = trigger("/users").then(
+      (result) => ({ kind: "result" as const, result }),
+      (error: unknown) => ({ kind: "error" as const, error }),
+    );
+    await fetchCompleted;
+
+    const outcome = await Promise.race([
+      pending,
+      page.waitForTimeout(500).then(() => ({ kind: "timeout" as const })),
+    ]);
+    expect(outcome.kind).toBe("timeout");
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("fulfill after abort throws already handled", async ({ route, trigger }) => {
+    let settleError = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.abort();
+      try {
+        await r.fulfill({ status: 200, body: "too-late" });
+      } catch (error) {
+        settleError = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    expect((await trigger("/users")).ok).toBe(false);
+    expect(settleError).toMatch(/already handled/i);
+  });
+
+  test("a second abort throws already handled", async ({ route, trigger }) => {
+    let settleError = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.abort();
+      try {
+        await r.abort();
+      } catch (error) {
+        settleError = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    expect((await trigger("/users")).ok).toBe(false);
+    expect(settleError).toMatch(/already handled/i);
+  });
+
+  test("fallback after continue throws already handled", async ({ route, trigger }) => {
+    let settleError = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.continue();
+      try {
+        await r.fallback();
+      } catch (error) {
+        settleError = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    expect((await trigger("/users")).status).toBe(200);
+    expect(settleError).toMatch(/already handled/i);
+  });
 });

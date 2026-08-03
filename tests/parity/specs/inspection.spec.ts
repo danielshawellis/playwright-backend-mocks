@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test";
 import { test, expect, UPSTREAM } from "../harness.js";
 
 test.describe("request inspection", () => {
@@ -182,5 +183,45 @@ test.describe("request inspection", () => {
 
     const result = await trigger("/users");
     expect(result.status).toBe(200);
+  });
+
+  test("postData() is null when the request has no body", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/users`, async (r, request) => {
+      expect(request.postData()).toBeNull();
+      await r.fulfill({ status: 200, body: "no-body" });
+    });
+
+    expect((await trigger("/users")).raw).toBe("no-body");
+  });
+
+  test("request.response() resolves to null after abort", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/users`, async (r, request) => {
+      const pendingResponse = request.response();
+      await r.abort();
+      expect(await pendingResponse).toBeNull();
+    });
+
+    expect((await trigger("/users")).ok).toBe(false);
+  });
+
+  test("existingResponse() returns immediately before and after a response", async ({
+    route,
+    trigger,
+    page,
+  }) => {
+    let interceptedRequest: Request | undefined;
+    await route(`${UPSTREAM}/users`, async (r, request) => {
+      interceptedRequest = request;
+      expect(request.existingResponse()).toBeNull();
+      await r.fulfill({ status: 202, body: "accepted" });
+    });
+
+    const pendingResponse = page.waitForResponse(`${UPSTREAM}/users`);
+    const pendingTrigger = trigger("/users");
+    const response = await pendingResponse;
+    await pendingTrigger;
+
+    expect(interceptedRequest?.existingResponse()).toBe(response);
+    expect(interceptedRequest?.existingResponse()?.status()).toBe(202);
   });
 });

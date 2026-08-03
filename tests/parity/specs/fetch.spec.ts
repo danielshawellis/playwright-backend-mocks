@@ -204,6 +204,20 @@ test.describe("route.fetch", () => {
     expect(result.data).toMatchObject({ ok: true });
   });
 
+  test("maxRetries does not retry an HTTP 500 response", async ({ route, trigger }) => {
+    const key = `http-500-${Date.now()}`;
+    await route("**/counted-status*", async (r) => {
+      const response = await r.fetch({ maxRetries: 3 });
+      expect(response.status()).toBe(500);
+      expect(await response.json()).toEqual({ status: 500, hits: 1, key });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger(`/counted-status?code=500&key=${key}`);
+    expect(result.status).toBe(500);
+    expect(result.data).toEqual({ status: 500, hits: 1, key });
+  });
+
   test("fails without maxRetries when the connection resets", async ({
     route,
     trigger,
@@ -271,6 +285,24 @@ test.describe("route.fetch", () => {
     expect(
       (result.data as { headers: Record<string, string> }).headers["x-fetch-only"],
     ).toBe("1");
+  });
+
+  test("fetch with headers: {} discards inherited request headers", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      expect(r.request().headers()["x-inherited"]).toBe("present");
+      const response = await r.fetch({ headers: {} });
+      await r.fulfill({ response });
+    });
+
+    const result = await trigger("/echo", {
+      headers: { "x-inherited": "present" },
+    });
+    expect(result.status).toBe(200);
+    const echoedHeaders = (result.data as { headers: Record<string, string> }).headers;
+    expect(echoedHeaders["x-inherited"]).toBeUndefined();
   });
 
   test("supports method-only fetch override", async ({ route, trigger }) => {

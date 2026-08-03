@@ -1,8 +1,10 @@
 # Oracle coverage pass — Playwright interception APIs
 
-Date: 2026-08-03  
+Date: 2026-08-03 (updated same day after WS + HTTP gap implementation)  
 Pin: `@playwright/test@1.62.1` / research commit `15b1aec`  
-Suite at pass time: **189** browser-mode tests
+Suite at latest green run: **238** browser-mode tests
+
+**Status update:** WebSockets are now in rewrite-spec §4 (conditional yes for `globalThis.WebSocket`). Oracle includes `route-websocket.spec.ts` and the HTTP P0/P1 gaps from the ranked backlog below are largely closed (see [`checklist.md`](./checklist.md)). Remaining items are mostly P2 sharpening and intentional skips.
 
 This document is the methodical docs → implementation → suite comparison requested for Step 1. It invents no new product API; it inventories Playwright’s interception surface, maps our suite, and lists remaining gaps needed for near-complete behavioral parity (Ajax + WebSockets), excluding browser-only concerns (cookies, CORS auto-headers, navigation, service workers, favicon, TLS/timing).
 

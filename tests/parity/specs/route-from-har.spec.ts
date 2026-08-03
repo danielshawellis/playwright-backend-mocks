@@ -69,7 +69,6 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     await page.routeFromHAR(harPath, {
       url: "**/missing-from-har",
       update: false,
-      notFound: "abort",
     });
 
     const result = await trigger("/missing-from-har");
@@ -89,6 +88,24 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     const result = await trigger("/text");
     expect(result.status).toBe(200);
     expect(result.raw).toBe("hello-text");
+  });
+
+  test("notFound: fallback reaches the next route handler", async ({ page, trigger }) => {
+    let lowerHandlerCalled = false;
+    await page.route(`${UPSTREAM}/missing-from-har`, async (r) => {
+      lowerHandlerCalled = true;
+      await r.fulfill({ status: 203, body: "lower-handler" });
+    });
+    await page.routeFromHAR(harPath, {
+      url: "**/missing-from-har",
+      update: false,
+      notFound: "fallback",
+    });
+
+    const result = await trigger("/missing-from-har");
+    expect(result.status).toBe(203);
+    expect(result.raw).toBe("lower-handler");
+    expect(lowerHandlerCalled).toBe(true);
   });
 
   test("notFound: fallback continues on a bad HAR file", async ({

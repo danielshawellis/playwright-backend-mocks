@@ -105,4 +105,24 @@ test.describe("waitForRequest", () => {
     const seen = await pending;
     expect(seen.url()).toContain("/users");
   });
+
+  test("only observes requests that start after the waiter", async ({
+    trigger,
+    waitForRequest,
+    page,
+  }) => {
+    await trigger("/echo?request=A");
+
+    const pending = waitForRequest((request) => request.url().includes("/echo?request="));
+    const beforeB = await Promise.race([
+      pending.then(() => "resolved"),
+      page.waitForTimeout(200).then(() => "pending"),
+    ]);
+    expect(beforeB).toBe("pending");
+
+    const triggerB = trigger("/echo?request=B");
+    const seen = await pending;
+    await triggerB;
+    expect(seen.url()).toBe(`${UPSTREAM}/echo?request=B`);
+  });
 });

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Achieve near-complete behavioral parity with Playwright’s browser request-routing APIs (`page.route` / `context.route`, fulfill / continue / fetch / abort, matchers, unroute, inspection / spying, and HAR-style record-replay) for **outbound Node.js HTTP**, without inventing a divergent DX.
+Achieve near-complete behavioral parity with Playwright’s browser request-routing APIs (`page.route` / `context.route`, fulfill / continue / fetch / abort, matchers, unroute, inspection / spying, HAR-style record-replay, **and** `page.routeWebSocket` / `WebSocketRoute`) for **outbound Node.js HTTP and `globalThis.WebSocket`**, without inventing a divergent DX.
 
 The strategy: **write the parity suite against Playwright itself first**, then switch the same suite onto this library with only a thin adapter change.
 

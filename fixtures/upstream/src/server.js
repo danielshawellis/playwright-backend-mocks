@@ -3,6 +3,7 @@ import { gzipSync } from "node:zlib";
 
 const port = Number(process.env.PORT ?? 4001);
 const flakyHits = new Map();
+const countedStatusHits = new Map();
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
@@ -133,13 +134,22 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/redirect-echo") {
+  if (url.pathname === "/redirect-echo") {
     res.writeHead(302, {
       location: "/echo",
       "access-control-allow-origin": "*",
       "access-control-expose-headers": "*",
     });
     res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/counted-status") {
+    const key = url.searchParams.get("key") ?? "default";
+    const status = Number(url.searchParams.get("code") ?? "500");
+    const hits = (countedStatusHits.get(key) ?? 0) + 1;
+    countedStatusHits.set(key, hits);
+    json(res, status, { status, hits, key });
     return;
   }
 

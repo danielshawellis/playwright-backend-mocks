@@ -10,6 +10,7 @@ export const PLAYWRIGHT_RESEARCH_COMMIT = "15b1aec";
 
 const harnessUrl = "http://127.0.0.1:3000";
 const upstreamUrl = "http://127.0.0.1:4001";
+const wsUpstreamUrl = "http://127.0.0.1:4002";
 
 export default defineConfig({
   testDir: "./specs",
@@ -32,6 +33,16 @@ export default defineConfig({
       env: {
         ...process.env,
         PORT: "4001",
+      },
+    },
+    {
+      command: "pnpm --filter @playwright-backend-mocks/fixture-ws-upstream start",
+      url: `${wsUpstreamUrl}/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        PORT: "4002",
       },
     },
     {

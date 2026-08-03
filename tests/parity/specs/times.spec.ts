@@ -135,4 +135,117 @@ test.describe("route times", () => {
     // Limited handler exhausted — only base runs.
     expect(seen).toEqual(["base"]);
   });
+
+  test("concurrent times: 1 claims exactly one request at handler entry", async ({
+    route,
+    trigger,
+  }) => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const firstEntry = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let invocations = 0;
+
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        invocations += 1;
+        entered();
+        await barrier;
+        await r.fulfill({ status: 200, json: { mocked: true } });
+      },
+      { times: 1 },
+    );
+
+    const pending = [trigger("/users"), trigger("/users")];
+    await firstEntry;
+    release();
+    const results = await Promise.all(pending);
+
+    expect(invocations).toBe(1);
+    expect(
+      results.filter(
+        (result) =>
+          typeof result.data === "object" &&
+          result.data !== null &&
+          "mocked" in result.data &&
+          result.data.mocked === true,
+      ),
+    ).toHaveLength(1);
+    expect(
+      results.filter(
+        (result) =>
+          Array.isArray(result.data) &&
+          result.data.some((user) => (user as { name?: string }).name === "Ada"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("concurrent times: 2 claims exactly two of three requests", async ({
+    route,
+    trigger,
+  }) => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let enteredTwice!: () => void;
+    const twoEntries = new Promise<void>((resolve) => {
+      enteredTwice = resolve;
+    });
+    let invocations = 0;
+
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        invocations += 1;
+        if (invocations === 2) {
+          enteredTwice();
+        }
+        await barrier;
+        await r.fulfill({ status: 200, json: { mocked: true } });
+      },
+      { times: 2 },
+    );
+
+    const pending = [trigger("/users"), trigger("/users"), trigger("/users")];
+    await twoEntries;
+    release();
+    const results = await Promise.all(pending);
+
+    expect(invocations).toBe(2);
+    expect(
+      results.filter(
+        (result) =>
+          typeof result.data === "object" &&
+          result.data !== null &&
+          "mocked" in result.data &&
+          result.data.mocked === true,
+      ),
+    ).toHaveLength(2);
+    expect(results.filter((result) => Array.isArray(result.data))).toHaveLength(1);
+  });
+
+  test("times: 0 still runs once and is then removed", async ({ route, trigger }) => {
+    let invocations = 0;
+    await route(
+      `${UPSTREAM}/users`,
+      async (r) => {
+        invocations += 1;
+        await r.fulfill({ status: 200, body: "zero-ran-once" });
+      },
+      { times: 0 },
+    );
+
+    expect((await trigger("/users")).raw).toBe("zero-ran-once");
+    expect((await trigger("/users")).data).toEqual([
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+    ]);
+    expect(invocations).toBe(1);
+  });
 });
