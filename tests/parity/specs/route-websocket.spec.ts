@@ -1447,4 +1447,74 @@ test.describe("routeWebSocket", () => {
     const log = await page.evaluate(() => (window as unknown as { log: string[] }).log);
     expect(log.filter((e) => e.startsWith("message:"))).toHaveLength(0);
   });
+
+  test("throwing WebSocket predicate matcher fails without opening the socket", async ({
+    page,
+  }) => {
+    test.fail();
+    await page.routeWebSocket(
+      () => {
+        throw new Error("ws-predicate-boom");
+      },
+      () => {},
+    );
+    await gotoHarness(page);
+
+    await page.evaluate((url) => {
+      (window as unknown as { log: string[] }).log = [];
+      const ws = new WebSocket(url);
+      (window as unknown as { ws: WebSocket }).ws = ws;
+      ws.addEventListener("open", () =>
+        (window as unknown as { log: string[] }).log.push("open"),
+      );
+    }, `${WS_UPSTREAM}/echo`);
+
+    await page.waitForTimeout(300);
+    const state = await page.evaluate(
+      () => (window as unknown as { ws: WebSocket }).ws.readyState,
+    );
+    expect(state).toBe(0);
+  });
+
+  test("page close sets readyState to CLOSING synchronously", async ({ page }) => {
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, () => {});
+    await gotoHarness(page);
+    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
+
+    const stateRightAfterClose = await page.evaluate(() => {
+      const ws = (window as unknown as { ws: WebSocket }).ws;
+      ws.close(3009, "sync");
+      return ws.readyState;
+    });
+    // Injected mock sets CLOSING (2) synchronously; may already be CLOSED (3).
+    expect([2, 3]).toContain(stateRightAfterClose);
+    expect(stateRightAfterClose).not.toBe(1); // not OPEN
+  });
+
+  test("Blob then text page sends: text can overtake because Blob conversion is async", async ({
+    page,
+  }) => {
+    const seen: string[] = [];
+    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
+      ws.onMessage((message) => {
+        if (typeof message === "string") seen.push(`str:${message}`);
+        else seen.push(`bin:${Buffer.from(message).toString("hex")}`);
+      });
+    });
+    await gotoHarness(page);
+
+    await page.evaluate(async (url) => {
+      const ws = new WebSocket(url);
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve());
+        ws.addEventListener("error", () => reject(new Error("ws error")));
+      });
+      // Blob path is async in Playwright's injected mock; a following string
+      // send is delivered synchronously and can arrive first.
+      ws.send(new Blob([new Uint8Array([9, 8, 7])]));
+      ws.send("after-blob");
+    }, `${WS_UPSTREAM}/echo`);
+
+    await expect.poll(() => seen).toEqual(["str:after-blob", "bin:090807"]);
+  });
 });

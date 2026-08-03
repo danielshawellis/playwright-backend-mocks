@@ -1032,3 +1032,452 @@ test.describe("source-backed HAR body-match permissiveness", () => {
     expect(result.raw).toBe("no-pdata");
   });
 });
+
+function harEntry(opts: {
+  method: string;
+  url: string;
+  status: number;
+  body?: string;
+  location?: string;
+  postData?: string;
+  mimeType?: string;
+  statusText?: string;
+}): Record<string, unknown> {
+  const headers: Array<{ name: string; value: string }> = [];
+  if (opts.location) headers.push({ name: "location", value: opts.location });
+  if (opts.mimeType || opts.body !== undefined) {
+    headers.push({
+      name: "content-type",
+      value: opts.mimeType ?? "text/plain",
+    });
+  }
+  const text = opts.body ?? "";
+  return {
+    startedDateTime: "2024-01-01T00:00:00.000Z",
+    time: 1,
+    request: {
+      method: opts.method,
+      url: opts.url,
+      httpVersion: "HTTP/1.1",
+      cookies: [],
+      headers: [],
+      queryString: [],
+      headersSize: -1,
+      bodySize: opts.postData?.length ?? 0,
+      ...(opts.postData !== undefined
+        ? {
+            postData: {
+              mimeType: "text/plain",
+              text: opts.postData,
+            },
+          }
+        : {}),
+    },
+    response: {
+      status: opts.status,
+      statusText: opts.statusText ?? (opts.status === -1 ? "" : "OK"),
+      httpVersion: "HTTP/1.1",
+      cookies: [],
+      headers,
+      content: {
+        size: text.length,
+        mimeType: opts.mimeType ?? "text/plain",
+        text,
+      },
+      redirectURL: opts.location ?? "",
+      headersSize: -1,
+      bodySize: text.length,
+      ...(opts.status === -1 ? { _failureText: "net::ERR_FAILED" } : {}),
+    },
+    cache: {},
+    timings: { send: 0, wait: 0, receive: 0 },
+  };
+}
+
+test.describe("source-backed HAR redirect / stall edges", () => {
+  test("status -1 HAR entry stalls rather than fulfilling or aborting", async ({
+    page,
+    trigger,
+  }, testInfo) => {
+    const harFile = testInfo.outputPath("status-minus-one.har");
+    fs.writeFileSync(
+      harFile,
+      JSON.stringify({
+        log: {
+          version: "1.2",
+          creator: { name: "parity", version: "0" },
+          entries: [
+            harEntry({
+              method: "GET",
+              url: `${UPSTREAM}/stall-me`,
+              status: -1,
+            }),
+          ],
+        },
+      }),
+    );
+
+    await page.routeFromHAR(harFile, {
+      url: "**/stall-me",
+      update: false,
+      notFound: "abort",
+    });
+
+    const result = await Promise.race([
+      trigger("/stall-me").then((r) => ({ kind: "done" as const, r })),
+      page.waitForTimeout(800).then(() => ({ kind: "stall" as const })),
+    ]);
+    // HarRouter returns early on status -1 — request stays paused (stall).
+    expect(result.kind).toBe("stall");
+  });
+
+  test("HAR 302 after POST rewrites the follow-up lookup to GET", async ({
+    page,
+    trigger,
+  }, testInfo) => {
+    const harFile = testInfo.outputPath("har-302-post.har");
+    fs.writeFileSync(
+      harFile,
+      JSON.stringify({
+        log: {
+          version: "1.2",
+          creator: { name: "parity", version: "0" },
+          entries: [
+            harEntry({
+              method: "POST",
+              url: `${UPSTREAM}/har-post-redir`,
+              status: 302,
+              location: `${UPSTREAM}/har-post-target`,
+              postData: "ignored-after-rewrite",
+            }),
+            harEntry({
+              method: "GET",
+              url: `${UPSTREAM}/har-post-target`,
+              status: 200,
+              body: "get-target",
+            }),
+            harEntry({
+              method: "POST",
+              url: `${UPSTREAM}/har-post-target`,
+              status: 200,
+              body: "post-target",
+              postData: "ignored-after-rewrite",
+            }),
+          ],
+        },
+      }),
+    );
+
+    await page.routeFromHAR(harFile, {
+      url: "**/har-post-*",
+      update: false,
+      notFound: "abort",
+    });
+
+    const result = await trigger("/har-post-redir", {
+      method: "POST",
+      body: "ignored-after-rewrite",
+    });
+    expect(result.raw).toBe("get-target");
+  });
+
+  test("HAR 307 after POST keeps POST for the follow-up lookup", async ({
+    page,
+    trigger,
+  }, testInfo) => {
+    const harFile = testInfo.outputPath("har-307-post.har");
+    fs.writeFileSync(
+      harFile,
+      JSON.stringify({
+        log: {
+          version: "1.2",
+          creator: { name: "parity", version: "0" },
+          entries: [
+            harEntry({
+              method: "POST",
+              url: `${UPSTREAM}/har-307-redir`,
+              status: 307,
+              location: `${UPSTREAM}/har-307-target`,
+              postData: "keep-post",
+            }),
+            harEntry({
+              method: "GET",
+              url: `${UPSTREAM}/har-307-target`,
+              status: 200,
+              body: "get-target",
+            }),
+            harEntry({
+              method: "POST",
+              url: `${UPSTREAM}/har-307-target`,
+              status: 200,
+              body: "post-target",
+              postData: "keep-post",
+            }),
+          ],
+        },
+      }),
+    );
+
+    await page.routeFromHAR(harFile, {
+      url: "**/har-307-*",
+      update: false,
+      notFound: "abort",
+    });
+
+    const result = await trigger("/har-307-redir", {
+      method: "POST",
+      body: "keep-post",
+    });
+    expect(result.raw).toBe("post-target");
+  });
+
+  test("relative HAR Location is resolved against the current request URL", async ({
+    page,
+    trigger,
+  }, testInfo) => {
+    const harFile = testInfo.outputPath("har-relative-location.har");
+    fs.writeFileSync(
+      harFile,
+      JSON.stringify({
+        log: {
+          version: "1.2",
+          creator: { name: "parity", version: "0" },
+          entries: [
+            harEntry({
+              method: "GET",
+              url: `${UPSTREAM}/har-rel-a`,
+              status: 302,
+              location: "har-rel-b",
+            }),
+            harEntry({
+              method: "GET",
+              url: `${UPSTREAM}/har-rel-b`,
+              status: 200,
+              body: "relative-ok",
+            }),
+          ],
+        },
+      }),
+    );
+
+    await page.routeFromHAR(harFile, {
+      url: "**/har-rel-*",
+      update: false,
+      notFound: "abort",
+    });
+
+    expect((await trigger("/har-rel-a")).raw).toBe("relative-ok");
+  });
+});
+
+test.describe("source-backed settlement / fetch / matcher sharpening", () => {
+  test("unrouteAll({ behavior: 'wait' }) waits even after continue() while handler still runs", async ({
+    route,
+    unrouteAll,
+    trigger,
+    page,
+  }) => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+
+    await route(`${UPSTREAM}/users`, async (r) => {
+      entered();
+      await r.continue();
+      await barrier;
+    });
+
+    const pending = trigger("/users");
+    await enteredPromise;
+
+    let didUnroute = false;
+    const unroutePromise = unrouteAll({ behavior: "wait" }).then(() => {
+      didUnroute = true;
+    });
+    await page.waitForTimeout(200);
+    expect(didUnroute).toBe(false);
+    release();
+    await unroutePromise;
+    expect(didUnroute).toBe(true);
+    await pending;
+  });
+
+  test("fulfill rejects a disposed fetch response", async ({ route, trigger, page }) => {
+    let message = "";
+    await route(`${UPSTREAM}/users`, async (r) => {
+      const response = await r.fetch();
+      await response.dispose();
+      try {
+        await r.fulfill({ response });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      // Server marks the route handled before asserting the body exists, so
+      // recovery settle APIs also throw "already handled".
+    });
+
+    await Promise.race([
+      trigger("/users").catch(() => undefined),
+      page.waitForTimeout(500),
+    ]);
+    expect(message).toMatch(/disposed/i);
+  });
+
+  test("empty url and method continue overrides are ignored", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        url: "",
+        method: "",
+      });
+    });
+
+    const result = await trigger("/echo", { method: "POST", body: "x" });
+    expect(result.data).toMatchObject({
+      method: "POST",
+      url: "/echo",
+    });
+  });
+
+  test("forbidden x-http-method-override TRACE value is ignored", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        headers: {
+          ...r.request().headers(),
+          "x-http-method-override": "TRACE",
+          "x-allowed": "1",
+        },
+      });
+    });
+
+    const headers = (
+      await trigger("/echo", {
+        headers: { "x-http-method-override": "GET" },
+      })
+    ).data as { headers: Record<string, string> };
+    expect(headers.headers["x-allowed"]).toBe("1");
+    // Forbidden TRACE override is stripped; original may be restored.
+    expect(headers.headers["x-http-method-override"]).not.toBe("TRACE");
+  });
+
+  test("allowed x-http-method-override value survives continue", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.continue({
+        headers: {
+          ...r.request().headers(),
+          "x-http-method-override": "PUT",
+        },
+      });
+    });
+
+    const headers = (await trigger("/echo")).data as {
+      headers: Record<string, string>;
+    };
+    expect(headers.headers["x-http-method-override"]).toBe("PUT");
+  });
+
+  test("string postData under exact application/json is JSON-stringified when not JSON", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      const response = await r.fetch({
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        postData: "not-json-text",
+      });
+      await r.fulfill({ response });
+    });
+
+    const echoed = (await trigger("/echo")).data as { body: string | null };
+    expect(echoed.body).toBe(JSON.stringify("not-json-text"));
+  });
+
+  test("maxRetries exhaustion fails after the last retry attempt", async ({
+    route,
+    trigger,
+  }) => {
+    const key = `exhaust-${Date.now()}`;
+    await route("**/flaky*", async (r) => {
+      let message = "";
+      try {
+        // fail=3 means three destroys before success; maxRetries:1 → 2 attempts total.
+        await r.fetch({ maxRetries: 1 });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message.length).toBeGreaterThan(0);
+      await r.fulfill({ status: 502, body: "retries-exhausted" });
+    });
+
+    const result = await trigger(`/flaky?key=${key}&fail=3`);
+    expect(result.status).toBe(502);
+    expect(result.raw).toBe("retries-exhausted");
+  });
+
+  test("APIResponse.ok is true only for status 200-299", async ({ route, trigger }) => {
+    const checks: Array<{ status: number; ok: boolean }> = [];
+    // Skip exotic 1xx — some HTTP stacks reset those connections.
+    for (const status of [200, 204, 299, 300, 404]) {
+      await route(`${UPSTREAM}/status/${status}`, async (r) => {
+        const response = await r.fetch();
+        checks.push({ status: response.status(), ok: response.ok() });
+        await r.fulfill({
+          status: 200,
+          json: { status: response.status(), ok: response.ok() },
+        });
+      });
+      await trigger(`/status/${status}`);
+    }
+    expect(checks).toEqual([
+      { status: 200, ok: true },
+      { status: 204, ok: true },
+      { status: 299, ok: true },
+      { status: 300, ok: false },
+      { status: 404, ok: false },
+    ]);
+  });
+
+  test("APIResponse.body returns exact binary bytes", async ({ route, trigger }) => {
+    const expected = Buffer.from([0, 1, 2, 3, 254, 255]);
+    await route(`${UPSTREAM}/binary`, async (r) => {
+      const response = await r.fetch();
+      const body = await response.body();
+      expect(Buffer.from(body).equals(expected)).toBe(true);
+      await r.fulfill({ response });
+    });
+    const result = await trigger("/binary");
+    expect(result.status).toBe(200);
+  });
+
+  test("RegExp with sticky /y flag resets lastIndex between matches", async ({
+    route,
+    trigger,
+  }) => {
+    // Sticky match must anchor at index 0 of the full URL, so include the host.
+    const pattern = new RegExp(`^${UPSTREAM.replace(/\./g, "\\.")}/users$`, "y");
+    let hits = 0;
+    await route(pattern, async (r) => {
+      hits += 1;
+      await r.fulfill({ status: 200, body: `sticky-${hits}` });
+    });
+    expect((await trigger("/users")).raw).toBe("sticky-1");
+    expect((await trigger("/users")).raw).toBe("sticky-2");
+    expect(hits).toBe(2);
+  });
+});

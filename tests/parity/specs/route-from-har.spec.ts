@@ -6,22 +6,27 @@ import { test, expect, UPSTREAM } from "../harness.js";
 /**
  * routeFromHAR oracle suite.
  *
- * Documents Playwright's HAR replay control-flow for later porting to
- * routeFromJSON. Not dual-mode — Step 2 rewrites analogues separately.
+ * Pins Playwright HAR record/replay control-flow. Step 2 can keep HAR parity
+ * (`backendMocks.routeFromHAR`) via the harness `routeFromHAR` seam, or map
+ * these cases to JSON cassettes — the oracle itself stays on real HAR files.
+ *
+ * Tests that need a fresh browser context for record/update still call
+ * `page.routeFromHAR` on that context's page directly.
  */
 const harPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "../testdata/cassette.har",
 );
 
-test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
+test.describe("routeFromHAR", () => {
   test("fulfills from HAR matching the method", async ({
     page,
     trigger,
+    routeFromHAR,
     harnessPage,
   }) => {
     void harnessPage;
-    await page.routeFromHAR(harPath, { url: "**/users", update: false });
+    await routeFromHAR(harPath, { url: "**/users", update: false });
 
     const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
@@ -31,8 +36,8 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect(response.headers()["x-har"]).toBe("replayed");
   });
 
-  test("matches POST entries by method", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: "**/charges", update: false });
+  test("matches POST entries by method", async ({ routeFromHAR, trigger }) => {
+    await routeFromHAR(harPath, { url: "**/charges", update: false });
 
     const result = await trigger("/charges", {
       method: "POST",
@@ -43,8 +48,11 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect(result.data).toEqual({ id: "ch_har", amount: 7, status: "ok" });
   });
 
-  test("disambiguates POST entries by postData body", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: "**/charges", update: false });
+  test("disambiguates POST entries by postData body", async ({
+    routeFromHAR,
+    trigger,
+  }) => {
+    await routeFromHAR(harPath, { url: "**/charges", update: false });
 
     const seven = await trigger("/charges", {
       method: "POST",
@@ -65,8 +73,11 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     });
   });
 
-  test("by default aborts requests not found in HAR", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, {
+  test("by default aborts requests not found in HAR", async ({
+    routeFromHAR,
+    trigger,
+  }) => {
+    await routeFromHAR(harPath, {
       url: "**/missing-from-har",
       update: false,
     });
@@ -76,10 +87,10 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
   });
 
   test("notFound: fallback continues when not found in HAR", async ({
-    page,
+    routeFromHAR,
     trigger,
   }) => {
-    await page.routeFromHAR(harPath, {
+    await routeFromHAR(harPath, {
       url: "**/text",
       update: false,
       notFound: "fallback",
@@ -90,13 +101,17 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect(result.raw).toBe("hello-text");
   });
 
-  test("notFound: fallback reaches the next route handler", async ({ page, trigger }) => {
+  test("notFound: fallback reaches the next route handler", async ({
+    page,
+    routeFromHAR,
+    trigger,
+  }) => {
     let lowerHandlerCalled = false;
     await page.route(`${UPSTREAM}/missing-from-har`, async (r) => {
       lowerHandlerCalled = true;
       await r.fulfill({ status: 203, body: "lower-handler" });
     });
-    await page.routeFromHAR(harPath, {
+    await routeFromHAR(harPath, {
       url: "**/missing-from-har",
       update: false,
       notFound: "fallback",
@@ -109,13 +124,13 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
   });
 
   test("notFound: fallback continues on a bad HAR file", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const badHar = testInfo.outputPath("bad.har");
     fs.writeFileSync(badHar, JSON.stringify({ log: {} }), "utf8");
 
-    await page.routeFromHAR(badHar, {
+    await routeFromHAR(badHar, {
       url: "**/users",
       notFound: "fallback",
     });
@@ -127,8 +142,11 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     ]);
   });
 
-  test("only handles requests matching the url filter", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: "**/users", update: false });
+  test("only handles requests matching the url filter", async ({
+    routeFromHAR,
+    trigger,
+  }) => {
+    await routeFromHAR(harPath, { url: "**/users", update: false });
 
     const users = await trigger("/users");
     expect(users.data).toEqual([{ id: 9, name: "FromHAR" }]);
@@ -145,16 +163,16 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     });
   });
 
-  test("supports a regex url filter", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: /\/users$/, update: false });
+  test("supports a regex url filter", async ({ routeFromHAR, trigger }) => {
+    await routeFromHAR(harPath, { url: /\/users$/, update: false });
 
     const result = await trigger("/users");
     expect(result.data).toEqual([{ id: 9, name: "FromHAR" }]);
   });
 
-  test("supports a predicate url filter", async ({ page, trigger }) => {
+  test("supports a predicate url filter", async ({ routeFromHAR, trigger }) => {
     // Docs allow a predicate; published typings currently list string|RegExp only.
-    await page.routeFromHAR(harPath, {
+    await routeFromHAR(harPath, {
       // @ts-expect-error Playwright docs allow predicate; typings lag behind.
       url: (url: URL) => url.pathname === "/users",
       update: false,
@@ -164,8 +182,8 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect(result.data).toEqual([{ id: 9, name: "FromHAR" }]);
   });
 
-  test("follows redirects recorded in HAR", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, {
+  test("follows redirects recorded in HAR", async ({ routeFromHAR, trigger }) => {
+    await routeFromHAR(harPath, {
       url: /\/(redirect-har|har-redirect-target)$/,
       update: false,
     });
@@ -175,8 +193,8 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect(result.data).toEqual({ via: "har-redirect" });
   });
 
-  test("disambiguates entries by request headers", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: "**/echo", update: false });
+  test("disambiguates entries by request headers", async ({ routeFromHAR, trigger }) => {
+    await routeFromHAR(harPath, { url: "**/echo", update: false });
 
     const alpha = await trigger("/echo", {
       headers: { "x-variant": "alpha" },
@@ -191,9 +209,10 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
 
   test("applies fallback overrides before routing from HAR", async ({
     page,
+    routeFromHAR,
     trigger,
   }) => {
-    await page.routeFromHAR(harPath, {
+    await routeFromHAR(harPath, {
       url: "**/har-script*",
       update: false,
     });
@@ -205,8 +224,8 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect(result.data).toEqual({ script: "alt" });
   });
 
-  test("unrouteAll stops routeFromHAR", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: "**/users", update: false });
+  test("unrouteAll stops routeFromHAR", async ({ page, routeFromHAR, trigger }) => {
+    await routeFromHAR(harPath, { url: "**/users", update: false });
     await page.unrouteAll();
 
     const result = await trigger("/users");
@@ -257,10 +276,10 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
   });
 
   test("GET to a POST-only HAR entry does not reuse the wrong method", async ({
-    page,
+    routeFromHAR,
     trigger,
   }) => {
-    await page.routeFromHAR(harPath, {
+    await routeFromHAR(harPath, {
       url: "**/charges",
       update: false,
       notFound: "fallback",
@@ -271,13 +290,13 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
   });
 
   test("picks the entry with the most matching headers when no exact match", async ({
-    page,
+    routeFromHAR,
     trigger,
   }) => {
     // Three cassette entries share foo+bar and differ only on baz.
     // An unknown baz value still matches foo+bar, so the first/best-scoring
     // entry (baz1) wins — Playwright's header scoring, not exact-only match.
-    await page.routeFromHAR(harPath, { url: "**/echo-score", update: false });
+    await routeFromHAR(harPath, { url: "**/echo-score", update: false });
 
     const fetchScore = async (baz: string) =>
       trigger("/echo-score", {
@@ -296,8 +315,11 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
     expect((await fetchScore("baz4")).raw).toBe("baz1");
   });
 
-  test("ignores multipart boundary when matching the body", async ({ page, trigger }) => {
-    await page.routeFromHAR(harPath, { url: "**/multipart", update: false });
+  test("ignores multipart boundary when matching the body", async ({
+    routeFromHAR,
+    trigger,
+  }) => {
+    await routeFromHAR(harPath, { url: "**/multipart", update: false });
 
     // Different boundary than the cassette, same field payload shape.
     const boundary = "----WebKitFormBoundaryBBBB";
@@ -364,8 +386,8 @@ test.describe("routeFromHAR (oracle for routeFromJSON)", () => {
   }, testInfo) => {
     // Playwright 1.62 records aborted/reset traffic with status -1 + _failureText
     // rather than omitting the entry. Replaying that entry must not yield a
-    // successful 200 body (request stalls / fails) — portable signal for
-    // routeFromJSON: failed recordings must not be treated as fulfillable.
+    // successful 200 body (request stalls / fails) — failed recordings must not
+    // be treated as fulfillable in a Node HAR (or cassette) implementation.
     const outHar = testInfo.outputPath("aborted.har");
 
     {

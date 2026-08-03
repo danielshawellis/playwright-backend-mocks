@@ -125,4 +125,33 @@ test.describe("waitForRequest", () => {
     await triggerB;
     expect(seen.url()).toBe(`${UPSTREAM}/echo?request=B`);
   });
+
+  test("waits for a matching request by glob pattern", async ({
+    route,
+    trigger,
+    waitForRequest,
+  }) => {
+    await route("**/users", async (r) => {
+      await r.fulfill({ status: 200, json: [] });
+    });
+
+    const pending = waitForRequest("**/users");
+    await trigger("/users");
+    const seen = await pending;
+    expect(seen.url()).toContain("/users");
+  });
+
+  test("awaits an async predicate", async ({ route, trigger, waitForRequest }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.fulfill({ status: 200, json: { ok: true } });
+    });
+
+    const pending = waitForRequest(async (request) => {
+      await Promise.resolve();
+      return request.url().includes("/echo") && request.method() === "POST";
+    });
+    await trigger("/echo", { method: "POST", body: "async" });
+    const seen = await pending;
+    expect(seen.postData()).toBe("async");
+  });
 });

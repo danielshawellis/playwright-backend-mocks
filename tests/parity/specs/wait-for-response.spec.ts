@@ -124,4 +124,32 @@ test.describe("waitForResponse", () => {
 
     await expect(pending).rejects.toThrow(/aborted/i);
   });
+
+  test("waits for a matching response by glob pattern", async ({
+    route,
+    trigger,
+    waitForResponse,
+  }) => {
+    await route("**/users", async (r) => {
+      await r.fulfill({ status: 200, json: [{ id: 1 }] });
+    });
+
+    const pending = waitForResponse("**/users");
+    await trigger("/users");
+    const response = await pending;
+    expect(await response.json()).toEqual([{ id: 1 }]);
+  });
+
+  test("awaits an async predicate", async ({ route, trigger, waitForResponse }) => {
+    await route(`${UPSTREAM}/echo`, async (r) => {
+      await r.fulfill({ status: 200, json: { ok: true } });
+    });
+
+    const pending = waitForResponse(async (response) => {
+      await Promise.resolve();
+      return response.url().includes("/echo") && response.status() === 200;
+    });
+    await trigger("/echo", { method: "POST", body: "async" });
+    expect(await (await pending).json()).toEqual({ ok: true });
+  });
 });

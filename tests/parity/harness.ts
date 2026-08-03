@@ -3,6 +3,7 @@ import {
   expect,
   type Page,
   type Request,
+  type Response,
   type Route,
 } from "@playwright/test";
 import { HARNESS, UPSTREAM, WS_UPSTREAM, type TriggerResult } from "./helpers.js";
@@ -32,6 +33,8 @@ type BrowserTriggerFn = (
   },
 ) => Promise<TriggerResult>;
 
+type RouteFromHAROptions = NonNullable<Parameters<Page["routeFromHAR"]>[1]>;
+
 type ParityFixtures = {
   /** Ensures the browser harness page is loaded once per test. */
   harnessPage: Page;
@@ -49,14 +52,26 @@ type ParityFixtures = {
     behavior?: "wait" | "ignoreErrors" | "default";
   }) => Promise<void>;
   /**
+   * Record/replay via HAR.
+   * Browser mode → `page.routeFromHAR`.
+   * Backend mode (Step 2) → `backendMocks.routeFromHAR` if the library keeps HAR parity
+   * (or a thin adapter if the product stays on JSON cassettes).
+   */
+  routeFromHAR: (file: string, options?: RouteFromHAROptions) => Promise<void>;
+  /**
    * Trigger an outbound HTTP call from the downstream process.
    * Browser mode → Ajax from the harness page to the upstream fake.
    */
   trigger: (path: string, init?: TriggerInit) => Promise<TriggerResult>;
   waitForRequest: (
-    urlOrPredicate: string | RegExp | ((request: Request) => boolean),
+    urlOrPredicate: string | RegExp | ((request: Request) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Request>;
+  waitForResponse: (
+    urlOrPredicate:
+      string | RegExp | ((response: Response) => boolean | Promise<boolean>),
+    options?: { timeout?: number; signal?: AbortSignal },
+  ) => Promise<Response>;
   /** Absolute upstream URL helper. */
   upstream: (path?: string) => string;
 };
@@ -119,6 +134,18 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
+  routeFromHAR: async ({ page, harnessPage }, use) => {
+    void harnessPage;
+    if (parityMode !== "browser") {
+      throw new Error(
+        "PARITY_MODE=backend is not wired yet (rewrite Step 2). Use PARITY_MODE=browser.",
+      );
+    }
+    await use(async (file, options) => {
+      await page.routeFromHAR(file, options);
+    });
+  },
+
   trigger: async ({ page, harnessPage }, use) => {
     void harnessPage;
     await use(async (path, init = {}) => {
@@ -150,6 +177,13 @@ export const test = base.extend<ParityFixtures>({
     void harnessPage;
     await use(async (urlOrPredicate, options) => {
       return page.waitForRequest(urlOrPredicate, options);
+    });
+  },
+
+  waitForResponse: async ({ page, harnessPage }, use) => {
+    void harnessPage;
+    await use(async (urlOrPredicate, options) => {
+      return page.waitForResponse(urlOrPredicate, options);
     });
   },
 

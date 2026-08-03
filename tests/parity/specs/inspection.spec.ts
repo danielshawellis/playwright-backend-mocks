@@ -23,6 +23,53 @@ test.describe("request inspection", () => {
     expect(result.data).toEqual({ inspected: true });
   });
 
+  test("postDataJSON throws when POST data is not valid JSON", async ({
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/echo`, async (r, request) => {
+      let message = "";
+      try {
+        request.postDataJSON();
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toMatch(/not a valid JSON object/i);
+      await r.fulfill({ status: 200, body: "bad-json-inspected" });
+    });
+
+    const result = await trigger("/echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "not-json{",
+    });
+    expect(result.raw).toBe("bad-json-inspected");
+  });
+
+  test("redirectedFrom and redirectedTo link the redirect chain", async ({
+    page,
+    route,
+    trigger,
+  }) => {
+    await route(`${UPSTREAM}/redirect`, async (r) => {
+      await r.continue();
+    });
+    await route(`${UPSTREAM}/users`, async (r) => {
+      await r.continue();
+    });
+
+    const pendingFinal = page.waitForRequest(
+      (request) =>
+        request.url() === `${UPSTREAM}/users` && request.redirectedFrom() !== null,
+    );
+    await trigger("/redirect");
+    const finalRequest = await pendingFinal;
+    const prior = finalRequest.redirectedFrom();
+    expect(prior).toBeTruthy();
+    expect(prior!.url()).toContain("/redirect");
+    expect(prior!.redirectedTo()).toBe(finalRequest);
+  });
+
   test("parses form-urlencoded bodies via postDataJSON", async ({ route, trigger }) => {
     await route(`${UPSTREAM}/form`, async (r, request) => {
       expect(request.headers()["content-type"]).toContain(

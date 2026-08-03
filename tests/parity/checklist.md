@@ -3,7 +3,7 @@
 Guaranteed API surface from [`research/rewrite-specification.md`](../../research/rewrite-specification.md) §4.
 Scenarios adapted from Playwright’s network suite at research commit `15b1aec` and the public Route / Page / Request / Mock / WebSocketRoute API docs.
 
-**Coverage analysis:** [`coverage-pass.md`](./coverage-pass.md) · **Source fine-tooth pass:** [`source-coverage-pass.md`](./source-coverage-pass.md) (299 green).
+**Coverage analysis:** [`coverage-pass.md`](./coverage-pass.md) · **Source fine-tooth pass:** [`source-coverage-pass.md`](./source-coverage-pass.md) (322 green).
 
 ## In-scope surface
 
@@ -27,7 +27,7 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | Passthrough                                                                                  | `passthrough.spec.ts`                                   | covered |
 | `waitForRequest` / `waitForResponse` (+ future-only, AbortSignal)                            | `wait-for-*.spec.ts`                                    | covered |
 | Request inspection (+ null postData, existingResponse, abort response)                       | `inspection.spec.ts`                                    | covered |
-| `routeFromHAR` portable control flow (+ body-match gate, default notFound, fallback)         | `route-from-har.spec.ts`, `source-edges.spec.ts`        | covered |
+| `routeFromHAR` portable control flow (+ body-match gate, redirects, status -1, harness seam) | `route-from-har.spec.ts`, `source-edges.spec.ts`        | covered |
 | `routeWebSocket` / `WebSocketRoute`                                                          | `route-websocket.spec.ts`                               | covered |
 | Source-backed edge matrix (headers replace, falsey postData, status 0, HAR cycle, …)         | `source-edges.spec.ts`                                  | covered |
 
@@ -80,7 +80,9 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 | `binaryType` change after connect                      | covered |
 | `route.send` after close does not throw                | covered |
 
-## routeFromHAR → routeFromJSON portable cases
+## routeFromHAR portable cases
+
+(Oracle pins real HAR. Step 2 may keep `routeFromHAR` parity via the harness seam, or map to JSON cassettes — see [`source-coverage-pass.md`](./source-coverage-pass.md).)
 
 | Behavior                                  | Status  |
 | ----------------------------------------- | ------- |

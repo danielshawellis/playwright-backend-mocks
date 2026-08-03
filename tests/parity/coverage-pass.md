@@ -2,7 +2,7 @@
 
 Date: 2026-08-03 (updated after source fine-tooth comb)  
 Pin: `@playwright/test@1.62.1` / research commit `15b1aec`  
-Suite at latest green run: **299** browser-mode tests
+Suite at latest green run: **322** browser-mode tests
 
 **Authoritative source-branch report:** [`source-coverage-pass.md`](./source-coverage-pass.md).
 
