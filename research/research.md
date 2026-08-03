@@ -2,6 +2,8 @@
 
 Findings that informed the v1 architecture. This is a decision log, not a comprehensive survey.
 
+For a deeper dive into Playwright’s network-routing implementation, how closely this library can mirror it across the proxy/WebSocket boundary, and a catalog of Playwright’s related tests, see [`playwright-network-parity.md`](./playwright-network-parity.md) (test dump: [`playwright-network-tests.json`](./playwright-network-tests.json)).
+
 ## Playwright request routing
 
 Playwright’s browser-side routing is the DX target:
