@@ -52,10 +52,9 @@ type ParityFixtures = {
     behavior?: "wait" | "ignoreErrors" | "default";
   }) => Promise<void>;
   /**
-   * Record/replay via HAR.
+   * Record/replay via HAR (Playwright parity).
    * Browser mode → `page.routeFromHAR`.
-   * Backend mode (Step 2) → `backendMocks.routeFromHAR` if the library keeps HAR parity
-   * (or a thin adapter if the product stays on JSON cassettes).
+   * Backend mode (Step 2) → `backendMocks.routeFromHAR`.
    */
   routeFromHAR: (file: string, options?: RouteFromHAROptions) => Promise<void>;
   /**

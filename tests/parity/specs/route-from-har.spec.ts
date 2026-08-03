@@ -6,12 +6,12 @@ import { test, expect, UPSTREAM } from "../harness.js";
 /**
  * routeFromHAR oracle suite.
  *
- * Pins Playwright HAR record/replay control-flow. Step 2 can keep HAR parity
- * (`backendMocks.routeFromHAR`) via the harness `routeFromHAR` seam, or map
- * these cases to JSON cassettes — the oracle itself stays on real HAR files.
+ * Pins Playwright HAR record/replay control-flow. Step 2 dual-mode uses the
+ * harness `routeFromHAR` seam → `backendMocks.routeFromHAR` with the same HAR
+ * files and assertions (rewrite-spec §4).
  *
  * Tests that need a fresh browser context for record/update still call
- * `page.routeFromHAR` on that context's page directly.
+ * `page.routeFromHAR` on that context's page directly in browser mode.
  */
 const harPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -387,7 +387,7 @@ test.describe("routeFromHAR", () => {
     // Playwright 1.62 records aborted/reset traffic with status -1 + _failureText
     // rather than omitting the entry. Replaying that entry must not yield a
     // successful 200 body (request stalls / fails) — failed recordings must not
-    // be treated as fulfillable in a Node HAR (or cassette) implementation.
+    // be treated as fulfillable in a Node HAR implementation.
     const outHar = testInfo.outputPath("aborted.har");
 
     {

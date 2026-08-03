@@ -82,7 +82,7 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 
 ## routeFromHAR portable cases
 
-(Oracle pins real HAR. Step 2 may keep `routeFromHAR` parity via the harness seam, or map to JSON cassettes — see [`source-coverage-pass.md`](./source-coverage-pass.md).)
+(Oracle pins real HAR. Step 2 keeps `routeFromHAR` via the harness seam — see rewrite-spec §4 and [`source-coverage-pass.md`](./source-coverage-pass.md).)
 
 | Behavior                                  | Status  |
 | ----------------------------------------- | ------- |

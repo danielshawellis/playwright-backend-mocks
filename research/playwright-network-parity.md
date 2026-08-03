@@ -15,10 +15,10 @@ The practical strategy:
 
 1. **Mirror Playwright’s client-side handler orchestration almost line-for-line** (`Route`, `RouteHandler`, `_onRoute` chaining, settle semantics, `fallback`, `times`, override accumulation).
 2. **Treat our WebSocket protocol as Playwright’s ChannelOwner ↔ Dispatcher layer** (`request:matched` ≈ `route` event; `handler:result` ≈ `Route.fulfill|continue|abort`).
-3. **Diverge only where product requirements force it** — notably: JSON cassettes instead of HAR, and loud multi-match failures instead of LIFO handler chaining across concurrent tests.
+3. **Diverge only where product requirements force it** — notably: loud multi-match failures across concurrent tests (within one test, mirror Playwright LIFO + `fallback`). Record/replay uses **`routeFromHAR`** with the same HAR format as Playwright.
 4. **Do not try to reuse Playwright source.** Keep analogous Playwright paths documented next to our modules so developers can diff behavior deliberately.
 
-Our current v1 already mirrors the public DX for `route` / `unroute` / `fulfill` / `continue` / `fetch` / `abort` / `waitForRequest` / `requests` / `routeFromJSON`. The remaining parity work is mostly **subtle handler semantics** (`fallback`, `times`, LIFO order, unroute lifecycle, richer Request/Response APIs, abort-code completeness, glob fidelity) plus **parity-oriented tests adapted from Playwright’s suite**.
+The rewrite targets the public DX for `route` / `unroute` / `fulfill` / `continue` / `fetch` / `abort` / `waitForRequest` / `requests` / `routeFromHAR` / `routeWebSocket`. Parity work is **subtle handler semantics** (`fallback`, `times`, LIFO order, unroute lifecycle, richer Request/Response APIs, abort-code completeness, glob fidelity, HAR matching edges) plus the oracle suite adapted from Playwright’s tests.
 
 ---
 
@@ -129,14 +129,13 @@ Keep three layers that map almost 1:1 to Playwright:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Mirror closely:** client handler API + orchestration, message shapes for settle actions, Request/Response inspection helpers, glob matching algorithm, HAR-router _shape_ (as JSON router).
+**Mirror closely:** client handler API + orchestration, message shapes for settle actions, Request/Response inspection helpers, glob matching algorithm, **HAR router / `routeFromHAR`** (same files and options as Playwright).
 
 **Diverge here (intentionally):**
 
-1. **Multi-match ownership** — Playwright chains handlers LIFO inside one page/context; we fail loud when >1 registered route matches (including across concurrent tests). Document + link to a docs page from the error.
-2. **Cassette format** — `routeFromJSON` instead of `routeFromHAR`.
-3. **No browser-specific concerns** — CORS auto-headers on fulfill, favicon abort, service workers, navigation redirects, cookie jar from browser store, `networkidle`, resource timing, disk-cache disable. Those are browser-network concerns; our traffic is Node outbound HTTP.
-4. **Extra matchers we have that Playwright doesn’t** — `method` / `clientId` filters on the matcher object (valuable for multi-process suites).
+1. **Multi-match ownership** — Playwright chains handlers LIFO inside one page/context; we fail loud when **two different tests** claim the same request. Within one test, mirror Playwright LIFO + `fallback`. Document + link to a docs page from the error.
+2. **No browser-specific concerns** — CORS auto-headers on fulfill, favicon abort, service workers, navigation redirects, cookie jar from browser store, `networkidle`, resource timing, disk-cache disable, HAR zip attach. Those are browser-network concerns; our traffic is Node outbound HTTP.
+3. **Extra matchers we have that Playwright doesn’t** — `method` / `clientId` filters on the matcher object (valuable for multi-process suites).
 
 ---
 
@@ -146,21 +145,21 @@ Keep three layers that map almost 1:1 to Playwright:
 
 These can and should look almost like Playwright’s client code, with settle actions crossing our WS instead of Playwright’s channel:
 
-| Capability                                              | Playwright reference            | Our status            | Notes                                                                           |
-| ------------------------------------------------------- | ------------------------------- | --------------------- | ------------------------------------------------------------------------------- |
-| `route(url, handler)`                                   | `page.ts` / `browserContext.ts` | ✅ present            | Add `times` option                                                              |
-| Matcher: string glob / RegExp / predicate               | `urlMatch` + `RouteHandler`     | ✅ present            | Align glob algorithm with Playwright’s (`?` not special, brace groups, baseURL) |
-| `unroute(url?, handler?)`                               | client                          | ✅ present            | Align equality + lifecycle                                                      |
-| `fulfill` options                                       | `Route._innerFulfill`           | ✅ mostly             | Parity gaps: content-length auto, mime-from-path, richer statusText             |
-| `continue` overrides                                    | `Route.continue`                | ✅ present            | Header forbid-list differs (browser-specific)                                   |
-| `fetch` then fulfill                                    | `Route.fetch` + fulfill         | ✅ present            | Already bypasses interceptor (correct analogue of bypassing page routes)        |
-| `abort(errorCode)`                                      | Chromium map                    | ⚠️ partial            | We support a subset; expand codes if desired                                    |
-| Stall until settle                                      | `_startHandling`                | ✅ present            | Same failure mode if handler forgets to settle                                  |
-| Double-settle throws                                    | `_checkNotHandled`              | ✅ present            | Message differs slightly                                                        |
-| `waitForRequest`                                        | `page.waitForRequest`           | ✅ present            | Predicate/timeout/logging parity polish                                         |
-| Request inspection (`url/method/headers/postData/json`) | `Request`                       | ✅ basic              | Missing: `headersArray`, `allHeaders`, `postDataJSON` form-urlencoded, etc.     |
-| `routeFromHAR` DX                                       | `HarRouter`                     | ✅ as `routeFromJSON` | Intentional format divergence                                                   |
-| Predicate evaluated on handler side                     | function → `**/*` server-side   | ✅ claim broadcast    | Already the right design                                                        |
+| Capability                                              | Playwright reference            | Our status             | Notes                                                                           |
+| ------------------------------------------------------- | ------------------------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| `route(url, handler)`                                   | `page.ts` / `browserContext.ts` | ✅ present             | Add `times` option                                                              |
+| Matcher: string glob / RegExp / predicate               | `urlMatch` + `RouteHandler`     | ✅ present             | Align glob algorithm with Playwright’s (`?` not special, brace groups, baseURL) |
+| `unroute(url?, handler?)`                               | client                          | ✅ present             | Align equality + lifecycle                                                      |
+| `fulfill` options                                       | `Route._innerFulfill`           | ✅ mostly              | Parity gaps: content-length auto, mime-from-path, richer statusText             |
+| `continue` overrides                                    | `Route.continue`                | ✅ present             | Header forbid-list differs (browser-specific)                                   |
+| `fetch` then fulfill                                    | `Route.fetch` + fulfill         | ✅ present             | Already bypasses interceptor (correct analogue of bypassing page routes)        |
+| `abort(errorCode)`                                      | Chromium map                    | ⚠️ partial             | We support a subset; expand codes if desired                                    |
+| Stall until settle                                      | `_startHandling`                | ✅ present             | Same failure mode if handler forgets to settle                                  |
+| Double-settle throws                                    | `_checkNotHandled`              | ✅ present             | Message differs slightly                                                        |
+| `waitForRequest`                                        | `page.waitForRequest`           | ✅ present             | Predicate/timeout/logging parity polish                                         |
+| Request inspection (`url/method/headers/postData/json`) | `Request`                       | ✅ basic               | Missing: `headersArray`, `allHeaders`, `postDataJSON` form-urlencoded, etc.     |
+| `routeFromHAR` DX                                       | `HarRouter`                     | ✅ target (HAR parity) | Same API name + HAR files; skip zip/navigation-only quirks                      |
+| Predicate evaluated on handler side                     | function → `**/*` server-side   | ✅ claim broadcast     | Already the right design                                                        |
 
 ### Medium fidelity (mirror semantics, different transport)
 
@@ -184,18 +183,16 @@ These are Playwright browser-network features. Near-full parity of _AJAX request
 - `networkidle`, resource timing, transfer sizes from browser
 - Favicon auto-abort
 - ~~`routeWebSocket` (app WebSockets are out of v1 scope; our WS is control-plane only)~~ **Now in scope** for `globalThis.WebSocket` (see rewrite-specification §4). Control-plane WS remains separate from application sockets. **Partial client coverage:** unlike HTTP (virtually all common clients), WS mocks only the WHATWG global — npm `ws` / direct Undici imports bypass. Product docs must call this out loudly on every WS page; we are not waiting on MSW custom-client support.
-- HAR recording format, HAR zip attach mode, tracing HAR
+- HAR zip attach mode / tracing HAR packaging (plain `.har` file record/replay **is** in scope)
 - Global / context `APIRequestContext` as a general HTTP client (only needed as the engine behind `route.fetch`)
 
 ### Intentional product divergences (do not “fix” toward Playwright)
 
-#### 1. `routeFromJSON` instead of `routeFromHAR`
+#### 1. `routeFromHAR` — full format parity (not JSON)
 
-Playwright’s `HarRouter` is a thin adapter: open HAR → on each route lookup → fulfill / abort / fallback / redirect navigation.
+Playwright’s `HarRouter` is a thin adapter: open HAR → on each route lookup → fulfill / abort / fallback / follow redirects in-lookup.
 
-Our `routeFromJSON` should keep that **control-flow shape** (options: `url`, `update`, `notFound: 'abort'|'fallback'`) but persist JSON cassettes because they are a more natural representation of server-side request/response pairs.
-
-Developer instruction: when changing `route-from-json.ts`, open Playwright’s `harRouter.ts` + `browsercontext-har.spec.ts` and match behavior except file format / entry schema.
+**Product decision:** implement `backendMocks.routeFromHAR` with the same options and HAR file format as Playwright (`url`, `update`, `updateMode`, `updateContent`, `notFound`). Node traffic will not populate browser-only HAR fields; matching/update control flow should otherwise match. Developer instruction: when changing the HAR router, open Playwright’s `harRouter.ts` / `harBackend.ts` + `browsercontext-har.spec.ts` and match behavior; omit only zip/navigation-specific paths.
 
 #### 2. Fail loudly on multiple matching handlers
 
@@ -225,7 +222,7 @@ Proposed module alignment (not requiring Playwright code reuse — just side-by-
 | `packages/playwright/src/types.ts`                       | `client/network.ts` public types + `api.Route` | Keep method names/options aligned                                   |
 | `packages/playwright/src/backend-mocks.ts`               | `Route` + `RouteHandler` + `_onRoute`          | Extract a `RouteHandler` class; implement `fallback`, `times`, LIFO |
 | `packages/playwright/src/match.ts` + `protocol/match.ts` | `@isomorphic/urlMatch`                         | Port Playwright glob algorithm; keep predicate-on-worker            |
-| `packages/playwright/src/route-from-json.ts`             | `client/harRouter.ts`                          | Same options/control flow; JSON I/O instead of HAR                  |
+| `packages/playwright/src/route-from-har.ts`              | `client/harRouter.ts` + `server/harBackend.ts` | Same options/control flow and HAR file I/O                          |
 | `packages/protocol/src/schemas.ts`                       | `channels.d.ts` Route settle messages          | Keep `fulfill/continue/abort/fetch` action shapes stable            |
 | `packages/proxy/src/server.ts`                           | `*Dispatcher` + ownership                      | Our extra: claim broadcast + multi-test ambiguity                   |
 | `packages/node/src/agent.ts`                             | `RouteDelegate` + server `fetch.ts`            | Apply decisions; upstream fetch with bypass                         |
@@ -258,7 +255,7 @@ route.request()
 
 backendMocks.waitForRequest(urlOrPredicate, options?)
 backendMocks.requests(url?)   // library-specific spy helper (good)
-backendMocks.routeFromJSON(path, { url?, update?, notFound? })
+backendMocks.routeFromHAR(path, { url?, update?, updateMode?, updateContent?, notFound? })
 ```
 
 ### Matcher forms
@@ -332,7 +329,7 @@ Port/adapt these first (behavior that applies to Node outbound HTTP mocking):
 - From `page-request-intercept.spec.ts`: fetch + fulfill, timeout, url/postData override, empty body.
 - From `interception.spec.ts`: glob, unbalanced braces throw, regex, invalid glob throw.
 - From `unroute-behavior.spec.ts`: unrouteAll wait/ignoreErrors; no auto-continue of in-flight on teardown where applicable.
-- From `browsercontext-har.spec.ts` → rewrite against `routeFromJSON`: method match, default abort, `notFound: fallback`, url/regex filter, update mode, postData match, unroute stops cassette route.
+- From `browsercontext-har.spec.ts` → dual-mode `routeFromHAR`: method match, default abort, `notFound: fallback`, url/regex filter, update mode, postData match, unroute stops HAR replay.
 
 **P1 — inspection / waiting**
 
@@ -428,7 +425,7 @@ Every extracted title is in `playwright-network-tests.json`. Highlights of the d
 </details>
 
 <details>
-<summary><code>browsercontext-har.spec.ts</code> (33) — adapt to routeFromJSON</summary>
+<summary><code>browsercontext-har.spec.ts</code> (33) — dual-mode routeFromHAR</summary>
 
 - should context.routeFromHAR, matching the method and following redirects
 - should page.routeFromHAR, matching the method and following redirects
@@ -483,7 +480,7 @@ What we already got right:
 - Settle actions as protocol messages.
 - `fetch` as non-terminal with upstream performed in the Node process.
 - Ambiguous multi-owner failure with diagnostics.
-- `routeFromJSON` as HAR-shaped DX.
+- `routeFromHAR` with Playwright HAR file parity (product decision).
 
 What to change for near-full parity (implementation follow-ups, not done in this research):
 
@@ -507,7 +504,7 @@ Client registers handlers; server enables interception with coarse patterns; eac
 Yes — Playwright’s existing client/server channel boundary. Our proxy WebSocket is that boundary, with Node agents playing the role of the browser/RouteDelegate.
 
 **Could we closely match Playwright and diverge in special places?**  
-Yes. Mirror client handler orchestration and settle APIs almost exactly; diverge on (1) JSON vs HAR, (2) multi-test ambiguous match failures, (3) browser-only concerns we should not pretend to implement.
+Yes. Mirror client handler orchestration, settle APIs, and `routeFromHAR` almost exactly; diverge on (1) multi-test ambiguous match failures, (2) browser-only concerns (CORS, cookie jar, HAR zip, navigation) we should not pretend to implement.
 
 **Should developers keep Playwright code alongside as a reference?**  
 Yes — as an external reference (pinned commit), with module-mapping instructions in this doc. Do not vendor Playwright source into the repo; reimplement with deliberate naming/structure alignment.
@@ -529,4 +526,4 @@ From `docs/src/api/class-route.md`:
 
 ## Appendix C — Our existing e2e coverage (baseline)
 
-Already covered in this repo (not Playwright’s suite): glob/RegExp/predicate/method/clientId matching, unroute, ambiguous failure, fulfill/continue/fetch/abort matrix across transports, waitForRequest/requests, routeFromJSON record/replay, disconnect/auth, observability. These are the right foundation; parity work extends them with Playwright’s subtler handler-chain and matching tests.
+Already covered in this repo (not Playwright’s suite): glob/RegExp/predicate/method/clientId matching, unroute, ambiguous failure, fulfill/continue/fetch/abort matrix across transports, waitForRequest/requests, HAR record/replay (oracle), disconnect/auth, observability. These are the right foundation; parity work extends them with Playwright’s subtler handler-chain and matching tests.

@@ -4,7 +4,7 @@ Date: 2026-08-03
 Pin: `@playwright/test@1.62.1` / research commit `15b1aec`  
 Suite at this pass: **322** browser-mode tests (all green)
 
-Goal: near-complete coverage of Playwright **network interception** and **WebSocketRoute** branches that are analogous to the Node library rewrite (`route` / `fallback` / `continue` / `fulfill` / `abort` / `fetch` / `times` / matchers / `routeFromHAR` / `routeWebSocket` for `globalThis.WebSocket`).
+Goal: near-complete coverage of Playwright **network interception** and **WebSocketRoute** branches that are analogous to the Node library rewrite (`route` / `fallback` / `continue` / `fulfill` / `abort` / `fetch` / `times` / matchers / **`routeFromHAR`** / `routeWebSocket` for `globalThis.WebSocket`).
 
 ---
 
@@ -20,7 +20,9 @@ Goal: near-complete coverage of Playwright **network interception** and **WebSoc
 
 ## Verdict
 
-**Ready to merge Step 1 (oracle suite).** In-scope Playwright branches for the analogous surface are pinned, including the prior P1/P2 stragglers.
+**Ready to merge Step 1 (oracle suite).** In-scope Playwright branches for the analogous surface are pinned.
+
+**Product record/replay decision:** `backendMocks.routeFromHAR` with Playwright HAR file parity (not JSON cassettes). See rewrite-specification §4.
 
 ---
 
@@ -62,26 +64,22 @@ Frames, navigation, SW, cookies, CORS auto-headers, page/context dual HTTP/WS sc
 
 ---
 
-## `routeFromHAR` vs `routeFromJSON` — harness readiness
+## `routeFromHAR` dual-mode readiness
 
-**Oracle today already pins real Playwright HAR** (`tests/parity/testdata/*.har`, update/record flows, body match, redirects, status -1).
+**Product decision:** full HAR parity (`backendMocks.routeFromHAR`), not JSON cassettes.
 
-The dual-mode seam now exposes:
+The dual-mode seam already exposes:
 
 - `route` / `unroute` / `unrouteAll`
-- **`routeFromHAR(file, options)`** → browser: `page.routeFromHAR`; Step 2: wire to `backendMocks.routeFromHAR`
+- **`routeFromHAR(file, options)`** → browser: `page.routeFromHAR`; Step 2: `backendMocks.routeFromHAR`
 - `trigger` / `waitForRequest` / `waitForResponse`
 
-If you choose **complete HAR parity** for Node mocks:
+Step 2 switchover:
 
-1. Implement `backendMocks.routeFromHAR` with the same options (`url`, `update`, `updateMode`, `updateContent`, `notFound`).
-2. In `harness.ts`, replace the backend throw with a call to that API (same pattern as `route`).
-3. Almost all of `route-from-har.spec.ts` + HAR cases in `source-edges.spec.ts` become dual-mode **without rewriting assertions** — they already use HAR files and the `routeFromHAR` fixture.
-4. Record/update tests that open a fresh `browser.newContext()` still call `page.routeFromHAR` on that page; for backend mode those would switch to a Node outbound client + `backendMocks.routeFromHAR(..., { update: true })` (small Step 2 adapter, not a suite rewrite).
-
-If you keep **JSON cassettes**, keep the HAR oracle as the behavioral source of truth and map control-flow in a separate library-mode suite (original rewrite-spec plan). The harness comment documents both options; nothing forces JSON.
-
-**Bottom line:** choosing HAR parity is the _easier_ switchover — API name and fixtures already match; no cassette-format translation layer in the oracle.
+1. Implement `backendMocks.routeFromHAR` with Playwright options (`url`, `update`, `updateMode`, `updateContent`, `notFound`).
+2. In `harness.ts`, replace the backend throw with a call to that API.
+3. Existing `route-from-har.spec.ts` + HAR cases in `source-edges.spec.ts` run dual-mode with the same HAR files.
+4. Record/update tests that open a fresh `browser.newContext()` need a small Node-client adapter in backend mode; assertions on HAR contents stay shared.
 
 ---
 

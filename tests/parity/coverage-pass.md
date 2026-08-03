@@ -195,7 +195,7 @@ Legend: **yes** = meaningful pin · **partial** = API touched but important bran
 | waitForResponse AbortSignal                               | no     | in 1.62 |
 | Glob wait matcher; async predicate; multiple waiters      | no     |         |
 
-### `routeFromHAR` (oracle for `routeFromJSON`)
+### `routeFromHAR` (dual-mode HAR parity)
 
 | Behavior                                                             | Status | Notes                                          |
 | -------------------------------------------------------------------- | ------ | ---------------------------------------------- |

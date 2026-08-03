@@ -76,7 +76,7 @@ Behavior for **already-intercepted** outbound HTTP **and** application WebSocket
 - Glob semantics aligned with Playwright
 - `waitForRequest` / `waitForResponse` and request/response inspection helpers that apply to this path
 - `route.fetch` options that apply to fetching **the current intercepted request** upstream: overrides, timeout, redirect handling (`maxRedirects`), response body usability (including compression where Playwright’s route path exposes decoded bodies)
-- `routeFromJSON` as the analogue of `routeFromHAR` (JSON cassettes, same control-flow shape)
+- `routeFromHAR` with near-complete Playwright parity (same HAR files, options, and matching/update control flow; browser-only HAR concerns such as zip attach / navigation rewrite remain out of scope)
 
 **WebSockets** (same DX philosophy as Playwright `routeWebSocket` / `WebSocketRoute`)
 
@@ -113,7 +113,7 @@ Do not bury this in a footnote. Readers who only skim WS docs must still see it.
 ### Out of scope
 
 - General HTTP **initiation** APIs (`page.request` / `APIRequestContext` as a client)
-- Browser-only concerns: CORS auto-headers, cookie jar, service workers, navigation/`networkidle`, resource timing, favicon quirks, HAR zip/websocket HAR, frame-navigation WS close, DOM `binaryType` object-identity quirks, etc.
+- Browser-only concerns: CORS auto-headers, cookie jar, service workers, navigation/`networkidle`, resource timing, favicon quirks, HAR zip packaging / attach mode, websocket HAR frames, frame-navigation WS close, DOM `binaryType` object-identity quirks, etc.
 - npm `ws` package clients and non-global WebSocket constructors (unless a future custom-client design lands)
 
 ### Required product divergences
@@ -122,7 +122,7 @@ Do not bury this in a footnote. Readers who only skim WS docs must still see it.
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Multi-owner                  | If **two different tests** claim the same request/socket → fail loud (`ambiguous_route`) with diagnostics + docs link |
 | Same test, multiple handlers | **Mirror Playwright**: HTTP LIFO + `fallback`; WS newest-match only (no fallback chain)                               |
-| Record/replay format         | `routeFromJSON` instead of `routeFromHAR`                                                                             |
+| Record/replay format         | **`routeFromHAR`** — same API name and HAR files as Playwright (no JSON-cassette analogue)                            |
 | Extra matchers               | Keep `method` / `clientId`                                                                                            |
 | WS constructor surface       | Guarantee `globalThis.WebSocket` only; **loud docs** on every WS page for `ws` / direct-import bypass                 |
 
@@ -175,7 +175,8 @@ Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects,
 
 Use a **thin** dual-mode harness where the Playwright API and ours are nearly identical:
 
-- `route` / settle methods / matchers / `times` / `unroute` / `waitForRequest` / fallback chaining
+- `route` / settle methods / matchers / `times` / `unroute` / `unrouteAll` / `waitForRequest` / `waitForResponse` / fallback chaining
+- **`routeFromHAR(file, options)`** — browser: `page.routeFromHAR`; backend: `backendMocks.routeFromHAR` (same HAR files and assertions)
 - Trigger helper: browser action vs Node `callVia` (or equivalent)
 - Mode switch via config/env (e.g. `PARITY_MODE=browser|backend`)
 
@@ -183,9 +184,7 @@ Rules:
 
 - Harness adapts routing handle + trigger only. Assertions stay shared.
 - If the adapter grows clever, delete it and use two thin entrypoints instead.
-- **Do not** force dual-mode where the API is only analogous:
-  - `routeFromHAR` → separately rewritten tests for `routeFromJSON` (portable cases only: method match, url filter, `notFound` abort/fallback, update, postData match, unroute stops replay).
-  - Cookie jar, HAR zip, navigation-after-HAR, and other non-portable cases: omit from the initial suite.
+- HAR zip packaging, navigation-after-HAR, cookie-jar HAR quirks, and other non-portable browser cases: omit from the suite (already intentional skips).
 
 ### Step 1 done when
 
@@ -203,13 +202,13 @@ Switch the same suite to library mode and implement until green.
 
 ### What changes in backend mode
 
-| Piece         | Change                                                                   |
-| ------------- | ------------------------------------------------------------------------ |
-| Routing API   | `page.route` / … → `backendMocks.route` / …                              |
-| Downstream    | Browser harness → Node app + `startBackendMocks`                         |
-| Trigger       | Page action → Node trigger helper                                        |
-| Record/replay | Separate ported `routeFromJSON` tests (not dual-mode)                    |
-| Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer` |
+| Piece         | Change                                                                        |
+| ------------- | ----------------------------------------------------------------------------- |
+| Routing API   | `page.route` / `routeFromHAR` / … → `backendMocks.route` / `routeFromHAR` / … |
+| Downstream    | Browser harness → Node app + `startBackendMocks`                              |
+| Trigger       | Page action → Node trigger helper                                             |
+| Record/replay | Same dual-mode HAR specs via harness `routeFromHAR`                           |
+| Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer`      |
 
 ### What must not change
 
@@ -226,8 +225,7 @@ Upstream fake, assertion intent, scenario names/structure for dual-mode cases, p
 
 ### Step 2 done when
 
-- Backend mode passes the oracle/parity suite for the in-scope surface.
-- Separately ported `routeFromJSON` tests pass.
+- Backend mode passes the oracle/parity suite for the in-scope surface (including `routeFromHAR`).
 - Library-only suite covers multi-process / ambiguity / infra concerns.
 - Module map and `PARITY` / `DIVERGE` notes exist for contributors.
 - `historical/` can be deleted when no longer useful.
@@ -238,8 +236,7 @@ Upstream fake, assertion intent, scenario names/structure for dual-mode cases, p
 
 ```text
 tests/
-  parity/          # dual-mode oracle suite (browser | backend)
-  parity-json/     # routeFromJSON tests (library mode; ported from HAR cases)
+  parity/          # dual-mode oracle suite (browser | backend), including routeFromHAR
   library/         # clientId, cross-test ambiguity, disconnect, etc.
   unit/            # pure helpers as needed
   contract/        # wire protocol as needed
@@ -256,9 +253,9 @@ CI: run browser oracle against pinned Playwright; run backend parity against bui
 
 1. Archive prototype → `historical/`; clear living package/test/fixture paths for greenfield use.
 2. Pin Playwright; build upstream + browser harness; land Step 1 suite green in browser mode.
-3. Extract thin dual-mode seam; keep HAR/JSON tests separate.
+3. Extract thin dual-mode seam including `routeFromHAR` (same HAR files in both modes).
 4. Scaffold Step 2 skeleton; enable backend mode (expect red).
-5. Implement packages against failing cases until backend mode is green.
+5. Implement packages against failing cases until backend mode is green (HAR record/replay included).
 6. Add library-only suite; remove `historical/` when finished.
 
 ---
