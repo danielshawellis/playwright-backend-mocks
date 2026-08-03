@@ -11,24 +11,28 @@ Step 1 of the rewrite ([`research/rewrite-specification.md`](../../research/rewr
 
 Bump both deliberately when refreshing the oracle against a newer Playwright.
 
-## Mode
+## Modes
 
 ```bash
-PARITY_MODE=browser pnpm test   # default — stock Playwright only
-# PARITY_MODE=backend           # Step 2 — not wired yet
+pnpm test:parity            # PARITY_MODE=browser — stock Playwright + browser downstream
+pnpm test:parity:node       # PARITY_MODE=node — Node downstream control plane (passthrough smokes)
+PARITY_NODE_FULL=1 pnpm test:parity:node   # full suite in node mode (mostly red until Step 2)
 ```
 
-Browser mode imports **only** `@playwright/test`. No `@playwright-backend-mocks/*`.
+Browser mode imports **only** `@playwright/test` for routing. Node mode uses the same specs; `route` / waiters throw until Step 2 wires `backendMocks`.
+
+See [`downstream.md`](./downstream.md) for the shared downstream + control-plane WebSocket design.
 
 ## Layout
 
-- `harness.ts` — thin dual-mode seam (`route` / `routeFromHAR` / `trigger` / `unroute` / waiters / …)
+- `harness.ts` — thin dual-mode seam (`route` / `routeFromHAR` / `trigger` / `openDownstreamSocket` / waiters / …)
+- `node-control.ts` — Playwright ↔ Node control-plane client
 - `specs/` — scenarios adapted from Playwright’s network suite + checklist gaps
-- `checklist.md` — guaranteed API surface coverage and intentional skips
-- `source-coverage-pass.md` — fine-tooth Playwright source ↔ suite branch map (incl. HAR vs JSON notes)
-- Shared upstream: `fixtures/upstream`
-- Browser downstream: `fixtures/browser-harness`
-- WebSocket upstream: `fixtures/ws-upstream`
+- `specs/smoke-passthrough.spec.ts` — HTTP + WS passthrough green in both modes
+- Shared upstream: `fixtures/upstream`, `fixtures/ws-upstream`
+- Shared downstream core: `fixtures/downstream`
+- Browser host: `fixtures/browser-harness`
+- Node host: `fixtures/node-downstream`
 
 ## Running
 
@@ -36,4 +40,5 @@ From repo root (after `pnpm install` and Chromium install):
 
 ```bash
 pnpm test:parity
+pnpm test:parity:node
 ```

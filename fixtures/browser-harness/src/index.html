@@ -6,51 +6,16 @@
   </head>
   <body>
     <h1>Parity browser harness</h1>
-    <script>
-      /**
-       * Issue an Ajax request to the upstream fake.
-       * Used by the oracle suite via page.evaluate.
-       */
-      window.trigger = async function trigger(url, init = {}) {
-        const method = init.method ?? "GET";
-        const headers = init.headers ?? {};
-        const body = init.body;
-        let response;
-        try {
-          response = await fetch(url, { method, headers, body });
-        } catch (error) {
-          return {
-            ok: false,
-            error: String(error && error.message ? error.message : error),
-          };
-        }
+    <script type="module">
+      import { triggerHttp } from "/downstream/http.js";
+      import { connectWebSocket } from "/downstream/ws.js";
 
-        const responseHeaders = {};
-        response.headers.forEach((value, name) => {
-          responseHeaders[name] = value;
-        });
+      // Shared fetch / WebSocket path (same modules as Node downstream).
+      window.trigger = (url, init) => triggerHttp(url, init);
+      window.connectWebSocket = connectWebSocket;
+      window.__parityReady = true;
 
-        const contentType = response.headers.get("content-type") || "";
-        const raw = await response.text();
-        let data = null;
-        if (contentType.includes("application/json") && raw.length > 0) {
-          try {
-            data = JSON.parse(raw);
-          } catch {
-            data = null;
-          }
-        }
-
-        return {
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          headers: responseHeaders,
-          raw,
-          data,
-        };
-      };
-
+      // Browser-only transport — not part of the shared isomorphic core.
       window.triggerXhr = function triggerXhr(url, init = {}) {
         return new Promise((resolve) => {
           const xhr = new XMLHttpRequest();

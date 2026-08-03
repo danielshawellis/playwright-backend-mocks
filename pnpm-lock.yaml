@@ -47,6 +47,14 @@ importers:
 
   fixtures/browser-harness: {}
 
+  fixtures/downstream: {}
+
+  fixtures/node-downstream:
+    dependencies:
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.1
+
   fixtures/upstream: {}
 
   fixtures/ws-upstream:
@@ -60,9 +68,15 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       urlpattern-polyfill:
         specifier: 10.1.0
         version: 10.1.0
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.1
 
 packages:
 
@@ -709,6 +723,9 @@ packages:
 
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@typescript-eslint/eslint-plugin@8.65.0':
     resolution: {integrity: sha512-IEgob78X12rHpUmtcwFsXhZdVGJtwTVP8FiCLZkR6GlYVrl2PcuB+KhCE5BlVC/eQpQnu8WXRtkHZuPar+gCRA==}
@@ -2345,6 +2362,10 @@ snapshots:
   '@types/unist@3.0.3': {}
 
   '@types/web-bluetooth@0.0.21': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 22.20.1
 
   '@typescript-eslint/eslint-plugin@8.65.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)':
     dependencies:

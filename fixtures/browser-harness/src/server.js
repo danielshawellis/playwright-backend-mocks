@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT ?? 3000);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(__dirname, "index.html"), "utf8");
+const downstreamDir = join(__dirname, "../../downstream/src");
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
@@ -14,6 +15,29 @@ const server = createServer((req, res) => {
     const body = JSON.stringify({ ok: true });
     res.writeHead(200, {
       "content-type": "application/json",
+      "content-length": Buffer.byteLength(body),
+    });
+    res.end(body);
+    return;
+  }
+
+  // Shared isomorphic downstream modules (same files Node host imports).
+  if (req.method === "GET" && url.pathname.startsWith("/downstream/")) {
+    const name = url.pathname.slice("/downstream/".length);
+    if (name !== "http.js" && name !== "ws.js") {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    const filePath = join(downstreamDir, name);
+    if (!existsSync(filePath)) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    const body = readFileSync(filePath, "utf8");
+    res.writeHead(200, {
+      "content-type": "text/javascript; charset=utf-8",
       "content-length": Buffer.byteLength(body),
     });
     res.end(body);

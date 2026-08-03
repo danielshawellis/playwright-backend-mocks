@@ -116,16 +116,16 @@ Change as little as possible so the same scenarios now exercise the library.
 Introduce a **thin dual-mode harness**, not a second parallel suite:
 
 ```ts
-// Conceptual — name TBD
-const { route, trigger, downstreamKind } = createParityHarness(mode);
-// mode: "playwright-browser" | "backend-mocks"
+// Conceptual — see tests/parity/harness.ts
+const { route, trigger, openDownstreamSocket } = /* fixtures */;
+// PARITY_MODE=browser | node
 ```
 
-Ideally the mode switch is config/env (e.g. `PARITY_MODE=browser|backend`) so the same files run in both phases. The harness may adapt:
+Mode switch is config/env (`PARITY_MODE=browser|node`). The harness adapts:
 
-- `route(...)` → `page.route` or `backendMocks.route`
+- `route(...)` → `page.route` or `backendMocks.route` (Step 2)
 - `routeFromHAR(path, opts)` → `page.routeFromHAR` or `backendMocks.routeFromHAR`
-- `trigger("GET", "/users")` → browser action or `callVia`
+- `trigger(...)` / `openDownstreamSocket(...)` → shared downstream modules; browser via `page.evaluate`, node via **control-plane WebSocket** into the Node host (long-lived app sockets cannot be one-shot HTTP helpers)
 
 If a dual-mode harness starts doing gymnastics, prefer **copy the suite once and apply a mechanical diff** over clever abstraction. The point is parity confidence, not a framework-in-a-framework.
 

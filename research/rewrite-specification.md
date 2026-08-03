@@ -168,21 +168,23 @@ Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects,
 
 1. **Upstream fake** — local third-party HTTP server (status/body/header/echo variants).
 2. **WebSocket upstream** — local WS server (echo, binary, subprotocols, close codes, handshake failure).
-3. **Browser downstream** — minimal page that issues Ajax/`fetch`/XHR and opens WebSockets to the upstreams on demand.
-4. Later for Step 2: **Node downstream** app(s) that call `startBackendMocks` and expose HTTP + `globalThis.WebSocket` triggers equivalent to the browser harness.
+3. **Shared downstream core** — isomorphic `fixtures/downstream` helpers (`fetch` + `globalThis.WebSocket`) used by both hosts.
+4. **Browser downstream host** — thin page that loads the shared modules (`window.trigger` / `window.connectWebSocket`) plus browser-only XHR.
+5. **Node downstream host** — thin process that imports the same modules and exposes a **control-plane WebSocket** (`/control`) so the Playwright worker can drive long-lived app sockets (open/send/receive/close/info) and HTTP triggers inside the Node process. Step 2 enables `startBackendMocks` in this same process (`ENABLE_BACKEND_MOCKS=1`).
 
 ### Dual-mode harness
 
 Use a **thin** dual-mode harness where the Playwright API and ours are nearly identical:
 
 - `route` / settle methods / matchers / `times` / `unroute` / `unrouteAll` / `waitForRequest` / `waitForResponse` / fallback chaining
-- **`routeFromHAR(file, options)`** — browser: `page.routeFromHAR`; backend: `backendMocks.routeFromHAR` (same HAR files and assertions)
-- Trigger helper: browser action vs Node `callVia` (or equivalent)
-- Mode switch via config/env (e.g. `PARITY_MODE=browser|backend`)
+- **`routeFromHAR(file, options)`** — browser: `page.routeFromHAR`; node/Step 2: `backendMocks.routeFromHAR` (same HAR files and assertions)
+- `trigger` / `openDownstreamSocket` — same shared downstream code; browser via `page.evaluate`, node via control-plane WS
+- Mode switch via config/env: `PARITY_MODE=browser|node` (Step 2 wires mocks on the node path)
 
 Rules:
 
-- Harness adapts routing handle + trigger only. Assertions stay shared.
+- Harness adapts routing handle + how the downstream is driven. Assertions and shared downstream modules stay shared.
+- Do **not** drive Node app WebSockets with one-shot HTTP helpers — long-lived sockets need the control plane.
 - If the adapter grows clever, delete it and use two thin entrypoints instead.
 - HAR zip packaging, navigation-after-HAR, cookie-jar HAR quirks, and other non-portable browser cases: omit from the suite (already intentional skips).
 
@@ -200,13 +202,13 @@ Rules:
 
 Switch the same suite to library mode and implement until green.
 
-### What changes in backend mode
+### What changes in node / library mode
 
-| Piece         | Change                                                                        |
-| ------------- | ----------------------------------------------------------------------------- |
-| Routing API   | `page.route` / `routeFromHAR` / … → `backendMocks.route` / `routeFromHAR` / … |
-| Downstream    | Browser harness → Node app + `startBackendMocks`                              |
-| Trigger       | Page action → Node trigger helper                                             |
+| Piece         | Change                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| Routing API   | `page.route` / `routeFromHAR` / … → `backendMocks.route` / `routeFromHAR` / …                   |
+| Downstream    | Same shared modules; host swaps browser page → Node process + `startBackendMocks`               |
+| Trigger       | Same `trigger` / `openDownstreamSocket`; transport swaps `page.evaluate` → control-plane WS     |
 | Record/replay | Same dual-mode HAR specs via harness `routeFromHAR`                           |
 | Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer`      |
 

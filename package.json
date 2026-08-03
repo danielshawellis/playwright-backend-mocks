@@ -17,6 +17,8 @@
     "format:check": "prettier --check .",
     "test": "pnpm test:parity",
     "test:parity": "pnpm --filter @playwright-backend-mocks/parity test",
+    "test:parity:browser": "pnpm --filter @playwright-backend-mocks/parity test:browser",
+    "test:parity:node": "pnpm --filter @playwright-backend-mocks/parity test:node",
     "docs:dev": "vitepress dev documentation",
     "docs:build": "vitepress build documentation",
     "docs:preview": "vitepress preview documentation",
