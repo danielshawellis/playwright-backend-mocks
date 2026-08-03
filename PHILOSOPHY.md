@@ -22,7 +22,22 @@ The living suite is [`tests/parity/`](./tests/parity/). Details: [`research/play
 
 ---
 
-## 2. Complete parity with Playwright interception
+## 2. One suite, two fixtures, switchable downstream
+
+Parity tests drive a **downstream** process that talks to an **upstream** process (always Node).
+
+| Mode    | Downstream                         | Routing API under test      |
+| ------- | ---------------------------------- | --------------------------- |
+| Oracle  | Browser                            | Playwright (`page.route`, …) |
+| Library | Same downstream logic, hosted in Node | `backendMocks`              |
+
+Share the downstream code. Put a **thin harness** in front so tests do not care which host is running. Upstream stays fixed. Specs stay fixed. Only the downstream host and routing handle switch.
+
+Living layout: [`tests/parity/`](./tests/parity/), [`fixtures/downstream/`](./fixtures/downstream/), [`tests/parity/downstream.md`](./tests/parity/downstream.md).
+
+---
+
+## 3. Complete parity with Playwright interception
 
 For HTTP (Ajax and outbound requests generally) and WebSockets, this library should work the same way as Playwright’s interception APIs — same semantics, same options, same awkward edges.
 
@@ -37,7 +52,7 @@ Boundary detail: [`research/rewrite-specification.md`](./research/rewrite-specif
 
 ---
 
-## 3. Code tracks Playwright one-to-one
+## 4. Code tracks Playwright one-to-one
 
 Because the DX is one-to-one, the implementation should stay as close as practical to Playwright’s.
 
@@ -66,7 +81,7 @@ No silent drift. If the code is not following Playwright, the comment must say s
 
 ---
 
-## 4. Concurrent tests must not share a route match
+## 5. Concurrent tests must not share a route match
 
 Playwright’s interception is scoped to a page (and thus to one test at a time). Ours is scoped to Node.js processes that often serve many tests concurrently.
 
