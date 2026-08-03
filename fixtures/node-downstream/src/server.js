@@ -9,9 +9,9 @@
  *   → { v:1, id, op:"http.request", url, method?, headers?, body? }
  *   ← { v:1, id, op:"http.response", result }
  *
- *   → { v:1, id, op:"ws.open", url, protocols?, binaryType? }
- *   ← { v:1, id, op:"ws.opened", socketId, protocol, extensions }
- *   ← { v:1, id, op:"ws.event", socketId, event:"message"|"close"|"error", ... }
+ *   → { v:1, id, op:"ws.open", url, protocols?, binaryType?, waitUntil?: "open"|"connecting" }
+ *   ← { v:1, id, op:"ws.opened", socketId, protocol, extensions, readyState }
+ *   ← { v:1, id, op:"ws.event", socketId, event:"message"|"close"|"error"|"open", ... }
  *
  *   → { v:1, id, op:"ws.send", socketId, data, encoding?: "utf8"|"base64" }
  *   ← { v:1, id, op:"ok" }
@@ -130,12 +130,14 @@ async function handleControl(control, msg) {
         method: msg.method,
         headers: msg.headers,
         body: msg.body,
+        redirect: msg.redirect,
       });
       control.send(JSON.stringify({ v: 1, id: msg.id, op: "http.response", result }));
       return;
     }
     case "ws.open": {
       const socketId = `s${nextSocketId++}`;
+      const waitUntil = msg.waitUntil === "connecting" ? "connecting" : "open";
       const ws = connectWebSocket(msg.url, {
         protocols: msg.protocols,
         binaryType: msg.binaryType,
@@ -164,7 +166,8 @@ async function handleControl(control, msg) {
         sockets.delete(socketId);
         control.send(JSON.stringify({ v: 1, id: msg.id, op: "error", message }));
       };
-      ws.addEventListener("open", () => {
+
+      const announceOpened = () => {
         if (settled) return;
         settled = true;
         control.send(
@@ -175,8 +178,19 @@ async function handleControl(control, msg) {
             socketId,
             protocol: ws.protocol,
             extensions: ws.extensions,
+            readyState: ws.readyState,
           }),
         );
+      };
+
+      // Connecting mode returns immediately so tests can observe CONNECTING.
+      if (waitUntil === "connecting") {
+        announceOpened();
+      }
+
+      ws.addEventListener("open", () => {
+        sendEvent("open");
+        if (waitUntil === "open") announceOpened();
       });
       ws.addEventListener("message", (event) => {
         const data = event.data;
@@ -198,11 +212,21 @@ async function handleControl(control, msg) {
           });
           return;
         }
+        if (ArrayBuffer.isView(data)) {
+          sendEvent("message", {
+            data: Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString(
+              "base64",
+            ),
+            encoding: "base64",
+          });
+          return;
+        }
         if (typeof Blob !== "undefined" && data instanceof Blob) {
           void data.arrayBuffer().then((ab) => {
             sendEvent("message", {
               data: Buffer.from(ab).toString("base64"),
               encoding: "base64",
+              binaryType: "blob",
             });
           });
           return;
@@ -211,7 +235,7 @@ async function handleControl(control, msg) {
       });
       ws.addEventListener("close", (event) => {
         sockets.delete(socketId);
-        if (!settled) {
+        if (!settled && waitUntil === "open") {
           // Handshake never completed — fail the open RPC instead of hanging.
           failOpen(`ws_open_failed:${event.code}:${event.reason || "closed"}`);
         }
@@ -222,7 +246,7 @@ async function handleControl(control, msg) {
         });
       });
       ws.addEventListener("error", () => {
-        if (!settled) failOpen("ws_open_failed:error");
+        if (!settled && waitUntil === "open") failOpen("ws_open_failed:error");
         sendEvent("error");
       });
       return;
@@ -230,10 +254,14 @@ async function handleControl(control, msg) {
     case "ws.send": {
       const ws = sockets.get(msg.socketId);
       if (!ws) throw new Error(`unknown_socket:${msg.socketId}`);
-      if (msg.encoding === "base64") {
-        ws.send(Buffer.from(msg.data, "base64"));
-      } else {
-        ws.send(msg.data);
+      try {
+        if (msg.encoding === "base64") {
+          ws.send(Buffer.from(msg.data, "base64"));
+        } else {
+          ws.send(msg.data);
+        }
+      } catch (error) {
+        throw new Error(error instanceof Error ? error.message : String(error));
       }
       control.send(JSON.stringify({ v: 1, id: msg.id, op: "ok" }));
       return;

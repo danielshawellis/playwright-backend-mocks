@@ -1,6 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test, expect, UPSTREAM } from "../harness.js";
+import {
+  test,
+  expect,
+  UPSTREAM,
+  bodyFromBase64,
+  headerValue,
+} from "../harness.js";
 
 const fulfillBodyPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -24,7 +30,6 @@ test.describe("route.fulfill", () => {
   test("supports status, headers, contentType, and raw body", async ({
     route,
     trigger,
-    page,
   }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
@@ -37,12 +42,10 @@ test.describe("route.fulfill", () => {
       });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.status).toBe(418);
     expect(result.raw).toBe("teapot");
-    expect(response.headers()["x-mock"]).toBe("yes");
+    expect(headerValue(result.headers, "x-mock")).toBe("yes");
   });
 
   test("serves a local file via path", async ({ route, trigger }) => {
@@ -119,7 +122,7 @@ test.describe("route.fulfill", () => {
     expect(result.raw).toBe("default-status");
   });
 
-  test("infers content-type from path extension", async ({ route, trigger, page }) => {
+  test("infers content-type from path extension", async ({ route, trigger }) => {
     const jsonPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "../testdata/payload.json",
@@ -128,14 +131,12 @@ test.describe("route.fulfill", () => {
       await r.fulfill({ path: jsonPath });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.data).toEqual({ kind: "json-file" });
-    expect(response.headers()["content-type"]).toContain("application/json");
+    expect(headerValue(result.headers, "content-type")).toContain("application/json");
   });
 
-  test("infers text content-type from .txt path", async ({ route, trigger, page }) => {
+  test("infers text content-type from .txt path", async ({ route, trigger }) => {
     const txtPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "../testdata/payload.txt",
@@ -144,14 +145,12 @@ test.describe("route.fulfill", () => {
       await r.fulfill({ path: txtPath });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.raw?.trim()).toBe("plain-file-body");
-    expect(response.headers()["content-type"]).toContain("text/plain");
+    expect(headerValue(result.headers, "content-type")).toContain("text/plain");
   });
 
-  test("coerces header values to strings", async ({ route, trigger, page }) => {
+  test("coerces header values to strings", async ({ route, trigger }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
         status: 200,
@@ -163,32 +162,26 @@ test.describe("route.fulfill", () => {
       });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
-    await trigger("/users");
-    const response = await pending;
-    expect(response.headers()["x-count"]).toBe("42");
+    const result = await trigger("/users");
+    expect(headerValue(result.headers, "x-count")).toBe("42");
   });
 
   test("json sets application/json when content-type is unset", async ({
     route,
     trigger,
-    page,
   }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({ json: { a: 1 } });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.data).toEqual({ a: 1 });
-    expect(response.headers()["content-type"]).toContain("application/json");
+    expect(headerValue(result.headers, "content-type")).toContain("application/json");
   });
 
   test("json respects an explicit content-type override", async ({
     route,
     trigger,
-    page,
   }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
@@ -197,20 +190,15 @@ test.describe("route.fulfill", () => {
       });
     });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.raw).toBe(JSON.stringify({ a: 1 }));
-    expect(response.headers()["content-type"]).toContain("text/plain");
+    expect(headerValue(result.headers, "content-type")).toContain("text/plain");
   });
 
   test("can fulfill with a redirect status for the caller", async ({
     route,
     trigger,
-    page,
   }) => {
-    // Fulfilling with 302 returns that status to the intercepted request.
-    // Browser fetch may follow it; we assert via Playwright's Response.
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
         status: 302,
@@ -222,14 +210,13 @@ test.describe("route.fulfill", () => {
       });
     });
 
-    const pending = page.waitForResponse(
-      (response) => response.url() === `${UPSTREAM}/users` && response.status() === 302,
-    );
-    const pendingTrigger = trigger("/users");
-    const response = await pending;
-    expect(response.status()).toBe(302);
-    expect(response.headers().location).toBe(`${UPSTREAM}/echo`);
-    await pendingTrigger;
+    const result = await trigger("/users", { redirect: "manual" });
+    if (result.error === "opaqueredirect") {
+      expect(result.status).toBe(0);
+    } else {
+      expect(result.status).toBe(302);
+      expect(headerValue(result.headers, "location")).toBe(`${UPSTREAM}/echo`);
+    }
   });
 
   test("fulfills with response body override as text", async ({ route, trigger }) => {
@@ -254,7 +241,6 @@ test.describe("route.fulfill", () => {
   test("derives exact status text for standard status codes", async ({
     route,
     trigger,
-    page,
   }) => {
     await route("**/fulfill-status*", async (r, request) => {
       const status = Number(new URL(request.url()).searchParams.get("code"));
@@ -269,19 +255,15 @@ test.describe("route.fulfill", () => {
 
     for (const [status, expectedStatusText] of cases) {
       const url = `${UPSTREAM}/fulfill-status?code=${status}`;
-      const pendingResponse = page.waitForResponse(url);
-      const pendingTrigger = trigger(url);
-      const response = await pendingResponse;
-      await pendingTrigger;
-      expect(response.status()).toBe(status);
-      expect(response.statusText()).toBe(expectedStatusText);
+      const result = await trigger(url);
+      expect(result.status).toBe(status);
+      expect(result.statusText).toBe(expectedStatusText);
     }
   });
 
   test("preserves every byte in a binary Buffer body", async ({
     route,
     trigger,
-    page,
   }) => {
     const bytes = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
     await route(`${UPSTREAM}/binary`, async (r) => {
@@ -292,18 +274,13 @@ test.describe("route.fulfill", () => {
       });
     });
 
-    const pendingResponse = page.waitForResponse(`${UPSTREAM}/binary`);
-    const pendingTrigger = trigger("/binary");
-    const response = await pendingResponse;
-    await pendingTrigger;
-
-    expect((await response.body()).equals(bytes)).toBe(true);
+    const result = await trigger("/binary");
+    expect(bodyFromBase64(result.bodyBase64).equals(bytes)).toBe(true);
   });
 
   test("adds Content-Length for string and json bodies", async ({
     route,
     trigger,
-    page,
   }) => {
     const stringBody = "π-body";
     const jsonBody = { value: "π" };
@@ -322,18 +299,16 @@ test.describe("route.fulfill", () => {
       ["json", Buffer.byteLength(JSON.stringify(jsonBody))],
     ] as const) {
       const url = `${UPSTREAM}/auto-content-length?kind=${kind}`;
-      const pendingResponse = page.waitForResponse(url);
-      const pendingTrigger = trigger(url);
-      const response = await pendingResponse;
-      await pendingTrigger;
-      expect(response.headers()["content-length"]).toBe(String(expectedLength));
+      const result = await trigger(url);
+      expect(headerValue(result.headers, "content-length")).toBe(
+        String(expectedLength),
+      );
     }
   });
 
   test("contentType takes precedence over a content-type header", async ({
     route,
     trigger,
-    page,
   }) => {
     await route(`${UPSTREAM}/text`, async (r) => {
       await r.fulfill({
@@ -343,11 +318,8 @@ test.describe("route.fulfill", () => {
       });
     });
 
-    const pendingResponse = page.waitForResponse(`${UPSTREAM}/text`);
-    const pendingTrigger = trigger("/text");
-    const response = await pendingResponse;
-    await pendingTrigger;
-    expect(response.headers()["content-type"]).toBe("text/from-option");
+    const result = await trigger("/text");
+    expect(headerValue(result.headers, "content-type")).toBe("text/from-option");
   });
 
   test("throws when json and body are specified together", async ({ route, trigger }) => {

@@ -1,4 +1,4 @@
-import { test, expect, UPSTREAM } from "../harness.js";
+import { test, expect, UPSTREAM, sleep } from "../harness.js";
 
 test.describe("waitForRequest", () => {
   test("waits for a matching request by URL string", async ({
@@ -93,14 +93,13 @@ test.describe("waitForRequest", () => {
     route,
     trigger,
     waitForRequest,
-    page,
   }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({ status: 200, json: [] });
     });
 
     const pending = waitForRequest(`${UPSTREAM}/users`, { timeout: 0 });
-    await page.waitForTimeout(100);
+    await sleep(100);
     await trigger("/users");
     const seen = await pending;
     expect(seen.url()).toContain("/users");
@@ -109,14 +108,13 @@ test.describe("waitForRequest", () => {
   test("only observes requests that start after the waiter", async ({
     trigger,
     waitForRequest,
-    page,
   }) => {
     await trigger("/echo?request=A");
 
     const pending = waitForRequest((request) => request.url().includes("/echo?request="));
     const beforeB = await Promise.race([
       pending.then(() => "resolved"),
-      page.waitForTimeout(200).then(() => "pending"),
+      sleep(200).then(() => "pending"),
     ]);
     expect(beforeB).toBe("pending");
 

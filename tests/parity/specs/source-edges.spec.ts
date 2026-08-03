@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test, expect, UPSTREAM } from "../harness.js";
+import { test, expect, UPSTREAM, headerValue, sleep } from "../harness.js";
 
 const fixtureDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,7 +73,6 @@ test.describe("source-backed Route / matcher edges", () => {
   test("fallback then throw does not run lower handlers", async ({
     route,
     trigger,
-    page,
   }) => {
     // Playwright fails the test when a route handler throws after fallback();
     // that is the observed surface. Pin that the lower LIFO handler did not run.
@@ -89,7 +88,7 @@ test.describe("source-backed Route / matcher edges", () => {
     });
 
     await trigger("/users").catch(() => undefined);
-    await page.waitForTimeout(200);
+    await sleep(200);
     expect(lowerRan).toBe(false);
   });
 
@@ -145,7 +144,6 @@ test.describe("source-backed Route / matcher edges", () => {
   test("predicate matcher throw leaves the request stalled", async ({
     route,
     trigger,
-    page,
   }) => {
     // Matcher throw is reported as a test failure; pin that fulfill never runs.
     test.fail();
@@ -161,7 +159,7 @@ test.describe("source-backed Route / matcher edges", () => {
     );
 
     await trigger("/users").catch(() => undefined);
-    await page.waitForTimeout(200);
+    await sleep(200);
     expect(handlerRan).toBe(false);
   });
 
@@ -282,7 +280,7 @@ test.describe("source-backed route.fetch redirect rewrite", () => {
 });
 
 test.describe("source-backed fulfill Content-Length edges", () => {
-  test("adds Content-Length for Buffer bodies", async ({ route, trigger, page }) => {
+  test("adds Content-Length for Buffer bodies", async ({ route, trigger }) => {
     const bytes = Buffer.from([1, 2, 3, 4, 5]);
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
@@ -291,16 +289,13 @@ test.describe("source-backed fulfill Content-Length edges", () => {
         body: bytes,
       });
     });
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
-    await trigger("/users");
-    const response = await pending;
-    expect(response.headers()["content-length"]).toBe(String(bytes.length));
+    const result = await trigger("/users");
+    expect(headerValue(result.headers, "content-length")).toBe(String(bytes.length));
   });
 
   test("preserves an explicit Content-Length header", async ({
     route,
     trigger,
-    page,
   }) => {
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({
@@ -309,20 +304,18 @@ test.describe("source-backed fulfill Content-Length edges", () => {
         body: "abcd",
       });
     });
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
-    await trigger("/users");
-    const response = await pending;
-    expect(response.headers()["content-length"]).toBe("2");
+    const result = await trigger("/users");
+    expect(headerValue(result.headers, "content-length")).toBe("2");
   });
 });
 
 test.describe("source-backed HAR edges", () => {
   test("same HAR entry can fulfill multiple identical requests", async ({
-    page,
+    routeFromHAR,
     trigger,
   }) => {
     const harPath = path.join(fixtureDir, "../testdata/cassette.har");
-    await page.routeFromHAR(harPath, {
+    await routeFromHAR(harPath, {
       url: "**/users",
       update: false,
       notFound: "abort",
@@ -334,9 +327,12 @@ test.describe("source-backed HAR edges", () => {
     expect(b.data).toEqual(a.data);
   });
 
-  test("omitting the HAR url filter installs a catch-all", async ({ page, trigger }) => {
+  test("omitting the HAR url filter installs a catch-all", async ({
+    routeFromHAR,
+    trigger,
+  }) => {
     const harPath = path.join(fixtureDir, "../testdata/cassette.har");
-    await page.routeFromHAR(harPath, { update: false, notFound: "abort" });
+    await routeFromHAR(harPath, { update: false, notFound: "abort" });
 
     const users = await trigger("/users");
     expect(users.status).toBe(200);
@@ -347,7 +343,7 @@ test.describe("source-backed HAR edges", () => {
   });
 
   test("redirect cycle in HAR yields notFound abort rather than fulfill", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const cycleHar = testInfo.outputPath("cycle.har");
@@ -415,7 +411,7 @@ test.describe("source-backed HAR edges", () => {
     };
     fs.writeFileSync(cycleHar, JSON.stringify(har));
 
-    await page.routeFromHAR(cycleHar, {
+    await routeFromHAR(cycleHar, {
       url: "**/cycle-*",
       update: false,
       notFound: "abort",
@@ -430,7 +426,6 @@ test.describe("source-backed handler snapshot / unroute force-continue", () => {
   test("late-registered handler does not join an in-flight request chain", async ({
     route,
     trigger,
-    page,
   }) => {
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -466,7 +461,6 @@ test.describe("source-backed handler snapshot / unroute force-continue", () => {
 
     // The late handler is active for subsequent requests (newest wins).
     expect((await trigger("/users")).raw).toBe("late-handler");
-    void page;
   });
 
   test("unrouteAll({ behavior: 'default' }) force-continues an in-flight request", async ({
@@ -682,7 +676,6 @@ test.describe("source-backed fulfill / continue / fallback edges", () => {
   test("json + path uses path bytes with application/json content-type", async ({
     route,
     trigger,
-    page,
   }) => {
     const txtPath = path.join(fixtureDir, "../testdata/payload.txt");
     await route(`${UPSTREAM}/users`, async (r) => {
@@ -691,43 +684,37 @@ test.describe("source-backed fulfill / continue / fallback edges", () => {
         path: txtPath,
       });
     });
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.raw?.trim()).toBe("plain-file-body");
-    expect(response.headers()["content-type"]).toContain("application/json");
+    expect(headerValue(result.headers, "content-type")).toContain("application/json");
   });
 
   test("empty string and empty Buffer bodies do not auto-add Content-Length", async ({
     route,
     trigger,
-    page,
   }) => {
     for (const body of ["", Buffer.alloc(0)] as const) {
       await route(`${UPSTREAM}/users`, async (r) => {
         await r.fulfill({ status: 200, body });
       });
-      const pending = page.waitForResponse(`${UPSTREAM}/users`);
-      await trigger("/users");
-      const response = await pending;
-      expect(response.headers()["content-length"]).toBeUndefined();
+      const result = await trigger("/users");
+      expect(headerValue(result.headers, "content-length")).toBeUndefined();
     }
   });
 
   test("unknown path extension falls back to application/octet-stream", async ({
     route,
     trigger,
-    page,
   }, testInfo) => {
     const oddPath = testInfo.outputPath("payload.notarealext");
     fs.writeFileSync(oddPath, "odd-bytes");
     await route(`${UPSTREAM}/users`, async (r) => {
       await r.fulfill({ path: oddPath });
     });
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
-    await trigger("/users");
-    const response = await pending;
-    expect(response.headers()["content-type"]).toContain("application/octet-stream");
+    const result = await trigger("/users");
+    expect(headerValue(result.headers, "content-type")).toContain(
+      "application/octet-stream",
+    );
   });
 
   test("continue rejects non-string non-undefined header values", async ({
@@ -835,7 +822,7 @@ test.describe("source-backed fulfill / continue / fallback edges", () => {
 
 test.describe("source-backed HAR body-match permissiveness", () => {
   test("PUT bodies are ignored when disambiguating HAR entries", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("put-bodies.har");
@@ -904,7 +891,7 @@ test.describe("source-backed HAR body-match permissiveness", () => {
       },
     };
     fs.writeFileSync(harFile, JSON.stringify(har));
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/put-item",
       update: false,
       notFound: "abort",
@@ -919,7 +906,7 @@ test.describe("source-backed HAR body-match permissiveness", () => {
   });
 
   test("bodyless POST can match a HAR entry that has postData", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("bodyless-post.har");
@@ -964,7 +951,7 @@ test.describe("source-backed HAR body-match permissiveness", () => {
       },
     };
     fs.writeFileSync(harFile, JSON.stringify(har));
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/bodyless-post",
       update: false,
       notFound: "abort",
@@ -975,7 +962,7 @@ test.describe("source-backed HAR body-match permissiveness", () => {
   });
 
   test("POST with a body can match a HAR entry lacking postData", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("no-postdata.har");
@@ -1019,7 +1006,7 @@ test.describe("source-backed HAR body-match permissiveness", () => {
       },
     };
     fs.writeFileSync(harFile, JSON.stringify(har));
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/no-postdata",
       update: false,
       notFound: "abort",
@@ -1096,7 +1083,7 @@ function harEntry(opts: {
 
 test.describe("source-backed HAR redirect / stall edges", () => {
   test("status -1 HAR entry stalls rather than fulfilling or aborting", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("status-minus-one.har");
@@ -1117,7 +1104,7 @@ test.describe("source-backed HAR redirect / stall edges", () => {
       }),
     );
 
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/stall-me",
       update: false,
       notFound: "abort",
@@ -1125,14 +1112,14 @@ test.describe("source-backed HAR redirect / stall edges", () => {
 
     const result = await Promise.race([
       trigger("/stall-me").then((r) => ({ kind: "done" as const, r })),
-      page.waitForTimeout(800).then(() => ({ kind: "stall" as const })),
+      sleep(800).then(() => ({ kind: "stall" as const })),
     ]);
     // HarRouter returns early on status -1 — request stays paused (stall).
     expect(result.kind).toBe("stall");
   });
 
   test("HAR 302 after POST rewrites the follow-up lookup to GET", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("har-302-post.har");
@@ -1168,7 +1155,7 @@ test.describe("source-backed HAR redirect / stall edges", () => {
       }),
     );
 
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/har-post-*",
       update: false,
       notFound: "abort",
@@ -1182,7 +1169,7 @@ test.describe("source-backed HAR redirect / stall edges", () => {
   });
 
   test("HAR 307 after POST keeps POST for the follow-up lookup", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("har-307-post.har");
@@ -1218,7 +1205,7 @@ test.describe("source-backed HAR redirect / stall edges", () => {
       }),
     );
 
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/har-307-*",
       update: false,
       notFound: "abort",
@@ -1232,7 +1219,7 @@ test.describe("source-backed HAR redirect / stall edges", () => {
   });
 
   test("relative HAR Location is resolved against the current request URL", async ({
-    page,
+    routeFromHAR,
     trigger,
   }, testInfo) => {
     const harFile = testInfo.outputPath("har-relative-location.har");
@@ -1260,7 +1247,7 @@ test.describe("source-backed HAR redirect / stall edges", () => {
       }),
     );
 
-    await page.routeFromHAR(harFile, {
+    await routeFromHAR(harFile, {
       url: "**/har-rel-*",
       update: false,
       notFound: "abort",
@@ -1275,7 +1262,6 @@ test.describe("source-backed settlement / fetch / matcher sharpening", () => {
     route,
     unrouteAll,
     trigger,
-    page,
   }) => {
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -1299,7 +1285,7 @@ test.describe("source-backed settlement / fetch / matcher sharpening", () => {
     const unroutePromise = unrouteAll({ behavior: "wait" }).then(() => {
       didUnroute = true;
     });
-    await page.waitForTimeout(200);
+    await sleep(200);
     expect(didUnroute).toBe(false);
     release();
     await unroutePromise;
@@ -1307,7 +1293,7 @@ test.describe("source-backed settlement / fetch / matcher sharpening", () => {
     await pending;
   });
 
-  test("fulfill rejects a disposed fetch response", async ({ route, trigger, page }) => {
+  test("fulfill rejects a disposed fetch response", async ({ route, trigger }) => {
     let message = "";
     await route(`${UPSTREAM}/users`, async (r) => {
       const response = await r.fetch();
@@ -1323,7 +1309,7 @@ test.describe("source-backed settlement / fetch / matcher sharpening", () => {
 
     await Promise.race([
       trigger("/users").catch(() => undefined),
-      page.waitForTimeout(500),
+      sleep(500),
     ]);
     expect(message).toMatch(/disposed/i);
   });

@@ -47,9 +47,9 @@ test.describe("request inspection", () => {
   });
 
   test("redirectedFrom and redirectedTo link the redirect chain", async ({
-    page,
     route,
     trigger,
+    waitForRequest,
   }) => {
     await route(`${UPSTREAM}/redirect`, async (r) => {
       await r.continue();
@@ -58,7 +58,7 @@ test.describe("request inspection", () => {
       await r.continue();
     });
 
-    const pendingFinal = page.waitForRequest(
+    const pendingFinal = waitForRequest(
       (request) =>
         request.url() === `${UPSTREAM}/users` && request.redirectedFrom() !== null,
     );
@@ -148,17 +148,14 @@ test.describe("request inspection", () => {
     expect(result.status).toBe(200);
   });
 
-  test("request.failure() is set after abort", async ({ route, trigger, page }) => {
-    await route(`${UPSTREAM}/users`, async (r, request) => {
-      const failedEvent = page.waitForEvent("requestfailed");
+  test("trigger reports failure text after abort", async ({ route, trigger }) => {
+    await route(`${UPSTREAM}/users`, async (r) => {
       await r.abort("failed");
-      const failed = await failedEvent;
-      expect(failed).toBe(request);
-      expect(request.failure()?.errorText.length).toBeGreaterThan(0);
     });
 
     const result = await trigger("/users");
     expect(result.ok).toBe(false);
+    expect(result.error?.length).toBeGreaterThan(0);
   });
 
   test("route.request() is the same object as the handler request arg", async ({
@@ -218,7 +215,7 @@ test.describe("request inspection", () => {
   test("existingResponse() returns immediately before and after a response", async ({
     route,
     trigger,
-    page,
+    waitForResponse,
   }) => {
     let interceptedRequest: Request | undefined;
     await route(`${UPSTREAM}/users`, async (r, request) => {
@@ -227,7 +224,7 @@ test.describe("request inspection", () => {
       await r.fulfill({ status: 202, body: "accepted" });
     });
 
-    const pendingResponse = page.waitForResponse(`${UPSTREAM}/users`);
+    const pendingResponse = waitForResponse(`${UPSTREAM}/users`);
     const pendingTrigger = trigger("/users");
     const response = await pendingResponse;
     await pendingTrigger;

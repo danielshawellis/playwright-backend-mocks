@@ -14,7 +14,8 @@ type ControlMsg = {
 };
 
 export type DownstreamSocketEvent =
-  | { event: "message"; data: string; encoding: "utf8" | "base64" }
+  | { event: "open" }
+  | { event: "message"; data: string; encoding: "utf8" | "base64"; binaryType?: string }
   | { event: "close"; code: number; reason: string; wasClean: boolean }
   | { event: "error" };
 
@@ -23,7 +24,7 @@ export type DownstreamSocket = {
   protocol: string;
   extensions: string;
   events: DownstreamSocketEvent[];
-  send: (data: string | Buffer, encoding?: "utf8" | "base64") => Promise<void>;
+  send: (data: string | Buffer | Uint8Array, encoding?: "utf8" | "base64") => Promise<void>;
   close: (code?: number, reason?: string) => Promise<void>;
   info: () => Promise<{
     readyState: number;
@@ -33,6 +34,12 @@ export type DownstreamSocket = {
   waitForMessage: (
     timeoutMs?: number,
   ) => Promise<DownstreamSocketEvent & { event: "message" }>;
+  waitForClose: (
+    timeoutMs?: number,
+  ) => Promise<DownstreamSocketEvent & { event: "close" }>;
+  waitForOpen: (timeoutMs?: number) => Promise<void>;
+  /** Convenience poll of readyState via info(). */
+  readyState: () => Promise<number>;
 };
 
 let nextId = 1;
@@ -59,11 +66,14 @@ class ControlClient {
       if (msg.op === "ws.event" && typeof msg.socketId === "string") {
         const socketId = msg.socketId;
         const list = this.socketEvents.get(socketId) ?? [];
-        if (msg.event === "message") {
+        if (msg.event === "open") {
+          list.push({ event: "open" });
+        } else if (msg.event === "message") {
           list.push({
             event: "message",
             data: String(msg.data ?? ""),
             encoding: msg.encoding === "base64" ? "base64" : "utf8",
+            binaryType: typeof msg.binaryType === "string" ? msg.binaryType : undefined,
           });
         } else if (msg.event === "close") {
           list.push({
@@ -117,6 +127,7 @@ class ControlClient {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    redirect?: RequestRedirect;
   }): Promise<TriggerResult> {
     const msg = await this.request("http.request", init);
     return msg.result as TriggerResult;
@@ -126,6 +137,7 @@ class ControlClient {
     url: string;
     protocols?: string | string[];
     binaryType?: BinaryType;
+    waitUntil?: "open" | "connecting";
   }): Promise<DownstreamSocket> {
     const id = `c${nextId++}`;
     const openMsg = {
@@ -135,6 +147,7 @@ class ControlClient {
       url: init.url,
       protocols: init.protocols,
       binaryType: init.binaryType,
+      waitUntil: init.waitUntil ?? "open",
     };
 
     const opened = await new Promise<ControlMsg>((resolve, reject) => {
@@ -148,6 +161,14 @@ class ControlClient {
     // Preserve any events that raced in before we observed ws.opened.
     if (!this.socketEvents.has(socketId)) {
       this.socketEvents.set(socketId, []);
+    }
+    // If we waited for open, record a synthetic open event when none arrived yet.
+    if ((init.waitUntil ?? "open") === "open") {
+      const list = this.socketEvents.get(socketId) ?? [];
+      if (!list.some((e) => e.event === "open")) {
+        list.unshift({ event: "open" });
+        this.socketEvents.set(socketId, list);
+      }
     }
 
     return this.createDownstreamSocket(
@@ -166,6 +187,34 @@ class ControlClient {
     const waitersBySocket = this.socketWaiters;
     const request = this.request.bind(this);
 
+    const waitFor = async <E extends DownstreamSocketEvent["event"]>(
+      event: E,
+      timeoutMs: number,
+    ): Promise<Extract<DownstreamSocketEvent, { event: E }>> => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const list = eventsBySocket.get(socketId) ?? [];
+        const idx = list.findIndex((e) => e.event === event);
+        if (idx >= 0) {
+          const [hit] = list.splice(idx, 1);
+          if (hit && hit.event === event) {
+            return hit as Extract<DownstreamSocketEvent, { event: E }>;
+          }
+        }
+        await new Promise<void>((resolve) => {
+          const remaining = Math.max(1, deadline - Date.now());
+          const timer = setTimeout(() => resolve(), remaining);
+          const waiters = waitersBySocket.get(socketId) ?? [];
+          waiters.push(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+          waitersBySocket.set(socketId, waiters);
+        });
+      }
+      throw new Error(`timeout waiting for ws ${event}`);
+    };
+
     return {
       socketId,
       protocol,
@@ -173,11 +222,14 @@ class ControlClient {
       get events() {
         return eventsBySocket.get(socketId) ?? [];
       },
-      send: async (data: string | Buffer, encoding: "utf8" | "base64" = "utf8") => {
-        if (Buffer.isBuffer(data)) {
+      send: async (data: string | Buffer | Uint8Array, encoding: "utf8" | "base64" = "utf8") => {
+        if (typeof data !== "string") {
+          const buf = Buffer.isBuffer(data)
+            ? data
+            : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
           await request("ws.send", {
             socketId,
-            data: data.toString("base64"),
+            data: buf.toString("base64"),
             encoding: "base64",
           });
           return;
@@ -199,28 +251,12 @@ class ControlClient {
           extensions: String(msg.extensions ?? ""),
         };
       },
-      waitForMessage: async (timeoutMs = 5_000) => {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-          const list = eventsBySocket.get(socketId) ?? [];
-          const idx = list.findIndex((e) => e.event === "message");
-          if (idx >= 0) {
-            const [hit] = list.splice(idx, 1);
-            if (hit && hit.event === "message") return hit;
-          }
-          await new Promise<void>((resolve) => {
-            const remaining = Math.max(1, deadline - Date.now());
-            const timer = setTimeout(() => resolve(), remaining);
-            const waiters = waitersBySocket.get(socketId) ?? [];
-            waiters.push(() => {
-              clearTimeout(timer);
-              resolve();
-            });
-            waitersBySocket.set(socketId, waiters);
-          });
-        }
-        throw new Error("timeout waiting for ws message");
+      waitForMessage: (timeoutMs = 5_000) => waitFor("message", timeoutMs),
+      waitForClose: (timeoutMs = 5_000) => waitFor("close", timeoutMs),
+      waitForOpen: async (timeoutMs = 5_000) => {
+        await waitFor("open", timeoutMs);
       },
+      readyState: async () => (await request("ws.info", { socketId })).readyState as number,
     };
   }
 

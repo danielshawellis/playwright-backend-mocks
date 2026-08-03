@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test, expect, UPSTREAM } from "../harness.js";
+import { test, expect, UPSTREAM, headerValue, sleep } from "../harness.js";
 
 /**
  * routeFromHAR oracle suite.
@@ -10,8 +10,8 @@ import { test, expect, UPSTREAM } from "../harness.js";
  * harness `routeFromHAR` seam → `backendMocks.routeFromHAR` with the same HAR
  * files and assertions (rewrite-spec §4).
  *
- * Tests that need a fresh browser context for record/update still call
- * `page.routeFromHAR` on that context's page directly in browser mode.
+ * Tests that need a fresh downstream host for record/update use
+ * `withIsolatedDownstream`; closing that host flushes HAR updates.
  */
 const harPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -20,20 +20,15 @@ const harPath = path.join(
 
 test.describe("routeFromHAR", () => {
   test("fulfills from HAR matching the method", async ({
-    page,
     trigger,
     routeFromHAR,
-    harnessPage,
   }) => {
-    void harnessPage;
     await routeFromHAR(harPath, { url: "**/users", update: false });
 
-    const pending = page.waitForResponse(`${UPSTREAM}/users`);
     const result = await trigger("/users");
-    const response = await pending;
     expect(result.status).toBe(200);
     expect(result.data).toEqual([{ id: 9, name: "FromHAR" }]);
-    expect(response.headers()["x-har"]).toBe("replayed");
+    expect(headerValue(result.headers, "x-har")).toBe("replayed");
   });
 
   test("matches POST entries by method", async ({ routeFromHAR, trigger }) => {
@@ -102,12 +97,12 @@ test.describe("routeFromHAR", () => {
   });
 
   test("notFound: fallback reaches the next route handler", async ({
-    page,
+    route,
     routeFromHAR,
     trigger,
   }) => {
     let lowerHandlerCalled = false;
-    await page.route(`${UPSTREAM}/missing-from-har`, async (r) => {
+    await route(`${UPSTREAM}/missing-from-har`, async (r) => {
       lowerHandlerCalled = true;
       await r.fulfill({ status: 203, body: "lower-handler" });
     });
@@ -208,7 +203,7 @@ test.describe("routeFromHAR", () => {
   });
 
   test("applies fallback overrides before routing from HAR", async ({
-    page,
+    route,
     routeFromHAR,
     trigger,
   }) => {
@@ -216,7 +211,7 @@ test.describe("routeFromHAR", () => {
       url: "**/har-script*",
       update: false,
     });
-    await page.route(`${UPSTREAM}/har-script`, async (r) => {
+    await route(`${UPSTREAM}/har-script`, async (r) => {
       await r.fallback({ url: `${UPSTREAM}/har-script-alt` });
     });
 
@@ -224,9 +219,13 @@ test.describe("routeFromHAR", () => {
     expect(result.data).toEqual({ script: "alt" });
   });
 
-  test("unrouteAll stops routeFromHAR", async ({ page, routeFromHAR, trigger }) => {
+  test("unrouteAll stops routeFromHAR", async ({
+    routeFromHAR,
+    trigger,
+    unrouteAll,
+  }) => {
     await routeFromHAR(harPath, { url: "**/users", update: false });
-    await page.unrouteAll();
+    await unrouteAll();
 
     const result = await trigger("/users");
     expect(result.data).toEqual([
@@ -235,44 +234,35 @@ test.describe("routeFromHAR", () => {
     ]);
   });
 
-  test("update: true records traffic into a HAR file", async ({ browser }, testInfo) => {
+  test("update: true records traffic into a HAR file", async ({
+    withIsolatedDownstream,
+  }, testInfo) => {
     const outHar = testInfo.outputPath("recorded.har");
-    const recordContext = await browser.newContext();
-    const recordPage = await recordContext.newPage();
-    await recordPage.goto("http://127.0.0.1:3000/");
-    await recordPage.routeFromHAR(outHar, {
-      url: "**/users",
-      update: true,
-      updateMode: "minimal",
+    await withIsolatedDownstream({}, async (api) => {
+      await api.routeFromHAR(outHar, {
+        url: "**/users",
+        update: true,
+        updateMode: "minimal",
+      });
+
+      const live = await api.trigger("/users");
+      expect(live.data).toEqual([
+        { id: 1, name: "Ada" },
+        { id: 2, name: "Grace" },
+      ]);
     });
 
-    const live = await recordPage.evaluate(async (url) => {
-      const response = await fetch(url);
-      return { status: response.status, data: await response.json() };
-    }, `${UPSTREAM}/users`);
-    expect(live.data).toEqual([
-      { id: 1, name: "Ada" },
-      { id: 2, name: "Grace" },
-    ]);
-    await recordContext.close();
+    await withIsolatedDownstream({}, async (api) => {
+      await api.routeFromHAR(outHar, { url: "**/users", update: false });
 
-    const replayContext = await browser.newContext();
-    const replayPage = await replayContext.newPage();
-    await replayPage.goto("http://127.0.0.1:3000/");
-    await replayPage.routeFromHAR(outHar, { url: "**/users", update: false });
-
-    const result = await replayPage.evaluate(async (url) => {
-      const response = await fetch(url);
-      return { status: response.status, data: await response.json() };
-    }, `${UPSTREAM}/users`);
-
-    expect(result.status).toBe(200);
-    expect(result.data).toEqual([
-      { id: 1, name: "Ada" },
-      { id: 2, name: "Grace" },
-    ]);
+      const result = await api.trigger("/users");
+      expect(result.status).toBe(200);
+      expect(result.data).toEqual([
+        { id: 1, name: "Ada" },
+        { id: 2, name: "Grace" },
+      ]);
+    });
     expect(fs.existsSync(outHar)).toBe(true);
-    await replayContext.close();
   });
 
   test("GET to a POST-only HAR entry does not reuse the wrong method", async ({
@@ -339,50 +329,40 @@ test.describe("routeFromHAR", () => {
   });
 
   test("update records with url filter and override options then replays", async ({
-    browser,
+    withIsolatedDownstream,
   }, testInfo) => {
     const outHar = testInfo.outputPath("override-record.har");
-    const recordContext = await browser.newContext();
-    const recordPage = await recordContext.newPage();
-    await recordPage.goto("http://127.0.0.1:3000/");
-    await recordPage.routeFromHAR(outHar, {
-      url: "**/echo*",
-      update: true,
-      updateMode: "minimal",
-      updateContent: "embed",
+    await withIsolatedDownstream({}, async (api) => {
+      await api.routeFromHAR(outHar, {
+        url: "**/echo*",
+        update: true,
+        updateMode: "minimal",
+        updateContent: "embed",
+      });
+
+      // Record /echo-alt via a fallback url override into the HAR under that filter.
+      await api.route(`${UPSTREAM}/echo`, async (r) => {
+        await r.fallback({ url: `${UPSTREAM}/echo-alt` });
+      });
+
+      const live = await api.trigger("/echo");
+      expect(live.data).toMatchObject({ variant: "alt" });
     });
 
-    // Record /echo-alt via a fallback url override into the HAR under that filter.
-    await recordPage.route(`${UPSTREAM}/echo`, async (r) => {
-      await r.fallback({ url: `${UPSTREAM}/echo-alt` });
+    await withIsolatedDownstream({}, async (api) => {
+      await api.routeFromHAR(outHar, {
+        url: "**/echo-alt",
+        update: false,
+        notFound: "abort",
+      });
+
+      const result = await api.trigger("/echo-alt");
+      expect(result.data).toMatchObject({ variant: "alt" });
     });
-
-    const live = await recordPage.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.json();
-    }, `${UPSTREAM}/echo`);
-    expect(live).toMatchObject({ variant: "alt" });
-    await recordContext.close();
-
-    const replayContext = await browser.newContext();
-    const replayPage = await replayContext.newPage();
-    await replayPage.goto("http://127.0.0.1:3000/");
-    await replayPage.routeFromHAR(outHar, {
-      url: "**/echo-alt",
-      update: false,
-      notFound: "abort",
-    });
-
-    const result = await replayPage.evaluate(async (url) => {
-      const response = await fetch(url);
-      return response.json();
-    }, `${UPSTREAM}/echo-alt`);
-    expect(result).toMatchObject({ variant: "alt" });
-    await replayContext.close();
   });
 
   test("records aborted requests with a failure marker and does not replay success", async ({
-    browser,
+    withIsolatedDownstream,
   }, testInfo) => {
     // Playwright 1.62 records aborted/reset traffic with status -1 + _failureText
     // rather than omitting the entry. Replaying that entry must not yield a
@@ -390,28 +370,17 @@ test.describe("routeFromHAR", () => {
     // be treated as fulfillable in a Node HAR implementation.
     const outHar = testInfo.outputPath("aborted.har");
 
-    {
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      await page.goto("http://127.0.0.1:3000/");
-      await page.routeFromHAR(outHar, {
+    await withIsolatedDownstream({}, async (api) => {
+      await api.routeFromHAR(outHar, {
         url: "**/abort-me",
         update: true,
         updateMode: "minimal",
         updateContent: "embed",
       });
 
-      const cancelled = await page.evaluate(async (url) => {
-        try {
-          await fetch(url);
-          return "ok";
-        } catch {
-          return "cancelled";
-        }
-      }, `${UPSTREAM}/abort-me`);
-      expect(cancelled).toBe("cancelled");
-      await context.close();
-    }
+      const cancelled = await api.trigger("/abort-me");
+      expect(cancelled.ok).toBe(false);
+    });
 
     expect(fs.existsSync(outHar)).toBe(true);
     const raw = fs.readFileSync(outHar, "utf8");
@@ -420,30 +389,16 @@ test.describe("routeFromHAR", () => {
     expect(raw).toContain("_failureText");
     expect(raw).not.toMatch(/"status"\s*:\s*200/);
 
-    {
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      await page.goto("http://127.0.0.1:3000/");
-      await page.routeFromHAR(outHar, {
+    await withIsolatedDownstream({}, async (api) => {
+      await api.routeFromHAR(outHar, {
         url: "**/abort-me",
         update: false,
         notFound: "abort",
       });
 
       const result = await Promise.race([
-        page.evaluate(async (url) => {
-          try {
-            const response = await fetch(url);
-            return {
-              ok: response.ok,
-              status: response.status,
-              text: await response.text(),
-            };
-          } catch (e) {
-            return { ok: false, error: e instanceof Error ? e.message : String(e) };
-          }
-        }, `${UPSTREAM}/abort-me`),
-        page.waitForTimeout(1000).then(() => ({ timeout: true as const })),
+        api.trigger("/abort-me"),
+        sleep(1000).then(() => ({ timeout: true as const })),
       ]);
 
       // Must not successfully fulfill from the failed HAR entry.
@@ -452,7 +407,6 @@ test.describe("routeFromHAR", () => {
       } else {
         expect(result.ok).toBe(false);
       }
-      await context.close();
-    }
+    });
   });
 });

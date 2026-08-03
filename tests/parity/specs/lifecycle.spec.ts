@@ -1,4 +1,4 @@
-import { test, expect, UPSTREAM } from "../harness.js";
+import { test, expect, UPSTREAM, sleep } from "../harness.js";
 
 test.describe("route lifecycle", () => {
   test("should unroute a handler", async ({ route, unroute, trigger }) => {
@@ -39,7 +39,6 @@ test.describe("route lifecycle", () => {
     route,
     unrouteAll,
     trigger,
-    page,
   }) => {
     let secondHandlerCalled = false;
     await route(`${UPSTREAM}/users`, async (r) => {
@@ -70,7 +69,7 @@ test.describe("route lifecycle", () => {
       didUnroute = true;
     });
 
-    await page.waitForTimeout(300);
+    await sleep(300);
     expect(didUnroute).toBe(false);
     release();
     await unroutePromise;
@@ -83,7 +82,6 @@ test.describe("route lifecycle", () => {
     route,
     unrouteAll,
     trigger,
-    page,
   }) => {
     let secondHandlerCalled = false;
     await route(`${UPSTREAM}/users`, async (r) => {
@@ -113,7 +111,7 @@ test.describe("route lifecycle", () => {
     const unroutePromise = unrouteAll({ behavior: "ignoreErrors" }).then(() => {
       didUnroute = true;
     });
-    await page.waitForTimeout(100);
+    await sleep(100);
     await unroutePromise;
     expect(didUnroute).toBe(true);
     release();
@@ -125,7 +123,6 @@ test.describe("route lifecycle", () => {
     route,
     unroute,
     trigger,
-    page,
   }) => {
     let secondHandlerCalled = false;
     await route(`${UPSTREAM}/users`, async (r) => {
@@ -155,8 +152,6 @@ test.describe("route lifecycle", () => {
     release();
     await pending;
     expect(secondHandlerCalled).toBe(true);
-    // silence unused
-    void page;
   });
 
   test("double-settle throws for fulfill", async ({ route, trigger }) => {
@@ -249,7 +244,6 @@ test.describe("route lifecycle", () => {
     route,
     unrouteAll,
     trigger,
-    page,
   }) => {
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -277,7 +271,7 @@ test.describe("route lifecycle", () => {
     const unroutePromise = unrouteAll({ behavior: "default" }).then(() => {
       didUnroute = true;
     });
-    await page.waitForTimeout(100);
+    await sleep(100);
     await unroutePromise;
     expect(didUnroute).toBe(true);
     release();
@@ -332,7 +326,7 @@ test.describe("route lifecycle", () => {
   test("a handler that never settles leaves the request stalled", async ({
     route,
     trigger,
-    page,
+    unrouteAll,
   }) => {
     let entered!: () => void;
     const handlerEntered = new Promise<void>((resolve) => {
@@ -352,10 +346,10 @@ test.describe("route lifecycle", () => {
 
     const outcome = await Promise.race([
       pending,
-      page.waitForTimeout(500).then(() => ({ kind: "timeout" as const })),
+      sleep(500).then(() => ({ kind: "timeout" as const })),
     ]);
     expect(outcome.kind).toBe("timeout");
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("a handler throw without settlement is reported as a test failure", async ({
@@ -374,7 +368,7 @@ test.describe("route lifecycle", () => {
   test("route.fetch alone does not settle the intercepted request", async ({
     route,
     trigger,
-    page,
+    unrouteAll,
   }) => {
     let fetched!: () => void;
     const fetchCompleted = new Promise<void>((resolve) => {
@@ -395,10 +389,10 @@ test.describe("route lifecycle", () => {
 
     const outcome = await Promise.race([
       pending,
-      page.waitForTimeout(500).then(() => ({ kind: "timeout" as const })),
+      sleep(500).then(() => ({ kind: "timeout" as const })),
     ]);
     expect(outcome.kind).toBe("timeout");
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("fulfill after abort throws already handled", async ({ route, trigger }) => {
