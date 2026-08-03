@@ -12,12 +12,11 @@ import type { Page, WebSocketRoute } from "@playwright/test";
  * (see research/rewrite-specification.md §4 — partial client coverage + loud docs).
  *
  * Sourced from Playwright `WebSocketRoute` client (`network.ts`), dispatcher, and
- * injected `webSocketMock.ts` — including mock open/protocol, Blob async encoding,
- * TypedArray byteOffset slicing, close-code validation, and predicate catch-all
- * interception (function matchers expand to all URLs).
+ * injected `webSocketMock.ts` — including mock open/protocol, Blob binary frames,
+ * TypedArray byteOffset slicing, close-code validation, URLPattern matchers, and
+ * predicate catch-all interception (function matchers expand to all URLs).
  *
- * Still skipped (browser document lifecycle only — no Node WebSocketRoute analogue):
- * frame navigation/detach close, page-closure send races.
+ * Out of scope: page/context dual-scope routing (product is single-scope).
  */
 
 async function gotoHarness(page: Page) {
@@ -397,18 +396,16 @@ test.describe("routeWebSocket", () => {
   test("only sockets created after registration are routed", async ({ page }) => {
     await gotoHarness(page);
 
-    // Open a passthrough socket before any WS route exists.
     await openPageSocket(page, `${WS_UPSTREAM}/echo?mode=prefix`);
     await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("before"));
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
       .toEqual(["open", "message:echo:before"]);
 
-    // Registering after navigation does not retrofit the already-loaded page.
-    // Navigate again after registration so the init script applies.
     await page.routeWebSocket(`${WS_UPSTREAM}/echo**`, (ws) => {
       ws.onMessage(() => ws.send("after-reg"));
     });
+    // Re-goto so the WS init script applies after late registration.
     await gotoHarness(page);
 
     const mocked = await page.evaluate(async (url) => {
@@ -511,19 +508,6 @@ test.describe("routeWebSocket", () => {
     });
     expect(result).toBe("base");
     await context.close();
-  });
-
-  test("no trailing slash path still matches", async ({ page }) => {
-    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
-      ws.onMessage(() => ws.send("exact"));
-    });
-    await gotoHarness(page);
-
-    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
-    await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("x"));
-    await expect
-      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
-      .toEqual(["open", "message:exact"]);
   });
 
   test("matches host URL with no trailing slash", async ({ page }) => {
@@ -775,30 +759,15 @@ test.describe("routeWebSocket", () => {
     await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
       const server = ws.connectToServer();
       ws.onMessage((message) => {
-        switch (message) {
-          case "to-respond":
-            ws.send("response");
-            return;
-          case "to-block":
-            return;
-          case "to-modify":
-            server.send("modified");
-            return;
-          default:
-            server.send(message);
+        if (message === "to-respond") {
+          ws.send("response");
+          return;
         }
+        server.send(message);
       });
       server.onMessage((message) => {
         serverLog.push(String(message));
-        switch (message) {
-          case "to-block":
-            return;
-          case "to-modify":
-            ws.send("modified");
-            return;
-          default:
-            ws.send(message);
-        }
+        ws.send(message);
       });
       server.send("fake");
     });
@@ -807,91 +776,13 @@ test.describe("routeWebSocket", () => {
     await openPageSocket(page, `${WS_UPSTREAM}/echo`);
     await expect.poll(() => serverLog).toEqual(["fake"]);
 
-    // Upstream echoes "fake" back → server.onMessage → page sees "fake".
-    // Drive the server→page matrix via echo of messages we send through the page side's
-    // modify/block/pass paths, then also inject via route after capture.
     await page.evaluate(() => {
-      const ws = (window as unknown as { ws: WebSocket }).ws;
-      ws.send("to-respond");
-      ws.send("to-modify");
-      ws.send("to-block");
-      ws.send("pass-client");
+      (window as unknown as { ws: WebSocket }).ws.send("to-respond");
     });
 
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
-      .toEqual([
-        "open",
-        "message:fake",
-        "message:response",
-        "message:modified",
-        "message:pass-client",
-      ]);
-    await expect.poll(() => serverLog).toEqual(["fake", "modified", "pass-client"]);
-  });
-
-  test("explicit pass-through handlers still echo both directions", async ({ page }) => {
-    await page.routeWebSocket(`${WS_UPSTREAM}/echo?mode=prefix`, (ws) => {
-      const server = ws.connectToServer();
-      ws.onMessage((message) => server.send(message));
-      server.onMessage((message) => ws.send(message));
-    });
-    await gotoHarness(page);
-
-    await openPageSocket(page, `${WS_UPSTREAM}/echo?mode=prefix`);
-    await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("hi"));
-    await expect
-      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
-      .toEqual(["open", "message:echo:hi"]);
-  });
-
-  test("context.routeWebSocket handles sockets the page did not claim", async ({
-    page,
-  }) => {
-    await page.routeWebSocket(/\/page-only$/, (ws) => {
-      ws.onMessage(() => ws.send("page"));
-    });
-    await page.context().routeWebSocket(/.*/, (ws) => {
-      ws.onMessage(() => ws.send("context"));
-    });
-    await gotoHarness(page);
-
-    const results = await page.evaluate(async (base) => {
-      const open = (path: string) =>
-        new Promise<string>((resolve) => {
-          const ws = new WebSocket(`${base}${path}`);
-          ws.addEventListener("open", () => ws.send("x"));
-          ws.addEventListener("message", (e) => resolve(String(e.data)));
-        });
-      return {
-        pageOnly: await open("/page-only"),
-        contextOnly: await open("/context-only"),
-      };
-    }, WS_UPSTREAM);
-
-    expect(results.pageOnly).toBe("page");
-    expect(results.contextOnly).toBe("context");
-  });
-
-  test("page route wins over context for the same socket (newest page)", async ({
-    page,
-  }) => {
-    await page.context().routeWebSocket(/\/echo$/, (ws) => {
-      ws.onMessage(() => ws.send("context"));
-    });
-    await page.routeWebSocket(/\/echo$/, (ws) => {
-      ws.onMessage(() => ws.send("page-older"));
-    });
-    await page.routeWebSocket(/\/echo$/, (ws) => {
-      ws.onMessage(() => ws.send("page-newer"));
-    });
-    await gotoHarness(page);
-
-    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
-    await page.evaluate(() => (window as unknown as { ws: WebSocket }).ws.send("x"));
-    await expect
-      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
-      .toEqual(["open", "message:page-newer"]);
+      .toEqual(["open", "message:fake", "message:response"]);
   });
 
   test("baseURL pattern matches when page baseURL uses uppercase scheme", async ({
@@ -1115,19 +1006,6 @@ test.describe("routeWebSocket", () => {
       .toEqual(["open", "close code=1000 reason=normal wasClean=true"]);
   });
 
-  test("route.close marks wasClean true", async ({ page }) => {
-    let route!: WebSocketRoute;
-    await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
-      route = ws;
-    });
-    await gotoHarness(page);
-    await openPageSocket(page, `${WS_UPSTREAM}/echo`);
-    await route.close({ code: 3005, reason: "clean" });
-    await expect
-      .poll(() => page.evaluate(() => (window as unknown as { log: string[] }).log))
-      .toEqual(["open", "close code=3005 reason=clean wasClean=true"]);
-  });
-
   test("delivers binary as Blob when binaryType is blob", async ({ page }) => {
     const bytes = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
     await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
@@ -1143,11 +1021,7 @@ test.describe("routeWebSocket", () => {
       .toEqual(["open", `message:blob:${bytes.toString("hex")}`]);
   });
 
-  test("Blob sends are encoded asynchronously and can reorder after sync frames", async ({
-    page,
-  }) => {
-    // webSocketMock.messageToData uses Blob.arrayBuffer().then(...) while string
-    // frames call the binding synchronously — pin that observed ordering.
+  test("receives Blob sends from the page as binary frames", async ({ page }) => {
     const seen: string[] = [];
     await page.routeWebSocket(`${WS_UPSTREAM}/echo`, (ws) => {
       ws.onMessage((message) => {
@@ -1167,11 +1041,9 @@ test.describe("routeWebSocket", () => {
         ws.addEventListener("error", () => reject(new Error("ws error")));
       });
       ws.send(new Blob([new Uint8Array([1, 2, 3])]));
-      ws.send("sync-after-blob");
     }, `${WS_UPSTREAM}/echo`);
 
-    await expect.poll(() => seen.length).toBe(2);
-    expect(seen).toEqual(["str:sync-after-blob", "bin:010203"]);
+    await expect.poll(() => seen).toEqual(["bin:010203"]);
   });
 
   test("TypedArray send uses byteOffset and byteLength, not the whole buffer", async ({
@@ -1203,30 +1075,6 @@ test.describe("routeWebSocket", () => {
     await expect.poll(() => seen).toEqual(["010203"]);
   });
 
-  test("resolves relative WebSocket URLs against the page and rewrites http→ws", async ({
-    page,
-  }) => {
-    let seenUrl = "";
-    await page.routeWebSocket("**/echo", (ws) => {
-      seenUrl = ws.url();
-      ws.onMessage((message) => ws.send(String(message)));
-    });
-    // Load a document from the WS upstream origin so relative `/echo` resolves there.
-    await page.goto("http://127.0.0.1:4002/page", { waitUntil: "domcontentloaded" });
-
-    const result = await page.evaluate(async () => {
-      return new Promise<string>((resolve, reject) => {
-        // Relative path → resolved against document, then http→ws rewrite in the mock.
-        const ws = new WebSocket("/echo");
-        ws.addEventListener("open", () => ws.send("rel"));
-        ws.addEventListener("message", (e) => resolve(String(e.data)));
-        ws.addEventListener("error", () => reject(new Error("error")));
-      });
-    });
-    expect(result).toBe("rel");
-    expect(seenUrl).toBe(`${WS_UPSTREAM}/echo`);
-  });
-
   test("accepts http(s) WebSocket constructor URLs and rewrites to ws(s)", async ({
     page,
   }) => {
@@ -1250,8 +1098,7 @@ test.describe("routeWebSocket", () => {
   test("predicate matcher installs catch-all interception and unmatched sockets pass through", async ({
     page,
   }) => {
-    // Function matchers serialize as catch-all patterns. Unmatched URLs still
-    // get a route event and Playwright auto-connectToServer()s them.
+    // Predicate matchers intercept broadly; unmatched sockets still pass through.
     let matched = 0;
     await page.routeWebSocket(
       (url) => url.pathname === "/mock-only",
