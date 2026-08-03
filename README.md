@@ -115,6 +115,8 @@ Then open `http://127.0.0.1:4311/`.
 
 ## Design docs
 
+**How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) (oracle TDD, Playwright code parity). Agent entrypoint: [`AGENTS.md`](./AGENTS.md).
+
 See [`research/`](./research) for research notes, the rewrite plan, public API plan, protocol plan, and technical plan. The product intent is described in [`SPECIFICATION.md`](./SPECIFICATION.md).
 
 Published documentation lives in [`documentation/`](./documentation) (VitePress) and deploys to GitHub Pages at [danielshawellis.github.io/playwright-backend-mocks-msw](https://danielshawellis.github.io/playwright-backend-mocks-msw/).
