@@ -127,9 +127,9 @@ Supported codes: `failed` (default), `aborted`, `timedout`, `connectionrefused`,
 
 See [Errors](/reference/errors) for default messages and how they surface in the app.
 
-## Record and replay JSON
+## Record and replay HAR
 
-For a Playwright-style cassette workflow (record once with `update: true`, replay from a committed JSON file), see [Record and replay with JSON](/guide/route-from-json).
+For a Playwright-style HAR workflow (record once with `update: true`, replay from a committed `.har` file), see [Record and replay with HAR](/guide/route-from-har).
 
 ## unroute
 

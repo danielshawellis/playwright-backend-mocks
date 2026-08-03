@@ -10,12 +10,12 @@ export default tseslint.config(
       "**/dist/**",
       "**/node_modules/**",
       "**/coverage/**",
+      "historical/**",
       "fixtures/**/public/**",
       "documentation/.vitepress/cache/**",
       "documentation/.vitepress/dist/**",
       "documentation/.vitepress/theme/**",
       "**/*.vue",
-      "packages/dashboard/vite.config.ts",
     ],
   },
   {

@@ -20,7 +20,7 @@ Peer dependency: `@playwright/test` ≥ 1.40.
 | `RouteHandler`              | type     | `(route, request) => void \| Promise<void>`              |
 | `RouteMatcherInput`         | type     | Matcher union                                            |
 | `RouteMatcherObject`        | type     | Object matcher shape                                     |
-| `RouteFromJSONOptions`      | type     | `routeFromJSON` options                                  |
+| `RouteFromHAROptions`       | type     | `routeFromHAR` options                                   |
 | `FulfillOptions`            | type     | `route.fulfill` options                                  |
 | `ContinueOptions`           | type     | `route.continue` options                                 |
 | `FetchOptions`              | type     | `route.fetch` options                                    |
@@ -54,7 +54,7 @@ Set via Playwright config `use` (see [Configuration](/guide/configuration)).
 interface BackendMocks {
   route(url: RouteMatcherInput, handler: RouteHandler): Promise<void>;
   unroute(url?: RouteMatcherInput, handler?: RouteHandler): Promise<void>;
-  routeFromJSON(path: string, options?: RouteFromJSONOptions): Promise<void>;
+  routeFromHAR(path: string, options?: RouteFromHAROptions): Promise<void>;
   waitForRequest(
     url: RouteMatcherInput,
     options?: { timeout?: number; method?: string },
@@ -72,23 +72,27 @@ Matchers may be a URL glob string, `RegExp`, Playwright-style predicate `(url: U
 
 The handler **must** settle with `fulfill`, `continue`, or `abort`. See [Mocking requests](/guide/mocking-requests).
 
-### `routeFromJSON(path, options?)`
+### `routeFromHAR(path, options?)`
 
-Record or replay outbound backend requests from a JSON cassette file. See [Record and replay with JSON](/guide/route-from-json) for matching rules and file format.
+Record or replay outbound backend requests from a HAR file, matching Playwright’s [`routeFromHAR`](https://playwright.dev/docs/mock#mocking-with-har-files). See [Record and replay with HAR](/guide/route-from-har) for matching rules and options.
 
 ```ts
-interface RouteFromJSONOptions {
+interface RouteFromHAROptions {
   readonly url?: string | RegExp;
   readonly update?: boolean;
+  readonly updateMode?: "full" | "minimal";
+  readonly updateContent?: "embed" | "attach";
   readonly notFound?: "abort" | "fallback";
 }
 ```
 
-| Option     | Default       | Description                                                                   |
-| ---------- | ------------- | ----------------------------------------------------------------------------- |
-| `url`      | every request | Only record/replay matching URLs                                              |
-| `update`   | `false`       | When `true`, capture upstream traffic and rewrite the file on fixture dispose |
-| `notFound` | `"abort"`     | Replay behavior when no entry matches (`"fallback"` continues upstream)       |
+| Option          | Default            | Description                                                                   |
+| --------------- | ------------------ | ----------------------------------------------------------------------------- |
+| `url`           | every request      | Only record/replay matching URLs                                              |
+| `update`        | `false`            | When `true`, capture upstream traffic and rewrite the file on fixture dispose |
+| `updateMode`    | Playwright default | Recording detail level                                                        |
+| `updateContent` | Playwright default | How bodies are stored (`attach`/zip packaging out of scope)                   |
+| `notFound`      | `"abort"`          | Replay behavior when no entry matches (`"fallback"` continues upstream)       |
 
 ### `unroute(matcher?, handler?)`
 

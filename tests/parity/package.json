@@ -1,0 +1,18 @@
+{
+  "name": "@playwright-backend-mocks/parity",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "PARITY_MODE=browser playwright test",
+    "test:browser": "PARITY_MODE=browser playwright test",
+    "test:node": "PARITY_MODE=node playwright test",
+    "test:node:full": "PARITY_MODE=node PARITY_NODE_FULL=1 playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/ws": "^8.18.1",
+    "urlpattern-polyfill": "10.1.0",
+    "ws": "^8.18.3"
+  }
+}

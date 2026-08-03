@@ -1,4 +1,3 @@
 packages:
-  - "packages/*"
   - "fixtures/*"
-  - "tests/e2e"
+  - "tests/parity"

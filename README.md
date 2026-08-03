@@ -4,7 +4,9 @@ Mock outbound HTTP/HTTPS requests made by Node.js application processes from Pla
 
 The experience mirrors Playwright’s browser-side `route()` API, while interception runs inside your Node processes via [`@mswjs/interceptors`](https://github.com/mswjs/interceptors).
 
-## Packages
+> **Rewrite in progress.** The prototype implementation lives under [`historical/`](./historical/) (not wired into the workspace). Step 1 is the Playwright oracle suite in [`tests/parity/`](./tests/parity/) — see [`research/rewrite-specification.md`](./research/rewrite-specification.md).
+
+## Packages (rewrite target)
 
 | Package                                | Description                                   |
 | -------------------------------------- | --------------------------------------------- |
@@ -13,6 +15,14 @@ The experience mirrors Playwright’s browser-side `route()` API, while intercep
 | `@playwright-backend-mocks/proxy`      | Standalone coordinator + REST API CLI         |
 | `@playwright-backend-mocks/dashboard`  | Optional Vue dashboard (separate process)     |
 | `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
+
+These packages will be reintroduced in Step 2 against the oracle suite. Until then, run:
+
+```bash
+pnpm install
+pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
+pnpm test:parity
+```
 
 ## Quick start
 
@@ -105,7 +115,7 @@ Then open `http://127.0.0.1:4311/`.
 
 ## Design docs
 
-See [`docs/`](./docs) for research notes, the public API plan, protocol plan, and technical plan. The product intent is described in [`SPECIFICATION.md`](./SPECIFICATION.md).
+See [`research/`](./research) for research notes, the rewrite plan, public API plan, protocol plan, and technical plan. The product intent is described in [`SPECIFICATION.md`](./SPECIFICATION.md).
 
 Published documentation lives in [`documentation/`](./documentation) (VitePress) and deploys to GitHub Pages at [danielshawellis.github.io/playwright-backend-mocks-msw](https://danielshawellis.github.io/playwright-backend-mocks-msw/).
 
@@ -113,8 +123,10 @@ Published documentation lives in [`documentation/`](./documentation) (VitePress)
 
 ```bash
 pnpm install
-pnpm build
-pnpm test
+pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
+pnpm test          # oracle parity suite (browser mode)
+pnpm typecheck
+pnpm lint
 ```
 
 ### Documentation site

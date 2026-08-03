@@ -49,12 +49,12 @@ Node agent (@mswjs/interceptors) → pause / fulfill / continue / abort / upstre
 
 Map layers to Playwright’s own split (see parity research):
 
-| Our package | Playwright analogue |
-| --- | --- |
+| Our package           | Playwright analogue                          |
+| --------------------- | -------------------------------------------- |
 | `packages/playwright` | Client `Route` / `RouteHandler` / `_onRoute` |
-| `packages/proxy` | Dispatchers + ownership |
-| `packages/node` | RouteDelegate / apply decision |
-| `packages/protocol` | Channel settle messages |
+| `packages/proxy`      | Dispatchers + ownership                      |
+| `packages/node`       | RouteDelegate / apply decision               |
+| `packages/protocol`   | Channel settle messages                      |
 
 Do **not** vendor Playwright source. Reimplement. Keep analogous paths documented next to modules for deliberate comparison. Pin the Playwright revision used as reference (below).
 
@@ -64,31 +64,67 @@ Do **not** vendor Playwright source. Reimplement. Keep analogous paths documente
 
 ### In scope (full parity)
 
-Behavior for **already-intercepted** outbound HTTP: matchers, handler orchestration, settle APIs, and inspection.
+Behavior for **already-intercepted** outbound HTTP **and** application WebSockets: matchers, handler orchestration, settle APIs, and inspection.
+
+**HTTP**
 
 - `route` / `unroute` / `unrouteAll`
 - `fulfill` / `continue` / `abort` / `fallback` / `fetch`
-- Matcher forms: glob, RegExp, predicate (plus our `method` / `clientId` object filters)
+- Matcher forms: glob, RegExp, predicate, URLPattern (plus our `method` / `clientId` object filters)
 - LIFO registration, `times`, override accumulation across `fallback`
 - Stall until settle; double-settle throws
 - Glob semantics aligned with Playwright
-- `waitForRequest` and request/response inspection helpers that apply to this path
+- `waitForRequest` / `waitForResponse` and request/response inspection helpers that apply to this path
 - `route.fetch` options that apply to fetching **the current intercepted request** upstream: overrides, timeout, redirect handling (`maxRedirects`), response body usability (including compression where Playwright’s route path exposes decoded bodies)
-- `routeFromJSON` as the analogue of `routeFromHAR` (JSON cassettes, same control-flow shape)
+- `routeFromHAR` with near-complete Playwright parity (same HAR files, options, and matching/update control flow; browser-only HAR concerns such as zip attach / navigation rewrite remain out of scope)
+
+**WebSockets** (same DX philosophy as Playwright `routeWebSocket` / `WebSocketRoute`)
+
+- `routeWebSocket(matcher, handler)` with glob / RegExp / predicate / URLPattern matchers (plus our `clientId` filter where applicable)
+- Newest matching handler only (no WS fallback chain — mirror Playwright)
+- Full mock without upstream (`onMessage` / `send` / `close` / `onClose` / `url` / `protocols`)
+- `connectToServer()` with default bidirectional forwarding
+- Installing `onMessage` / `onClose` disables that direction’s auto-forward (handler must take over)
+- Text and binary frames; concurrent sockets remain isolated
+- Only sockets opened **after** registration are routed; unmatched passthrough
+
+Feasibility for Step 2: **conditional yes** for Node apps using `globalThis.WebSocket` (Node ≥22 / Undici global), via `@mswjs/interceptors` `WebSocketInterceptor` plus a product-owned upstream bridge for Playwright-compatible open/close semantics. This stays on the roadmap even with incomplete client coverage — the ecosystem is moving toward the WHATWG / Undici global, so coverage of real codebases should improve over time. We are **not** counting on MSWJS to implement custom-client hooks (e.g. npm `ws`) soon; plan around global-only interception.
+
+### Partial WebSocket support (Node) — plan this into docs from day one
+
+HTTP and WebSocket support are **not** the same breadth:
+
+| Surface                    | Coverage intent                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Outbound **HTTP**          | Virtually every Node HTTP client we care about (via `@mswjs/interceptors` node preset / Undici / `http` / `https` / `fetch`)                                                                |
+| Application **WebSockets** | **`globalThis.WebSocket` only** (WHATWG global). npm `ws`, other third-party clients, and constructors imported directly from Undici (bypassing the patched global) are **not** intercepted |
+
+Why: MSW’s interceptor patches the **global** WebSocket constructor. Clients that never touch that global never enter the mock pipeline — they silently talk to the real network. That is a different failure mode than HTTP, where the interceptor surface already covers the common stacks.
+
+**Documentation requirement (non-negotiable for shipping WS):** every public WebSocket doc page / guide section must open with a large, unavoidable caveat that:
+
+1. We do **not** support all WebSocket clients (contrast with HTTP).
+2. Supported path is `globalThis.WebSocket` / WHATWG-compatible global usage.
+3. npm `ws` and direct-import constructors will bypass mocks unless/until a separate design lands.
+4. A short “why” (global patch vs full transport rewrite) so readers do not assume silent parity with Playwright browser routing.
+
+Do not bury this in a footnote. Readers who only skim WS docs must still see it.
 
 ### Out of scope
 
 - General HTTP **initiation** APIs (`page.request` / `APIRequestContext` as a client)
-- Browser-only concerns: CORS auto-headers, cookie jar, service workers, navigation/`networkidle`, `routeWebSocket`, resource timing, favicon quirks, HAR zip/websocket HAR, etc.
+- Browser-only concerns: CORS auto-headers, cookie jar, service workers, navigation/`networkidle`, resource timing, favicon quirks, HAR zip packaging / attach mode, websocket HAR frames, frame-navigation WS close, DOM `binaryType` object-identity quirks, etc.
+- npm `ws` package clients and non-global WebSocket constructors (unless a future custom-client design lands)
 
 ### Required product divergences
 
-| Topic | Behavior |
-| --- | --- |
-| Multi-owner | If **two different tests** claim the same request → fail loud (`ambiguous_route`) with diagnostics + docs link |
-| Same test, multiple handlers | **Mirror Playwright**: LIFO + `fallback` within one `testId` |
-| Record/replay format | `routeFromJSON` instead of `routeFromHAR` |
-| Extra matchers | Keep `method` / `clientId` |
+| Topic                        | Behavior                                                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Multi-owner                  | If **two different tests** claim the same request/socket → fail loud (`ambiguous_route`) with diagnostics + docs link |
+| Same test, multiple handlers | **Mirror Playwright**: HTTP LIFO + `fallback`; WS newest-match only (no fallback chain)                               |
+| Record/replay format         | **`routeFromHAR`** — same API name and HAR files as Playwright (no JSON-cassette analogue)                            |
+| Extra matchers               | Keep `method` / `clientId`                                                                                            |
+| WS constructor surface       | Guarantee `globalThis.WebSocket` only; **loud docs** on every WS page for `ws` / direct-import bypass                 |
 
 ---
 
@@ -131,24 +167,26 @@ Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects,
 ### Fixtures
 
 1. **Upstream fake** — local third-party HTTP server (status/body/header/echo variants).
-2. **Browser downstream** — minimal page that issues Ajax/`fetch`/XHR to the upstream on demand.
-3. Later for Step 2: **Node downstream** app(s) that call `startBackendMocks` and expose triggers equivalent to the browser harness.
+2. **WebSocket upstream** — local WS server (echo, binary, subprotocols, close codes, handshake failure).
+3. **Shared downstream core** — isomorphic `fixtures/downstream` helpers (`fetch` + `globalThis.WebSocket`) used by both hosts.
+4. **Browser downstream host** — thin page that loads the shared modules (`window.trigger` / `window.connectWebSocket`) plus browser-only XHR.
+5. **Node downstream host** — thin process that imports the same modules and exposes a **control-plane WebSocket** (`/control`) so the Playwright worker can drive long-lived app sockets (open/send/receive/close/info) and HTTP triggers inside the Node process. Step 2 enables `startBackendMocks` in this same process (`ENABLE_BACKEND_MOCKS=1`).
 
 ### Dual-mode harness
 
 Use a **thin** dual-mode harness where the Playwright API and ours are nearly identical:
 
-- `route` / settle methods / matchers / `times` / `unroute` / `waitForRequest` / fallback chaining
-- Trigger helper: browser action vs Node `callVia` (or equivalent)
-- Mode switch via config/env (e.g. `PARITY_MODE=browser|backend`)
+- `route` / settle methods / matchers / `times` / `unroute` / `unrouteAll` / `waitForRequest` / `waitForResponse` / fallback chaining
+- **`routeFromHAR(file, options)`** — browser: `page.routeFromHAR`; node/Step 2: `backendMocks.routeFromHAR` (same HAR files and assertions)
+- `trigger` / `openDownstreamSocket` — same shared downstream code; browser via `page.evaluate`, node via control-plane WS
+- Mode switch via config/env: `PARITY_MODE=browser|node` (Step 2 wires mocks on the node path)
 
 Rules:
 
-- Harness adapts routing handle + trigger only. Assertions stay shared.
+- Harness adapts routing handle + how the downstream is driven. Assertions and shared downstream modules stay shared.
+- Do **not** drive Node app WebSockets with one-shot HTTP helpers — long-lived sockets need the control plane.
 - If the adapter grows clever, delete it and use two thin entrypoints instead.
-- **Do not** force dual-mode where the API is only analogous:
-  - `routeFromHAR` → separately rewritten tests for `routeFromJSON` (portable cases only: method match, url filter, `notFound` abort/fallback, update, postData match, unroute stops replay).
-  - Cookie jar, HAR zip, navigation-after-HAR, and other non-portable cases: omit from the initial suite.
+- HAR zip packaging, navigation-after-HAR, cookie-jar HAR quirks, and other non-portable browser cases: omit from the suite (already intentional skips).
 
 ### Step 1 done when
 
@@ -164,15 +202,15 @@ Rules:
 
 Switch the same suite to library mode and implement until green.
 
-### What changes in backend mode
+### What changes in node / library mode
 
-| Piece | Change |
-| --- | --- |
-| Routing API | `page.route` / … → `backendMocks.route` / … |
-| Downstream | Browser harness → Node app + `startBackendMocks` |
-| Trigger | Page action → Node trigger helper |
-| Record/replay | Separate ported `routeFromJSON` tests (not dual-mode) |
-| Runner | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer` |
+| Piece         | Change                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| Routing API   | `page.route` / `routeFromHAR` / … → `backendMocks.route` / `routeFromHAR` / …               |
+| Downstream    | Same shared modules; host swaps browser page → Node process + `startBackendMocks`           |
+| Trigger       | Same `trigger` / `openDownstreamSocket`; transport swaps `page.evaluate` → control-plane WS |
+| Record/replay | Same dual-mode HAR specs via harness `routeFromHAR`                                         |
+| Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer`                    |
 
 ### What must not change
 
@@ -189,8 +227,7 @@ Upstream fake, assertion intent, scenario names/structure for dual-mode cases, p
 
 ### Step 2 done when
 
-- Backend mode passes the oracle/parity suite for the in-scope surface.
-- Separately ported `routeFromJSON` tests pass.
+- Backend mode passes the oracle/parity suite for the in-scope surface (including `routeFromHAR`).
 - Library-only suite covers multi-process / ambiguity / infra concerns.
 - Module map and `PARITY` / `DIVERGE` notes exist for contributors.
 - `historical/` can be deleted when no longer useful.
@@ -201,8 +238,7 @@ Upstream fake, assertion intent, scenario names/structure for dual-mode cases, p
 
 ```text
 tests/
-  parity/          # dual-mode oracle suite (browser | backend)
-  parity-json/     # routeFromJSON tests (library mode; ported from HAR cases)
+  parity/          # dual-mode oracle suite (browser | backend), including routeFromHAR
   library/         # clientId, cross-test ambiguity, disconnect, etc.
   unit/            # pure helpers as needed
   contract/        # wire protocol as needed
@@ -219,9 +255,9 @@ CI: run browser oracle against pinned Playwright; run backend parity against bui
 
 1. Archive prototype → `historical/`; clear living package/test/fixture paths for greenfield use.
 2. Pin Playwright; build upstream + browser harness; land Step 1 suite green in browser mode.
-3. Extract thin dual-mode seam; keep HAR/JSON tests separate.
+3. Extract thin dual-mode seam including `routeFromHAR` (same HAR files in both modes).
 4. Scaffold Step 2 skeleton; enable backend mode (expect red).
-5. Implement packages against failing cases until backend mode is green.
+5. Implement packages against failing cases until backend mode is green (HAR record/replay included).
 6. Add library-only suite; remove `historical/` when finished.
 
 ---

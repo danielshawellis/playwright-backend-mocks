@@ -15,28 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        # Version comes from package.json "packageManager"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build packages
-        run: pnpm build
-
-      - name: Install Playwright browsers
-        run: pnpm --filter @playwright-backend-mocks/e2e exec playwright install --with-deps chromium
-
-      - name: Test
-        run: pnpm test
-
-      - name: Publish
-        run: pnpm -r --filter '@playwright-backend-mocks/*' publish --access public --no-git-checks
-        env:
-          NPM_CONFIG_PROVENANCE: true
+      - name: Skip publish during rewrite
+        run: |
+          echo "Library packages are archived under historical/ during the greenfield rewrite."
+          echo "Publishing will resume once Step 2 packages land."
+          exit 1

@@ -10,26 +10,24 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' run build",
-    "typecheck": "pnpm -r --filter './packages/*' run typecheck && tsc -p tests/unit/tsconfig.json --noEmit && tsc -p tests/contract/tsconfig.json --noEmit",
+    "build": "node -e \"console.log('No packages to build yet (rewrite Step 1: oracle suite only)')\"",
+    "typecheck": "tsc -p tests/parity/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "pnpm test:unit && pnpm test:contract && pnpm test:e2e",
-    "test:unit": "vitest run --config tests/unit/vitest.config.ts",
-    "test:contract": "vitest run --config tests/contract/vitest.config.ts",
-    "test:e2e": "pnpm --filter @playwright-backend-mocks/e2e test",
+    "test": "pnpm test:parity",
+    "test:parity": "pnpm --filter @playwright-backend-mocks/parity test",
+    "test:parity:browser": "pnpm --filter @playwright-backend-mocks/parity test:browser",
+    "test:parity:node": "pnpm --filter @playwright-backend-mocks/parity test:node",
     "docs:dev": "vitepress dev documentation",
     "docs:build": "vitepress build documentation",
     "docs:preview": "vitepress preview documentation",
-    "clean": "pnpm -r exec rm -rf dist"
+    "clean": "rm -rf test-results playwright-report"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@iconify/vue": "^5.0.1",
-    "@playwright-backend-mocks/playwright": "workspace:*",
-    "@playwright-backend-mocks/protocol": "workspace:*",
-    "@playwright/test": "^1.54.1",
+    "@playwright/test": "1.62.1",
     "@types/node": "^22.16.5",
     "eslint": "^9.32.0",
     "globals": "^17.8.0",
@@ -38,8 +36,7 @@
     "shiki": "2.5.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vitepress": "^1.6.4",
-    "vitest": "^3.2.4"
+    "vitepress": "^1.6.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
