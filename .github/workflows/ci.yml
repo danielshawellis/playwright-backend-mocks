@@ -39,7 +39,7 @@ jobs:
         run: pnpm format:check
 
       - name: Install Playwright browsers
-        run: pnpm --filter @playwright-backend-mocks/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @playwright-backend-mocks/parity exec playwright install --with-deps chromium
 
       - name: Test
         run: pnpm test

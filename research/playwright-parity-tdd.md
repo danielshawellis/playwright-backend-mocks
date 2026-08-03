@@ -12,7 +12,7 @@ Playwright Backend Mocks is intentionally shaped like Playwright’s Ajax-routin
 
 1. Playwright already defines the expected developer contract.
 2. A suite that passes against Playwright documents “correct” behavior in executable form.
-3. Once that suite exists, the library’s job is to make the same assertions pass when the *downstream* actor changes from browser → Node server.
+3. Once that suite exists, the library’s job is to make the same assertions pass when the _downstream_ actor changes from browser → Node server.
 
 This is TDD with an external reference implementation, not TDD against imagined behavior.
 
@@ -27,13 +27,13 @@ Test author
   → upstream fake server
 ```
 
-| Role | Phase A (Playwright oracle) | Phase B (this library) |
-| --- | --- | --- |
-| Routing API under test | `page.route` / `context.route` / `routeFromHAR` | `backendMocks.route` / `routeFromJSON` |
-| Downstream (issues HTTP) | Browser page / Ajax code | Node app process (`fetch`, `node:http`, …) via `startBackendMocks` |
-| Upstream (fake third party) | Same fake upstream server | Same fake upstream server |
-| What the test drives | Browser actions that trigger Ajax | App endpoints that trigger outbound HTTP |
-| What must stay stable | Assertions about status, body, headers, abort, spy counts, cassette files, matcher rules | Same assertions |
+| Role                        | Phase A (Playwright oracle)                                                              | Phase B (this library)                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Routing API under test      | `page.route` / `context.route` / `routeFromHAR`                                          | `backendMocks.route` / `routeFromJSON`                             |
+| Downstream (issues HTTP)    | Browser page / Ajax code                                                                 | Node app process (`fetch`, `node:http`, …) via `startBackendMocks` |
+| Upstream (fake third party) | Same fake upstream server                                                                | Same fake upstream server                                          |
+| What the test drives        | Browser actions that trigger Ajax                                                        | App endpoints that trigger outbound HTTP                           |
+| What must stay stable       | Assertions about status, body, headers, abort, spy counts, cassette files, matcher rules | Same assertions                                                    |
 
 The upstream fake is reused. The test intent is reused. Only the downstream host and the routing handle change.
 
@@ -94,13 +94,13 @@ Change as little as possible so the same scenarios now exercise the library.
 
 ### What changes
 
-| Piece | Change |
-| --- | --- |
-| Import / fixture | `page` routing → `backendMocks` from `@playwright-backend-mocks/playwright` |
-| Downstream | Browser harness → Node fixture app(s) that call `startBackendMocks` (existing `fixtures/api-server` / `worker` pattern) |
-| Trigger helper | “click / evaluate fetch in page” → `callVia(request, transport, path)` (or a shared helper with two backends) |
-| Record/replay API name | `routeFromHAR` → `routeFromJSON` where that is the intentional analogue |
-| Runner wiring | Add proxy + Node env vars (`PLAYWRIGHT_BACKEND_MOCKS_*`) via Playwright `webServer` / config |
+| Piece                  | Change                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Import / fixture       | `page` routing → `backendMocks` from `@playwright-backend-mocks/playwright`                                             |
+| Downstream             | Browser harness → Node fixture app(s) that call `startBackendMocks` (existing `fixtures/api-server` / `worker` pattern) |
+| Trigger helper         | “click / evaluate fetch in page” → `callVia(request, transport, path)` (or a shared helper with two backends)           |
+| Record/replay API name | `routeFromHAR` → `routeFromJSON` where that is the intentional analogue                                                 |
+| Runner wiring          | Add proxy + Node env vars (`PLAYWRIGHT_BACKEND_MOCKS_*`) via Playwright `webServer` / config                            |
 
 ### What must not change
 
@@ -142,13 +142,13 @@ For features Playwright does not have (e.g. `clientId` multi-process routing), k
 
 Parity is “near complete,” not identical runtime semantics. The plan should maintain an explicit diff list, for example:
 
-| Topic | Playwright (browser) | This library (Node) | Policy |
-| --- | --- | --- | --- |
-| Target traffic | Browser → network | Node process → network | By design |
-| Recording format | HAR (`routeFromHAR`) | JSON cassette (`routeFromJSON`) | Analogue; shared suite maps via adapter |
-| Multi-process / `clientId` | N/A (single page/context) | Supported | Library-only tests |
-| Transport matrix | Browser fetch/XHR | Node `fetch` / `http` / … | Same scenarios, loop transports in backend mode |
-| Some abort / error codes | Browser-specific | Node client-specific mapping | Document mapping; assert library’s published contract |
+| Topic                      | Playwright (browser)      | This library (Node)             | Policy                                                |
+| -------------------------- | ------------------------- | ------------------------------- | ----------------------------------------------------- |
+| Target traffic             | Browser → network         | Node process → network          | By design                                             |
+| Recording format           | HAR (`routeFromHAR`)      | JSON cassette (`routeFromJSON`) | Analogue; shared suite maps via adapter               |
+| Multi-process / `clientId` | N/A (single page/context) | Supported                       | Library-only tests                                    |
+| Transport matrix           | Browser fetch/XHR         | Node `fetch` / `http` / …       | Same scenarios, loop transports in backend mode       |
+| Some abort / error codes   | Browser-specific          | Node client-specific mapping    | Document mapping; assert library’s published contract |
 
 When backend mode cannot match Playwright, either:
 
@@ -161,11 +161,11 @@ When backend mode cannot match Playwright, either:
 
 This plan complements, rather than replaces, the current pyramid:
 
-| Layer | Role after this plan |
-| --- | --- |
-| `tests/unit` | Combinatorial helpers (matchers, body encoding, cassette parse) |
-| `tests/contract` | Wire protocol serialize/parse |
-| Existing `tests/e2e` | Full cross-process product confidence (proxy, agents, dashboard, security) |
+| Layer                         | Role after this plan                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `tests/unit`                  | Combinatorial helpers (matchers, body encoding, cassette parse)                         |
+| `tests/contract`              | Wire protocol serialize/parse                                                           |
+| Existing `tests/e2e`          | Full cross-process product confidence (proxy, agents, dashboard, security)              |
 | **New parity / oracle suite** | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity |
 
 Existing e2e already follows “test the library by being its user.” The parity suite makes that stricter: **Playwright itself becomes the reference for what the user experience should be.**
@@ -191,7 +191,7 @@ Aligned with the project’s testing philosophy:
 1. **Inventory** Playwright APIs/behaviors we claim to mirror; turn into a checklist.
 2. **Build Phase A** oracle suite + browser harness + shared upstream; get it green.
 3. **Extract trigger/route helpers** only where duplication hurts.
-4. **Add Phase B mode** (Node downstream + `backendMocks`); expect many failures — that backlog *is* the TDD queue.
+4. **Add Phase B mode** (Node downstream + `backendMocks`); expect many failures — that backlog _is_ the TDD queue.
 5. **Drive library work** from failing parity cases; keep intentional-difference list honest.
 6. **CI:** run browser oracle always; run backend parity on built packages; keep separate library-only e2e for non-Playwright concerns.
 

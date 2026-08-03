@@ -46,18 +46,18 @@ RouteDispatcher → server Route → browser RouteDelegate
 
 ### Key source files
 
-| Layer | Path | Role |
-| --- | --- | --- |
-| Client Route API | `packages/playwright-core/src/client/network.ts` | `Request`, `Response`, `Route`, `RouteHandler`, WebSocket route types |
-| Client registration | `.../client/page.ts`, `.../client/browserContext.ts` | `route` / `unroute` / `unrouteAll` / `routeFromHAR` / `routeWebSocket`, `_onRoute` |
-| HAR replay | `.../client/harRouter.ts` | HAR as a normal `route` handler |
-| API fetch | `.../client/fetch.ts` | `APIRequestContext`; used by `route.fetch()` |
-| Protocol types | `.../client/channels.d.ts` | `RouteChannel`, request/response channels |
-| Server Route | `.../server/network.ts` | Server `Route` / `RouteDelegate`, header override rules |
-| Dispatchers | `.../server/dispatchers/{page,browserContext,network}Dispatchers.ts` | Coarse URL match → emit `route`; settle methods |
-| HAR backend | `.../server/harBackend.ts`, `.../server/har/*` | HAR open/lookup/record |
-| URL matching | `@isomorphic/urlMatch` (`urlMatches`, `globToRegexPattern`, serialize/deserialize) | Shared glob/regex/predicate matching |
-| Browser adapters | `chromium/crNetworkManager.ts`, etc. | Chromium abort-code map, Fetch interception |
+| Layer               | Path                                                                               | Role                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Client Route API    | `packages/playwright-core/src/client/network.ts`                                   | `Request`, `Response`, `Route`, `RouteHandler`, WebSocket route types              |
+| Client registration | `.../client/page.ts`, `.../client/browserContext.ts`                               | `route` / `unroute` / `unrouteAll` / `routeFromHAR` / `routeWebSocket`, `_onRoute` |
+| HAR replay          | `.../client/harRouter.ts`                                                          | HAR as a normal `route` handler                                                    |
+| API fetch           | `.../client/fetch.ts`                                                              | `APIRequestContext`; used by `route.fetch()`                                       |
+| Protocol types      | `.../client/channels.d.ts`                                                         | `RouteChannel`, request/response channels                                          |
+| Server Route        | `.../server/network.ts`                                                            | Server `Route` / `RouteDelegate`, header override rules                            |
+| Dispatchers         | `.../server/dispatchers/{page,browserContext,network}Dispatchers.ts`               | Coarse URL match → emit `route`; settle methods                                    |
+| HAR backend         | `.../server/harBackend.ts`, `.../server/har/*`                                     | HAR open/lookup/record                                                             |
+| URL matching        | `@isomorphic/urlMatch` (`urlMatches`, `globToRegexPattern`, serialize/deserialize) | Shared glob/regex/predicate matching                                               |
+| Browser adapters    | `chromium/crNetworkManager.ts`, etc.                                               | Chromium abort-code map, Fetch interception                                        |
 
 ### Matching is two-phase
 
@@ -81,13 +81,13 @@ From `Page._onRoute` / `BrowserContext._onRoute` and `RouteHandler`:
 
 ### `Route` method semantics
 
-| Method | Terminal? | Effect |
-| --- | --- | --- |
-| `fulfill(options)` | yes | Mock response via channel |
-| `continue(options)` | yes | Send to network with overrides; skips other handlers |
-| `abort(errorCode?)` | yes | Fail with Chromium-like net error code |
-| `fallback(options)` | no (chain) | Apply overrides locally; next matching handler |
-| `fetch(options)` | no | `APIRequestContext._innerFetch` — **Node HTTP, bypasses page routes** |
+| Method              | Terminal?  | Effect                                                                |
+| ------------------- | ---------- | --------------------------------------------------------------------- |
+| `fulfill(options)`  | yes        | Mock response via channel                                             |
+| `continue(options)` | yes        | Send to network with overrides; skips other handlers                  |
+| `abort(errorCode?)` | yes        | Fail with Chromium-like net error code                                |
+| `fallback(options)` | no (chain) | Apply overrides locally; next matching handler                        |
+| `fetch(options)`    | no         | `APIRequestContext._innerFetch` — **Node HTTP, bypasses page routes** |
 
 `fulfill` supports `status`, `headers`, `body`, `json`, `contentType`, `path`, and `response` (from `fetch` / `APIResponse`, with `fetchResponseUid` body elision when on the same connection).
 
@@ -97,14 +97,14 @@ From `Page._onRoute` / `BrowserContext._onRoute` and `RouteHandler`:
 
 **Yes. Playwright’s ChannelOwner ↔ Dispatcher seam is the natural place to map our proxy WebSocket protocol.**
 
-| Playwright seam | Our analogue |
-| --- | --- |
-| Browser / interceptor pauses request | `@mswjs/interceptors` pauses outbound Node request |
-| Server emits `route` event with Request + Route handle | Proxy emits `request:matched` (after claim broadcast) |
-| User handler runs in Playwright client process | User handler runs in Playwright worker (`backend-mocks.ts`) |
-| Client calls `Route.fulfill\|continue\|abort` over channel | Worker sends `handler:result` over WebSocket |
-| Server applies decision via `RouteDelegate` | Node agent applies `decision:*` via interceptor controller |
-| `route.fetch` → server `APIRequestContext` (Node HTTP) | `decision:fetch` → Node agent native `fetch` with bypass |
+| Playwright seam                                            | Our analogue                                                |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| Browser / interceptor pauses request                       | `@mswjs/interceptors` pauses outbound Node request          |
+| Server emits `route` event with Request + Route handle     | Proxy emits `request:matched` (after claim broadcast)       |
+| User handler runs in Playwright client process             | User handler runs in Playwright worker (`backend-mocks.ts`) |
+| Client calls `Route.fulfill\|continue\|abort` over channel | Worker sends `handler:result` over WebSocket                |
+| Server applies decision via `RouteDelegate`                | Node agent applies `decision:*` via interceptor controller  |
+| `route.fetch` → server `APIRequestContext` (Node HTTP)     | `decision:fetch` → Node agent native `fetch` with bypass    |
 
 ### Recommended mirroring strategy
 
@@ -129,7 +129,7 @@ Keep three layers that map almost 1:1 to Playwright:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Mirror closely:** client handler API + orchestration, message shapes for settle actions, Request/Response inspection helpers, glob matching algorithm, HAR-router *shape* (as JSON router).
+**Mirror closely:** client handler API + orchestration, message shapes for settle actions, Request/Response inspection helpers, glob matching algorithm, HAR-router _shape_ (as JSON router).
 
 **Diverge here (intentionally):**
 
@@ -146,36 +146,36 @@ Keep three layers that map almost 1:1 to Playwright:
 
 These can and should look almost like Playwright’s client code, with settle actions crossing our WS instead of Playwright’s channel:
 
-| Capability | Playwright reference | Our status | Notes |
-| --- | --- | --- | --- |
-| `route(url, handler)` | `page.ts` / `browserContext.ts` | ✅ present | Add `times` option |
-| Matcher: string glob / RegExp / predicate | `urlMatch` + `RouteHandler` | ✅ present | Align glob algorithm with Playwright’s (`?` not special, brace groups, baseURL) |
-| `unroute(url?, handler?)` | client | ✅ present | Align equality + lifecycle |
-| `fulfill` options | `Route._innerFulfill` | ✅ mostly | Parity gaps: content-length auto, mime-from-path, richer statusText |
-| `continue` overrides | `Route.continue` | ✅ present | Header forbid-list differs (browser-specific) |
-| `fetch` then fulfill | `Route.fetch` + fulfill | ✅ present | Already bypasses interceptor (correct analogue of bypassing page routes) |
-| `abort(errorCode)` | Chromium map | ⚠️ partial | We support a subset; expand codes if desired |
-| Stall until settle | `_startHandling` | ✅ present | Same failure mode if handler forgets to settle |
-| Double-settle throws | `_checkNotHandled` | ✅ present | Message differs slightly |
-| `waitForRequest` | `page.waitForRequest` | ✅ present | Predicate/timeout/logging parity polish |
-| Request inspection (`url/method/headers/postData/json`) | `Request` | ✅ basic | Missing: `headersArray`, `allHeaders`, `postDataJSON` form-urlencoded, etc. |
-| `routeFromHAR` DX | `HarRouter` | ✅ as `routeFromJSON` | Intentional format divergence |
-| Predicate evaluated on handler side | function → `**/*` server-side | ✅ claim broadcast | Already the right design |
+| Capability                                              | Playwright reference            | Our status            | Notes                                                                           |
+| ------------------------------------------------------- | ------------------------------- | --------------------- | ------------------------------------------------------------------------------- |
+| `route(url, handler)`                                   | `page.ts` / `browserContext.ts` | ✅ present            | Add `times` option                                                              |
+| Matcher: string glob / RegExp / predicate               | `urlMatch` + `RouteHandler`     | ✅ present            | Align glob algorithm with Playwright’s (`?` not special, brace groups, baseURL) |
+| `unroute(url?, handler?)`                               | client                          | ✅ present            | Align equality + lifecycle                                                      |
+| `fulfill` options                                       | `Route._innerFulfill`           | ✅ mostly             | Parity gaps: content-length auto, mime-from-path, richer statusText             |
+| `continue` overrides                                    | `Route.continue`                | ✅ present            | Header forbid-list differs (browser-specific)                                   |
+| `fetch` then fulfill                                    | `Route.fetch` + fulfill         | ✅ present            | Already bypasses interceptor (correct analogue of bypassing page routes)        |
+| `abort(errorCode)`                                      | Chromium map                    | ⚠️ partial            | We support a subset; expand codes if desired                                    |
+| Stall until settle                                      | `_startHandling`                | ✅ present            | Same failure mode if handler forgets to settle                                  |
+| Double-settle throws                                    | `_checkNotHandled`              | ✅ present            | Message differs slightly                                                        |
+| `waitForRequest`                                        | `page.waitForRequest`           | ✅ present            | Predicate/timeout/logging parity polish                                         |
+| Request inspection (`url/method/headers/postData/json`) | `Request`                       | ✅ basic              | Missing: `headersArray`, `allHeaders`, `postDataJSON` form-urlencoded, etc.     |
+| `routeFromHAR` DX                                       | `HarRouter`                     | ✅ as `routeFromJSON` | Intentional format divergence                                                   |
+| Predicate evaluated on handler side                     | function → `**/*` server-side   | ✅ claim broadcast    | Already the right design                                                        |
 
 ### Medium fidelity (mirror semantics, different transport)
 
-| Capability | Should we mirror? | Divergence reason |
-| --- | --- | --- |
-| `fallback()` + LIFO chaining | **Yes, within a single test** | Across tests we still must fail on multi-match; within one test, Playwright-style fallback chaining is desirable for parity |
-| `times` | Yes | Pure client-side bookkeeping |
-| `unrouteAll({ behavior })` | Yes | Lifecycle parity with pending handlers |
-| Handler exception → fall through | Yes (Playwright falls through on exception during fallback path) | Confirm exact semantics when implementing |
-| Override accumulation across `fallback` | Yes | Local mutation of request view before next handler |
-| APIRequestContext-level fetch options (`maxRedirects`, `maxRetries`) | Partial | Useful on `route.fetch`; not full `page.request` API |
+| Capability                                                           | Should we mirror?                                                | Divergence reason                                                                                                           |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `fallback()` + LIFO chaining                                         | **Yes, within a single test**                                    | Across tests we still must fail on multi-match; within one test, Playwright-style fallback chaining is desirable for parity |
+| `times`                                                              | Yes                                                              | Pure client-side bookkeeping                                                                                                |
+| `unrouteAll({ behavior })`                                           | Yes                                                              | Lifecycle parity with pending handlers                                                                                      |
+| Handler exception → fall through                                     | Yes (Playwright falls through on exception during fallback path) | Confirm exact semantics when implementing                                                                                   |
+| Override accumulation across `fallback`                              | Yes                                                              | Local mutation of request view before next handler                                                                          |
+| APIRequestContext-level fetch options (`maxRedirects`, `maxRetries`) | Partial                                                          | Useful on `route.fetch`; not full `page.request` API                                                                        |
 
 ### Low fidelity / out of scope for this library
 
-These are Playwright browser-network features. Near-full parity of *AJAX request management* does **not** require them:
+These are Playwright browser-network features. Near-full parity of _AJAX request management_ does **not** require them:
 
 - `page.route` / `context.route` browser interception itself (we complement it)
 - CORS auto-injection on fulfill
@@ -206,7 +206,7 @@ We run a **shared server with concurrent tests**. Overlapping matchers across te
 Rule to preserve:
 
 - **Across tests / registrations that both claim the same request:** `ambiguous_route` → fail Node request + fail every affected Playwright test, with diagnostics and a docs link.
-- **Within a single test:** we *can* still offer Playwright-compatible LIFO + `fallback` among that test’s own handlers, as long as the proxy still sees a single owning test. Today the claim protocol returns all matching `routeId`s from a test; multi-match within one test currently also trips `ambiguous_route`. Parity work should decide:
+- **Within a single test:** we _can_ still offer Playwright-compatible LIFO + `fallback` among that test’s own handlers, as long as the proxy still sees a single owning test. Today the claim protocol returns all matching `routeId`s from a test; multi-match within one test currently also trips `ambiguous_route`. Parity work should decide:
   - **Option A (recommended):** within one `testId`, allow multiple matching routes and chain via `fallback` like Playwright; only fail when **more than one testId** claims the request.
   - **Option B:** keep failing on any >1 route match (stricter than Playwright even inside one test).
 
@@ -220,15 +220,15 @@ Error messages should link to a documentation page explaining: serialize those t
 
 Proposed module alignment (not requiring Playwright code reuse — just side-by-side reference):
 
-| Our module | Playwright analogue | Mirror guidance |
-| --- | --- | --- |
-| `packages/playwright/src/types.ts` | `client/network.ts` public types + `api.Route` | Keep method names/options aligned |
-| `packages/playwright/src/backend-mocks.ts` | `Route` + `RouteHandler` + `_onRoute` | Extract a `RouteHandler` class; implement `fallback`, `times`, LIFO |
-| `packages/playwright/src/match.ts` + `protocol/match.ts` | `@isomorphic/urlMatch` | Port Playwright glob algorithm; keep predicate-on-worker |
-| `packages/playwright/src/route-from-json.ts` | `client/harRouter.ts` | Same options/control flow; JSON I/O instead of HAR |
-| `packages/protocol/src/schemas.ts` | `channels.d.ts` Route settle messages | Keep `fulfill/continue/abort/fetch` action shapes stable |
-| `packages/proxy/src/server.ts` | `*Dispatcher` + ownership | Our extra: claim broadcast + multi-test ambiguity |
-| `packages/node/src/agent.ts` | `RouteDelegate` + server `fetch.ts` | Apply decisions; upstream fetch with bypass |
+| Our module                                               | Playwright analogue                            | Mirror guidance                                                     |
+| -------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------- |
+| `packages/playwright/src/types.ts`                       | `client/network.ts` public types + `api.Route` | Keep method names/options aligned                                   |
+| `packages/playwright/src/backend-mocks.ts`               | `Route` + `RouteHandler` + `_onRoute`          | Extract a `RouteHandler` class; implement `fallback`, `times`, LIFO |
+| `packages/playwright/src/match.ts` + `protocol/match.ts` | `@isomorphic/urlMatch`                         | Port Playwright glob algorithm; keep predicate-on-worker            |
+| `packages/playwright/src/route-from-json.ts`             | `client/harRouter.ts`                          | Same options/control flow; JSON I/O instead of HAR                  |
+| `packages/protocol/src/schemas.ts`                       | `channels.d.ts` Route settle messages          | Keep `fulfill/continue/abort/fetch` action shapes stable            |
+| `packages/proxy/src/server.ts`                           | `*Dispatcher` + ownership                      | Our extra: claim broadcast + multi-test ambiguity                   |
+| `packages/node/src/agent.ts`                             | `RouteDelegate` + server `fetch.ts`            | Apply decisions; upstream fetch with bypass                         |
 
 Suggested developer checklist for every parity change:
 
@@ -263,12 +263,12 @@ backendMocks.routeFromJSON(path, { url?, update?, notFound? })
 
 ### Matcher forms
 
-| Form | Playwright | Us |
-| --- | --- | --- |
-| Glob string | ✅ | ✅ (algorithm should be aligned) |
-| RegExp | ✅ | ✅ |
-| `(url: URL) => boolean` | ✅ | ✅ |
-| `URLPattern` | ✅ | ❌ (optional later) |
+| Form                        | Playwright            | Us                                |
+| --------------------------- | --------------------- | --------------------------------- |
+| Glob string                 | ✅                    | ✅ (algorithm should be aligned)  |
+| RegExp                      | ✅                    | ✅                                |
+| `(url: URL) => boolean`     | ✅                    | ✅                                |
+| `URLPattern`                | ✅                    | ❌ (optional later)               |
 | `{ url, method, clientId }` | ❌ (PW uses URL only) | ✅ keep — multi-process necessity |
 
 ### Abort codes
@@ -287,39 +287,39 @@ Full machine-readable dump: [`research/playwright-network-tests.json`](./playwri
 
 ### Files and counts
 
-| File | ~Tests | Focus |
-| --- | ---: | --- |
-| `tests/page/page-route.spec.ts` | 52 | Intercept, abort, CORS, redirects, times, chaining |
-| `tests/page/page-request-fulfill.spec.ts` | 24 | `route.fulfill` |
-| `tests/page/page-request-continue.spec.ts` | 39 | `route.continue` (+ postData) |
-| `tests/page/page-request-fallback.spec.ts` | 14 | `route.fallback` chaining |
-| `tests/page/page-request-intercept.spec.ts` | 15 | `route.fetch` + fulfill |
-| `tests/page/interception.spec.ts` | 14 | Glob/regex, workers, cache |
-| `tests/page/page-wait-for-request.spec.ts` | 8 | `waitForRequest` |
-| `tests/page/page-wait-for-response.spec.ts` | 8 | `waitForResponse` (browser; lower priority for us) |
-| `tests/page/page-event-request.spec.ts` | 16 | Request events |
-| `tests/page/page-event-network.spec.ts` | 7 | Event ordering |
-| `tests/page/page-network-request.spec.ts` | 29 | Request object API |
-| `tests/page/page-network-response.spec.ts` | 26 | Response object API |
-| `tests/page/page-network-idle.spec.ts` | 14 | `networkidle` (N/A for us) |
-| `tests/page/page-network-sizes.spec.ts` | 12 | Sizes (mostly N/A) |
-| `tests/page/network-post-data.spec.ts` | 6 | postData edge cases |
-| `tests/library/browsercontext-route.spec.ts` | 20 | context.route + precedence |
-| `tests/library/unroute-behavior.spec.ts` | 16 | unroute / unrouteAll lifecycle |
-| `tests/library/route-web-socket.spec.ts` | 25 | `routeWebSocket` (out of scope) |
-| `tests/library/har.spec.ts` | 63 | HAR recording |
-| `tests/library/har-websocket.spec.ts` | 12 | HAR + WS |
-| `tests/library/browsercontext-har.spec.ts` | 33 | `routeFromHAR` replay/update |
-| `tests/library/browsercontext-network-event.spec.ts` | 7 | Context events |
-| `tests/library/browsercontext-fetch.spec.ts` | 87 | APIRequestContext |
-| `tests/library/browsercontext-fetch-algorithms.spec.ts` | 15 | gzip/deflate/br |
-| `tests/library/browsercontext-fetch-happy-eyeballs.spec.ts` | 4 | IPv6 |
-| `tests/library/global-fetch.spec.ts` | 49 | Global request |
-| `tests/library/global-fetch-cookie.spec.ts` | 20 | Cookie jar |
-| `tests/library/fetch-proxy.spec.ts` | 6 | Fetch via proxy |
-| `tests/library/resource-timing.spec.ts` | 5 | Resource timing (N/A) |
+| File                                                        | ~Tests | Focus                                              |
+| ----------------------------------------------------------- | -----: | -------------------------------------------------- |
+| `tests/page/page-route.spec.ts`                             |     52 | Intercept, abort, CORS, redirects, times, chaining |
+| `tests/page/page-request-fulfill.spec.ts`                   |     24 | `route.fulfill`                                    |
+| `tests/page/page-request-continue.spec.ts`                  |     39 | `route.continue` (+ postData)                      |
+| `tests/page/page-request-fallback.spec.ts`                  |     14 | `route.fallback` chaining                          |
+| `tests/page/page-request-intercept.spec.ts`                 |     15 | `route.fetch` + fulfill                            |
+| `tests/page/interception.spec.ts`                           |     14 | Glob/regex, workers, cache                         |
+| `tests/page/page-wait-for-request.spec.ts`                  |      8 | `waitForRequest`                                   |
+| `tests/page/page-wait-for-response.spec.ts`                 |      8 | `waitForResponse` (browser; lower priority for us) |
+| `tests/page/page-event-request.spec.ts`                     |     16 | Request events                                     |
+| `tests/page/page-event-network.spec.ts`                     |      7 | Event ordering                                     |
+| `tests/page/page-network-request.spec.ts`                   |     29 | Request object API                                 |
+| `tests/page/page-network-response.spec.ts`                  |     26 | Response object API                                |
+| `tests/page/page-network-idle.spec.ts`                      |     14 | `networkidle` (N/A for us)                         |
+| `tests/page/page-network-sizes.spec.ts`                     |     12 | Sizes (mostly N/A)                                 |
+| `tests/page/network-post-data.spec.ts`                      |      6 | postData edge cases                                |
+| `tests/library/browsercontext-route.spec.ts`                |     20 | context.route + precedence                         |
+| `tests/library/unroute-behavior.spec.ts`                    |     16 | unroute / unrouteAll lifecycle                     |
+| `tests/library/route-web-socket.spec.ts`                    |     25 | `routeWebSocket` (out of scope)                    |
+| `tests/library/har.spec.ts`                                 |     63 | HAR recording                                      |
+| `tests/library/har-websocket.spec.ts`                       |     12 | HAR + WS                                           |
+| `tests/library/browsercontext-har.spec.ts`                  |     33 | `routeFromHAR` replay/update                       |
+| `tests/library/browsercontext-network-event.spec.ts`        |      7 | Context events                                     |
+| `tests/library/browsercontext-fetch.spec.ts`                |     87 | APIRequestContext                                  |
+| `tests/library/browsercontext-fetch-algorithms.spec.ts`     |     15 | gzip/deflate/br                                    |
+| `tests/library/browsercontext-fetch-happy-eyeballs.spec.ts` |      4 | IPv6                                               |
+| `tests/library/global-fetch.spec.ts`                        |     49 | Global request                                     |
+| `tests/library/global-fetch-cookie.spec.ts`                 |     20 | Cookie jar                                         |
+| `tests/library/fetch-proxy.spec.ts`                         |      6 | Fetch via proxy                                    |
+| `tests/library/resource-timing.spec.ts`                     |      5 | Resource timing (N/A)                              |
 
-### Priority subsets for *our* parity suite
+### Priority subsets for _our_ parity suite
 
 Port/adapt these first (behavior that applies to Node outbound HTTP mocking):
 

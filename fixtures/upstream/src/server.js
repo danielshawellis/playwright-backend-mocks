@@ -1,10 +1,24 @@
 import { createServer } from "node:http";
+import { gzipSync } from "node:zlib";
 
 const port = Number(process.env.PORT ?? 4001);
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
-  const body = await readBody(req);
+  const bodyBuf = await readBody(req);
+  const bodyText = bodyBuf.toString("utf8");
+
+  // Browser harness (different origin) needs CORS for passthrough / continue cases.
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader("access-control-allow-headers", "*");
+  res.setHeader("access-control-expose-headers", "*");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
   if (req.method === "GET" && url.pathname === "/health") {
     json(res, 200, { ok: true });
@@ -20,9 +34,17 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/charges") {
+    let amount = null;
+    if (bodyBuf.length > 0) {
+      try {
+        amount = JSON.parse(bodyText).amount;
+      } catch {
+        amount = null;
+      }
+    }
     json(res, 201, {
       id: "ch_real",
-      amount: body ? JSON.parse(body).amount : null,
+      amount,
       status: "succeeded",
     });
     return;
@@ -33,7 +55,9 @@ const server = createServer(async (req, res) => {
       method: req.method,
       url: url.pathname + url.search,
       headers: req.headers,
-      body: body.length > 0 ? body : null,
+      body: bodyBuf.length > 0 ? bodyText : null,
+      bodyBase64: bodyBuf.length > 0 ? bodyBuf.toString("base64") : null,
+      bodyByteLength: bodyBuf.length,
     });
     return;
   }
@@ -43,9 +67,76 @@ const server = createServer(async (req, res) => {
       method: req.method,
       url: url.pathname + url.search,
       headers: req.headers,
-      body: body.length > 0 ? body : null,
+      body: bodyBuf.length > 0 ? bodyText : null,
       variant: "alt",
     });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/simple.json") {
+    json(res, 200, { foo: "bar" });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/text") {
+    text(res, 200, "hello-text");
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/gzip") {
+    const payload = JSON.stringify({ gzipped: true, message: "hello" });
+    const compressed = gzipSync(Buffer.from(payload, "utf8"));
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "content-encoding": "gzip",
+      "content-length": compressed.length,
+      "x-upstream": "real",
+    });
+    res.end(compressed);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/redirect") {
+    res.writeHead(302, {
+      location: "/users",
+      "access-control-allow-origin": "*",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/redirect-echo") {
+    res.writeHead(302, {
+      location: "/echo",
+      "access-control-allow-origin": "*",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/slow") {
+    // Intentionally never responds — used by route.fetch timeout tests.
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/status/")) {
+    const code = Number(url.pathname.slice("/status/".length));
+    if (!Number.isInteger(code) || code < 100 || code > 599) {
+      json(res, 400, { error: "invalid_status" });
+      return;
+    }
+    json(res, code, { status: code });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/binary") {
+    const bytes = Buffer.from([0, 1, 2, 3, 254, 255]);
+    res.writeHead(200, {
+      "content-type": "application/octet-stream",
+      "content-length": bytes.length,
+      "x-upstream": "real",
+    });
+    res.end(bytes);
     return;
   }
 
@@ -62,11 +153,20 @@ function json(res, status, body) {
   res.end(payload);
 }
 
+function text(res, status, body) {
+  res.writeHead(status, {
+    "content-type": "text/plain; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "x-upstream": "real",
+  });
+  res.end(body);
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
 }

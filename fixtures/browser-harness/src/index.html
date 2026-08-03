@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Parity browser harness</title>
+  </head>
+  <body>
+    <h1>Parity browser harness</h1>
+    <script>
+      /**
+       * Issue an Ajax request to the upstream fake.
+       * Used by the oracle suite via page.evaluate.
+       */
+      window.trigger = async function trigger(url, init = {}) {
+        const method = init.method ?? "GET";
+        const headers = init.headers ?? {};
+        const body = init.body;
+        let response;
+        try {
+          response = await fetch(url, { method, headers, body });
+        } catch (error) {
+          return {
+            ok: false,
+            error: String(error && error.message ? error.message : error),
+          };
+        }
+
+        const responseHeaders = {};
+        response.headers.forEach((value, name) => {
+          responseHeaders[name] = value;
+        });
+
+        const contentType = response.headers.get("content-type") || "";
+        const raw = await response.text();
+        let data = null;
+        if (contentType.includes("application/json") && raw.length > 0) {
+          try {
+            data = JSON.parse(raw);
+          } catch {
+            data = null;
+          }
+        }
+
+        return {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          raw,
+          data,
+        };
+      };
+
+      window.triggerXhr = function triggerXhr(url, init = {}) {
+        return new Promise((resolve) => {
+          const xhr = new XMLHttpRequest();
+          const method = init.method ?? "GET";
+          xhr.open(method, url);
+          const headers = init.headers ?? {};
+          for (const [name, value] of Object.entries(headers)) {
+            xhr.setRequestHeader(name, value);
+          }
+          xhr.onload = () => {
+            const rawHeaders = xhr.getAllResponseHeaders();
+            const headersObj = {};
+            for (const line of rawHeaders.trim().split(/[\r\n]+/)) {
+              const parts = line.split(": ");
+              const key = parts.shift();
+              if (key) headersObj[key.toLowerCase()] = parts.join(": ");
+            }
+            let data = null;
+            try {
+              data = JSON.parse(xhr.responseText);
+            } catch {
+              data = null;
+            }
+            resolve({
+              ok: xhr.status >= 200 && xhr.status < 300,
+              status: xhr.status,
+              statusText: xhr.statusText,
+              headers: headersObj,
+              raw: xhr.responseText,
+              data,
+            });
+          };
+          xhr.onerror = () => {
+            resolve({ ok: false, error: "xhr_error" });
+          };
+          xhr.send(init.body ?? null);
+        });
+      };
+    </script>
+  </body>
+</html>

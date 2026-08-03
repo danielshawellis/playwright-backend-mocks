@@ -49,12 +49,12 @@ Node agent (@mswjs/interceptors) → pause / fulfill / continue / abort / upstre
 
 Map layers to Playwright’s own split (see parity research):
 
-| Our package | Playwright analogue |
-| --- | --- |
+| Our package           | Playwright analogue                          |
+| --------------------- | -------------------------------------------- |
 | `packages/playwright` | Client `Route` / `RouteHandler` / `_onRoute` |
-| `packages/proxy` | Dispatchers + ownership |
-| `packages/node` | RouteDelegate / apply decision |
-| `packages/protocol` | Channel settle messages |
+| `packages/proxy`      | Dispatchers + ownership                      |
+| `packages/node`       | RouteDelegate / apply decision               |
+| `packages/protocol`   | Channel settle messages                      |
 
 Do **not** vendor Playwright source. Reimplement. Keep analogous paths documented next to modules for deliberate comparison. Pin the Playwright revision used as reference (below).
 
@@ -83,12 +83,12 @@ Behavior for **already-intercepted** outbound HTTP: matchers, handler orchestrat
 
 ### Required product divergences
 
-| Topic | Behavior |
-| --- | --- |
-| Multi-owner | If **two different tests** claim the same request → fail loud (`ambiguous_route`) with diagnostics + docs link |
-| Same test, multiple handlers | **Mirror Playwright**: LIFO + `fallback` within one `testId` |
-| Record/replay format | `routeFromJSON` instead of `routeFromHAR` |
-| Extra matchers | Keep `method` / `clientId` |
+| Topic                        | Behavior                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Multi-owner                  | If **two different tests** claim the same request → fail loud (`ambiguous_route`) with diagnostics + docs link |
+| Same test, multiple handlers | **Mirror Playwright**: LIFO + `fallback` within one `testId`                                                   |
+| Record/replay format         | `routeFromJSON` instead of `routeFromHAR`                                                                      |
+| Extra matchers               | Keep `method` / `clientId`                                                                                     |
 
 ---
 
@@ -166,13 +166,13 @@ Switch the same suite to library mode and implement until green.
 
 ### What changes in backend mode
 
-| Piece | Change |
-| --- | --- |
-| Routing API | `page.route` / … → `backendMocks.route` / … |
-| Downstream | Browser harness → Node app + `startBackendMocks` |
-| Trigger | Page action → Node trigger helper |
-| Record/replay | Separate ported `routeFromJSON` tests (not dual-mode) |
-| Runner | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer` |
+| Piece         | Change                                                                   |
+| ------------- | ------------------------------------------------------------------------ |
+| Routing API   | `page.route` / … → `backendMocks.route` / …                              |
+| Downstream    | Browser harness → Node app + `startBackendMocks`                         |
+| Trigger       | Page action → Node trigger helper                                        |
+| Record/replay | Separate ported `routeFromJSON` tests (not dual-mode)                    |
+| Runner        | Proxy + `PLAYWRIGHT_BACKEND_MOCKS_*` via Playwright config / `webServer` |
 
 ### What must not change
 
