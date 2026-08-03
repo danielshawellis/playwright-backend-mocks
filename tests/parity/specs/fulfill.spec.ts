@@ -36,6 +36,7 @@ test.describe("route.fulfill", () => {
         status: 418,
         headers: {
           "x-mock": "yes",
+          "access-control-expose-headers": "*",
         },
         contentType: "text/plain",
         body: "teapot",
@@ -157,6 +158,7 @@ test.describe("route.fulfill", () => {
         headers: {
           // Playwright docs: header values are converted to a string.
           "x-count": 42 as unknown as string,
+          "access-control-expose-headers": "*",
         },
         body: "ok",
       });

@@ -29,6 +29,7 @@ test.describe("route.fetch", () => {
         headers: {
           "content-type": "application/json",
           foo: "bar",
+          "access-control-expose-headers": "*",
         },
         json: users,
       });

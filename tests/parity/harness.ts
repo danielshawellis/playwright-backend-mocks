@@ -206,6 +206,69 @@ function notWired(api: string): never {
   );
 }
 
+function routeDisposable(
+  page: Page,
+  url: RouteUrl,
+  handler: RouteHandler,
+  registration: unknown,
+): { [Symbol.dispose](): void } {
+  let disposed = false;
+  return {
+    [Symbol.dispose]() {
+      if (disposed) return;
+      disposed = true;
+
+      const candidate = registration as
+        | { [Symbol.dispose]?: () => void; dispose?: () => void | Promise<void> }
+        | undefined;
+      if (typeof candidate?.[Symbol.dispose] === "function") {
+        candidate[Symbol.dispose]();
+        return;
+      }
+      if (typeof candidate?.dispose === "function") {
+        void candidate.dispose();
+        return;
+      }
+
+      void page.unroute(url, handler);
+    },
+  };
+}
+
+async function withBrowserFailureText(
+  page: Page,
+  url: string,
+  action: () => Promise<TriggerResult>,
+): Promise<TriggerResult> {
+  let failureText: string | undefined;
+  let resolveFailure!: (value: string | undefined) => void;
+  const failurePromise = new Promise<string | undefined>((resolve) => {
+    resolveFailure = resolve;
+  });
+  const onFailed = (request: Request) => {
+    if (request.url() !== url) return;
+    failureText = request.failure()?.errorText;
+    resolveFailure(failureText);
+  };
+
+  page.on("requestfailed", onFailed);
+  try {
+    const result = await action();
+    if (!result.ok && result.error !== "opaqueredirect") {
+      const enriched =
+        failureText ??
+        (await Promise.race([
+          failurePromise,
+          sleep(100).then(() => undefined),
+        ]));
+      if (enriched) return { ...result, error: enriched };
+    }
+    return result;
+  } finally {
+    page.off("requestfailed", onFailed);
+  }
+}
+
 function createBrowserDownstreamSocket(
   page: Page,
   socketId: string,
@@ -485,7 +548,7 @@ function createBrowserRouting(page: Page): ParityRouting {
   return {
     route: async (url, handler, options) => {
       const disposable = await page.route(url, handler, options);
-      return disposable;
+      return routeDisposable(page, url, handler, disposable);
     },
     unroute: async (url, handler) => {
       if (url === undefined) {
@@ -512,21 +575,27 @@ function createBrowserRouting(page: Page): ParityRouting {
       await ensureHarness(page);
       const transport = init.transport ?? "fetch";
       if (transport === "xhr") {
-        return page.evaluate(
-          ({ url, payload }) => {
-            const triggerXhr = (globalThis as unknown as { triggerXhr: BrowserTriggerFn })
-              .triggerXhr;
-            return triggerXhr(url, payload);
-          },
-          { url, payload },
+        return withBrowserFailureText(page, url, () =>
+          page.evaluate(
+            ({ url, payload }) => {
+              const triggerXhr = (
+                globalThis as unknown as { triggerXhr: BrowserTriggerFn }
+              ).triggerXhr;
+              return triggerXhr(url, payload);
+            },
+            { url, payload },
+          ),
         );
       }
-      return page.evaluate(
-        ({ url, payload }) => {
-          const trigger = (globalThis as unknown as { trigger: BrowserTriggerFn }).trigger;
-          return trigger(url, payload);
-        },
-        { url, payload },
+      return withBrowserFailureText(page, url, () =>
+        page.evaluate(
+          ({ url, payload }) => {
+            const trigger = (globalThis as unknown as { trigger: BrowserTriggerFn })
+              .trigger;
+            return trigger(url, payload);
+          },
+          { url, payload },
+        ),
       );
     },
     openDownstreamSocket: async (url, options) => {
