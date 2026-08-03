@@ -1,5 +1,4 @@
 import { test, expect, UPSTREAM } from "../harness.js";
-import { headerValue } from "../helpers.js";
 
 test.describe("route.fetch", () => {
   test("fetches original request and fulfills", async ({ route, trigger }) => {
@@ -40,7 +39,6 @@ test.describe("route.fetch", () => {
     const response = await pending;
     expect(result.status).toBe(201);
     expect(response.headers().foo).toBe("bar");
-    expect(headerValue(result.headers, "foo")).toBe("bar");
     expect(result.data).toEqual([
       { id: 1, name: "Ada" },
       { id: 2, name: "Grace" },

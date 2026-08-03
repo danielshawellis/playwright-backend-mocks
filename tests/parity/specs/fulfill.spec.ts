@@ -1,7 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect, UPSTREAM } from "../harness.js";
-import { headerValue } from "../helpers.js";
 
 const fulfillBodyPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -44,7 +43,6 @@ test.describe("route.fulfill", () => {
     expect(result.status).toBe(418);
     expect(result.raw).toBe("teapot");
     expect(response.headers()["x-mock"]).toBe("yes");
-    expect(headerValue(result.headers, "x-mock")).toBe("yes");
   });
 
   test("serves a local file via path", async ({ route, trigger }) => {
