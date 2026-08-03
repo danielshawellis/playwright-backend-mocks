@@ -4,12 +4,13 @@ Step 1 of the rewrite ([`research/rewrite-specification.md`](../../research/rewr
 
 ## Pins
 
-| Item                      | Value                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------- |
-| `@playwright/test` npm    | `1.62.1` (exact; no `^`)                                                                    |
-| Research inventory commit | `15b1aec` ([`playwright-network-tests.json`](../../research/playwright-network-tests.json)) |
+| Item                       | Value                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `@playwright/test` npm     | `1.62.1` (exact; no `^`)                                                                    |
+| `microsoft/playwright` SHA | `26a9e47` (tag `v1.62.1`)                                                                   |
+| Research inventory commit  | `15b1aec` ([`playwright-network-tests.json`](../../research/playwright-network-tests.json)) |
 
-Bump both deliberately when refreshing the oracle against a newer Playwright.
+See [`research/playwright-network-parity.md`](../../research/playwright-network-parity.md) for HTTP + WebSocket source mapping. Bump pins deliberately when refreshing the oracle against a newer Playwright.
 
 ## Modes
 

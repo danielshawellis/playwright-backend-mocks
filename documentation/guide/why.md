@@ -63,6 +63,6 @@ The payment URL is called by your **Node** process. The handler still looks like
 
 - Not a replacement for `page.route()` — use both when the browser _and_ the server talk to the outside world.
 - Not a general HTTP proxy for browsers or non-Node clients.
-- Not an interceptor for WebSockets, gRPC, or raw TCP.
+- Not an interceptor for gRPC, raw TCP, or non-global WebSocket clients (npm `ws`, etc.). Application `globalThis.WebSocket` mocking is on the rewrite roadmap — see [Limitations](/guide/limitations).
 
 See [Limitations](/guide/limitations) for the v1 boundary, or [get started](/guide/getting-started) and wire it into a suite.

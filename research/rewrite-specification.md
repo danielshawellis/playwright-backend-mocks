@@ -44,17 +44,19 @@ Playwright test (backendMocks / route handlers)
 Proxy (claim broadcast, ownership, history)
         │ WebSocket
         ▼
-Node agent (@mswjs/interceptors) → pause / fulfill / continue / abort / upstream fetch
+Node agent (@mswjs/interceptors HTTP + WebSocketInterceptor)
+        → HTTP: pause / fulfill / continue / abort / upstream fetch
+        → WS: connection bridge / connectToServer / ensureOpened / frames / close
 ```
 
-Map layers to Playwright’s own split (see parity research):
+Map layers to Playwright’s own split (see parity research §1–2 / §1b):
 
-| Our package           | Playwright analogue                          |
-| --------------------- | -------------------------------------------- |
-| `packages/playwright` | Client `Route` / `RouteHandler` / `_onRoute` |
-| `packages/proxy`      | Dispatchers + ownership                      |
-| `packages/node`       | RouteDelegate / apply decision               |
-| `packages/protocol`   | Channel settle messages                      |
+| Our package           | Playwright analogue                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `packages/playwright` | Client `Route` / `RouteHandler` / `_onRoute` **and** `WebSocketRoute` / `_onWebSocketRoute` |
+| `packages/proxy`      | Dispatchers + ownership (HTTP + sockets)                                                    |
+| `packages/node`       | RouteDelegate + injected `webSocketMock` role (MSW bridge)                                  |
+| `packages/protocol`   | Channel settle messages + WS lifecycle messages                                             |
 
 Do **not** vendor Playwright source. Reimplement. Keep analogous paths documented next to modules for deliberate comparison. Pin the Playwright revision used as reference (below).
 
@@ -161,8 +163,9 @@ Library-only behavior (`clientId`, cross-test ambiguity, proxy auth/disconnects,
 ### Pin
 
 - Exact `@playwright/test` npm version (no floating `^` for the oracle).
-- Matching `microsoft/playwright` commit SHA recorded in the suite config/README.
-- Starting pin: the revision already surveyed in the parity research (`15b1aec` / current repo Playwright line). Bump only deliberately when updating both oracle and reference mapping.
+- Matching `microsoft/playwright` commit SHA recorded in the suite config/README and [`playwright-network-parity.md`](./playwright-network-parity.md).
+- Current pin: **`1.62.1`** (`26a9e47`). Historical network-test inventory JSON still keyed at `15b1aec` until regenerated.
+- Bump only deliberately when updating both oracle and reference mapping.
 
 ### Fixtures
 

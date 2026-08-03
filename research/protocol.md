@@ -460,6 +460,43 @@ URL glob matching follows a Playwright-like algorithm (`*` / `**`). Method and c
 - Node disconnect → pending requests for that agent fail; history records the error.
 - Test unregister rejects outstanding handler waits for that test.
 
+---
+
+## Application WebSockets (Step 2 draft)
+
+Control-plane traffic above is unrelated to **application** WebSockets. App sockets need a session-oriented companion to HTTP pause/settle. Exact Zod schemas land with the rewrite; shapes below mirror Playwright’s `WebSocketRoute` channel / injected mock (see [`playwright-network-parity.md`](./playwright-network-parity.md) §1b / §8).
+
+### Registration
+
+- Playwright registers WS handlers similarly to HTTP routes (`kind: "websocket"` or dedicated `wsRoute:*` messages).
+- `unrouteAll` **must not** clear WebSocket routes (Playwright quirk).
+- Matching uses Playwright-like URL rules with `webSocket=true`; predicates stay on the worker via claim broadcast.
+- Zero matches → passthrough (real upstream). One owning `testId` → newest handler. Multiple `testId`s → `ambiguous_route`.
+
+### Node → Proxy → Playwright (illustrative)
+
+```ts
+{ type: "ws:connection"; socketId: string; url: string; protocols: string[]; clientId: string }
+{ type: "ws:messageFromPage"; socketId: string; data: string; isBase64: boolean }
+{ type: "ws:messageFromServer"; socketId: string; data: string; isBase64: boolean }
+{ type: "ws:closePage"; socketId: string; code?: number; reason?: string; wasClean: boolean }
+{ type: "ws:closeServer"; socketId: string; code?: number; reason?: string; wasClean: boolean }
+```
+
+### Playwright → Proxy → Node (illustrative)
+
+```ts
+{ type: "ws:passthrough"; socketId: string }
+{ type: "ws:connect"; socketId: string }          // connectToServer
+{ type: "ws:ensureOpened"; socketId: string }     // mock open after handler
+{ type: "ws:sendToPage"; socketId: string; data: string; isBase64: boolean }
+{ type: "ws:sendToServer"; socketId: string; data: string; isBase64: boolean }
+{ type: "ws:closePage"; socketId: string; code?: number; reason?: string; wasClean: boolean }
+{ type: "ws:closeServer"; socketId: string; code?: number; reason?: string; wasClean: boolean }
+```
+
+Node applies these via `@mswjs/interceptors` `WebSocketInterceptor` plus a product bridge for Playwright open/close timing (`ensureOpened`, send-during-`CONNECTING`, connect-then-real-`onopen`). Only `globalThis.WebSocket` is in scope.
+
 ## Compatibility
 
 - Protocol version is the hard gate.
