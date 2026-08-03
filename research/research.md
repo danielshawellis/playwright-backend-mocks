@@ -96,3 +96,7 @@ A thin spike confirmed:
 5. `interceptor.dispose()` cleanly removes patches
 
 These behaviors are sufficient for the v1 design.
+
+## Related plans
+
+- [Playwright Parity via Oracle-Suite TDD](./playwright-parity-tdd.md) — write the request-routing suite against Playwright itself first, then switch the same suite onto this library.
