@@ -3,8 +3,13 @@ import { WebSocketServer } from "ws";
 
 const port = Number(process.env.PORT ?? 4002);
 
+/** @type {{ code: number, reason: string } | null} */
+let lastClose = null;
+
 const httpServer = createServer((req, res) => {
-  if (req.method === "GET" && req.url === "/health") {
+  const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+
+  if (req.method === "GET" && url.pathname === "/health") {
     const body = JSON.stringify({ ok: true });
     res.writeHead(200, {
       "content-type": "application/json",
@@ -13,11 +18,42 @@ const httpServer = createServer((req, res) => {
     res.end(body);
     return;
   }
+
+  if (req.method === "GET" && url.pathname === "/last-close") {
+    const body = JSON.stringify({ lastClose });
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(body),
+    });
+    res.end(body);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/reset-last-close") {
+    lastClose = null;
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   res.writeHead(404);
   res.end();
 });
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols(protocols) {
+    // Prefer an explicit chat protocol when requested; otherwise accept the first.
+    if (protocols.has("chat.v1")) {
+      return "chat.v1";
+    }
+    if (protocols.has("chat.v2")) {
+      return "chat.v2";
+    }
+    const first = protocols.values().next().value;
+    return first ?? false;
+  },
+});
 
 httpServer.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
@@ -38,12 +74,24 @@ wss.on("connection", (ws, req) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
   const mode = url.searchParams.get("mode") ?? "echo";
 
+  ws.on("close", (code, reason) => {
+    lastClose = { code, reason: reason.toString() };
+  });
+
   ws.on("message", (data, isBinary) => {
+    const asText = !isBinary ? data.toString() : "";
+
+    // Upstream-initiated close for default server→page close forwarding tests.
+    if (!isBinary && asText === "die") {
+      ws.close(3008, "server-bye");
+      return;
+    }
+
     if (mode === "prefix") {
       if (isBinary) {
         ws.send(Buffer.concat([Buffer.from("BIN:"), Buffer.from(data)]));
       } else {
-        ws.send(`echo:${data.toString()}`);
+        ws.send(`echo:${asText}`);
       }
       return;
     }

@@ -4,7 +4,7 @@ Date: 2026-08-03 (updated same day after WS + HTTP gap implementation)
 Pin: `@playwright/test@1.62.1` / research commit `15b1aec`  
 Suite at latest green run: **238** browser-mode tests
 
-**Status update:** WebSockets are now in rewrite-spec §4 (conditional yes for `globalThis.WebSocket`). Oracle includes `route-websocket.spec.ts` and the HTTP P0/P1 gaps from the ranked backlog below are largely closed (see [`checklist.md`](./checklist.md)). Remaining items are mostly P2 sharpening and intentional skips.
+**Status update:** WebSockets stay on the rewrite roadmap with **loud docs caveats** (HTTP ≈ all clients; WS = `globalThis.WebSocket` only — see rewrite-spec §4). Oracle `route-websocket.spec.ts` now targets extreme Playwright `WebSocketRoute` contract completeness (mock, connectToServer matrix, close both ways, protocols, binary, context precedence, pending-handler CONNECTING/`send`, …). Remaining items are mostly P2 sharpening and intentional browser-lifecycle skips.
 
 This document is the methodical docs → implementation → suite comparison requested for Step 1. It invents no new product API; it inventories Playwright’s interception surface, maps our suite, and lists remaining gaps needed for near-complete behavioral parity (Ajax + WebSockets), excluding browser-only concerns (cookies, CORS auto-headers, navigation, service workers, favicon, TLS/timing).
 
@@ -208,36 +208,36 @@ Legend: **yes** = meaningful pin · **partial** = API touched but important bran
 | Context.routeFromHAR                                                 | no     | page only                                      |
 | Zip / attach / navigation HAR                                        | skip   | non-portable                                   |
 
-### WebSocketRoute / `routeWebSocket` — **all missing**
+### WebSocketRoute / `routeWebSocket` — oracle largely complete
 
-Portable/oracle targets adapted from docs + `tests/library/route-web-socket.spec.ts` + source:
+Portable/oracle targets adapted from docs + `tests/library/route-web-socket.spec.ts` + source. See [`checklist.md`](./checklist.md) WebSocketRoute table for current status.
 
-| Behavior                                                                           | Priority |
-| ---------------------------------------------------------------------------------- | -------- |
-| Full mock without `connectToServer` (auto-open)                                    | P0       |
-| Text + binary (`blob` / `arraybuffer`) page messages                               | P0       |
-| `connectToServer` + default bidirectional forwarding                               | P0       |
-| `onMessage` on page side disables page→server auto-forward                         | P0       |
-| `onMessage` on server side disables server→page auto-forward                       | P0       |
-| Manual block/modify both directions                                                | P0       |
-| `onMessage` replace (second call wins)                                             | P1       |
-| Default close forwarding both ways                                                 | P0       |
-| `onClose` disables default close forwarding                                        | P0       |
-| `close({ code, reason })`                                                          | P0       |
-| `url()` / `protocols()` (empty + negotiated / mock first protocol)                 | P0       |
-| Matcher: glob, regex, predicate, baseURL, no trailing slash                        | P0       |
-| Passthrough when no WS route matches                                               | P0       |
-| Only sockets created **after** registration                                        | P0       |
-| Empty handler still opens mock                                                     | P1       |
-| `connectToServer` twice throws                                                     | P1       |
-| Concurrent routed sockets isolated                                                 | P0       |
-| Context.routeWebSocket (if oracle includes context)                                | P1       |
-| Page vs context WS precedence (newest; page before context; **no fallback chain**) | P1       |
-| `unrouteAll` does not remove WS routes                                             | P1       |
-| Upstream handshake failure with connectToServer                                    | P1       |
-| Binary Blob send race (async arrayBuffer)                                          | P2       |
-| Frame navigation/detach close                                                      | skip     | browser lifecycle |
-| Relative WS URL / scheme casing baseURL                                            | P1       |
+| Behavior                                                                      | Priority | Oracle |
+| ----------------------------------------------------------------------------- | -------- | ------ |
+| Full mock without `connectToServer` (auto-open)                               | P0       | yes    |
+| Text + binary (`blob` / `arraybuffer`) page messages                          | P0       | yes    |
+| `connectToServer` + default bidirectional forwarding                          | P0       | yes    |
+| `onMessage` on page side disables page→server auto-forward                    | P0       | yes    |
+| `onMessage` on server side disables server→page auto-forward                  | P0       | yes    |
+| Manual block/modify both directions                                           | P0       | yes    |
+| `onMessage` replace (second call wins)                                        | P1       | yes    |
+| Default close forwarding both ways                                            | P0       | yes    |
+| `onClose` disables default close forwarding (+ manual re-forward)             | P0       | yes    |
+| `close()` / `close({ code, reason })` / close while connected                 | P0       | yes    |
+| `url()` / `protocols()` (empty + string/array + server-side mirror)           | P0       | yes    |
+| Negotiated subprotocol pass-through                                           | P0       | yes    |
+| Matcher: glob, regex, predicate, baseURL (+ scheme casing), no trailing slash | P0       | yes    |
+| Passthrough when no WS route matches                                          | P0       | yes    |
+| Only sockets created **after** registration                                   | P0       | yes    |
+| Empty handler still opens mock                                                | P1       | yes    |
+| `connectToServer` twice throws                                                | P1       | yes    |
+| Concurrent routed sockets isolated                                            | P0       | yes    |
+| Context.routeWebSocket + page-over-context precedence                         | P1       | yes    |
+| `unrouteAll` does not remove WS routes                                        | P1       | yes    |
+| Upstream handshake failure with connectToServer                               | P1       | yes    |
+| Pending handler CONNECTING; `send` forces open                                | P1       | yes    |
+| Binary Blob send race (async arrayBuffer)                                     | P2       | skip   |
+| Frame navigation/detach close                                                 | skip     | skip   |
 
 ---
 

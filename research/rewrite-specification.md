@@ -88,7 +88,27 @@ Behavior for **already-intercepted** outbound HTTP **and** application WebSocket
 - Text and binary frames; concurrent sockets remain isolated
 - Only sockets opened **after** registration are routed; unmatched passthrough
 
-Feasibility for Step 2: **conditional yes** for Node apps using `globalThis.WebSocket` (Node ≥22 / Undici global), via `@mswjs/interceptors` `WebSocketInterceptor` plus a product-owned upstream bridge for Playwright-compatible open/close semantics. npm `ws` and directly imported Undici constructors are **not** covered unless separately designed — document that divergence.
+Feasibility for Step 2: **conditional yes** for Node apps using `globalThis.WebSocket` (Node ≥22 / Undici global), via `@mswjs/interceptors` `WebSocketInterceptor` plus a product-owned upstream bridge for Playwright-compatible open/close semantics. This stays on the roadmap even with incomplete client coverage — the ecosystem is moving toward the WHATWG / Undici global, so coverage of real codebases should improve over time. We are **not** counting on MSWJS to implement custom-client hooks (e.g. npm `ws`) soon; plan around global-only interception.
+
+### Partial WebSocket support (Node) — plan this into docs from day one
+
+HTTP and WebSocket support are **not** the same breadth:
+
+| Surface                    | Coverage intent                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Outbound **HTTP**          | Virtually every Node HTTP client we care about (via `@mswjs/interceptors` node preset / Undici / `http` / `https` / `fetch`)                                                                |
+| Application **WebSockets** | **`globalThis.WebSocket` only** (WHATWG global). npm `ws`, other third-party clients, and constructors imported directly from Undici (bypassing the patched global) are **not** intercepted |
+
+Why: MSW’s interceptor patches the **global** WebSocket constructor. Clients that never touch that global never enter the mock pipeline — they silently talk to the real network. That is a different failure mode than HTTP, where the interceptor surface already covers the common stacks.
+
+**Documentation requirement (non-negotiable for shipping WS):** every public WebSocket doc page / guide section must open with a large, unavoidable caveat that:
+
+1. We do **not** support all WebSocket clients (contrast with HTTP).
+2. Supported path is `globalThis.WebSocket` / WHATWG-compatible global usage.
+3. npm `ws` and direct-import constructors will bypass mocks unless/until a separate design lands.
+4. A short “why” (global patch vs full transport rewrite) so readers do not assume silent parity with Playwright browser routing.
+
+Do not bury this in a footnote. Readers who only skim WS docs must still see it.
 
 ### Out of scope
 
@@ -104,7 +124,7 @@ Feasibility for Step 2: **conditional yes** for Node apps using `globalThis.WebS
 | Same test, multiple handlers | **Mirror Playwright**: HTTP LIFO + `fallback`; WS newest-match only (no fallback chain)                               |
 | Record/replay format         | `routeFromJSON` instead of `routeFromHAR`                                                                             |
 | Extra matchers               | Keep `method` / `clientId`                                                                                            |
-| WS constructor surface       | Guarantee `globalThis.WebSocket` only; document `ws` / direct-import bypass                                           |
+| WS constructor surface       | Guarantee `globalThis.WebSocket` only; **loud docs** on every WS page for `ws` / direct-import bypass                 |
 
 ---
 

@@ -4,6 +4,8 @@
 
 Achieve near-complete behavioral parity with Playwright’s browser request-routing APIs (`page.route` / `context.route`, fulfill / continue / fetch / abort, matchers, unroute, inspection / spying, HAR-style record-replay, **and** `page.routeWebSocket` / `WebSocketRoute`) for **outbound Node.js HTTP and `globalThis.WebSocket`**, without inventing a divergent DX.
 
+**WebSocket caveat (product, not oracle):** the Playwright oracle exercises the full `WebSocketRoute` contract in-browser. Library mode will only intercept Node’s **`globalThis.WebSocket`**, not every WS client (contrast with near-universal HTTP client coverage). Rewrite-spec §4 requires large docs warnings on every WS page explaining why.
+
 The strategy: **write the parity suite against Playwright itself first**, then switch the same suite onto this library with only a thin adapter change.
 
 ## Why this works

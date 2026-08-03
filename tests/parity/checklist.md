@@ -32,24 +32,37 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 
 ## WebSocketRoute portable cases
 
-| Behavior                                              | Status  |
-| ----------------------------------------------------- | ------- |
-| Full mock without server                              | covered |
-| Empty handler opens mock                              | covered |
-| `url()` / `protocols()`                               | covered |
-| Text + binary `send` to page                          | covered |
-| `connectToServer` default bidirectional forward       | covered |
-| `onMessage` disables that direction’s auto-forward    | covered |
-| Second `onMessage` replaces first                     | covered |
-| `close({code,reason})`                                | covered |
-| Default close forwarding / `onClose` disables it      | covered |
-| `connectToServer` twice throws                        | covered |
-| Glob / RegExp / newest-match / unmatched passthrough  | covered |
-| Only sockets after registration (+ re-nav for inject) | covered |
-| Concurrent sockets isolated                           | covered |
-| Upstream handshake failure                            | covered |
-| `unrouteAll` does not clear WS routes                 | covered |
-| `baseURL` relative pattern                            | covered |
+| Behavior                                               | Status  |
+| ------------------------------------------------------ | ------- |
+| Full mock without server                               | covered |
+| Empty handler opens mock                               | covered |
+| `url()` / `protocols()` (+ string protocol arg)        | covered |
+| Proactive `send` without inbound message               | covered |
+| Text + binary `send` to page                           | covered |
+| Binary frames from page into `onMessage`               | covered |
+| Binary default-forward through `connectToServer`       | covered |
+| `connectToServer` default bidirectional forward        | covered |
+| Explicit pass-through `onMessage` both directions      | covered |
+| Bidirectional block/modify matrix                      | covered |
+| `onMessage` disables that direction’s auto-forward     | covered |
+| Second `onMessage` replaces first                      | covered |
+| `close()` / `close({code,reason})`                     | covered |
+| `close` while connected closes page + upstream         | covered |
+| Default close forwarding **both** ways                 | covered |
+| `onClose` disables forward; manual re-forward works    | covered |
+| Server-side `onClose` disables server→page close       | covered |
+| `connectToServer` twice throws                         | covered |
+| Glob / RegExp / predicate / newest-match / passthrough | covered |
+| Host URL with no trailing slash                        | covered |
+| Only sockets after registration (+ re-nav for inject)  | covered |
+| Concurrent sockets isolated                            | covered |
+| Upstream handshake failure                             | covered |
+| Negotiated subprotocol pass-through                    | covered |
+| Server-side `protocols()` mirrors page request         | covered |
+| `unrouteAll` does not clear WS routes                  | covered |
+| `baseURL` relative pattern (+ uppercase scheme)        | covered |
+| `context.routeWebSocket` + page-over-context win       | covered |
+| Pending async handler stays CONNECTING; `send` opens   | covered |
 
 ## routeFromHAR → routeFromJSON portable cases
 
@@ -63,16 +76,16 @@ Scenarios adapted from Playwright’s network suite at research commit `15b1aec`
 
 ## Intentional skips
 
-| Topic                                                 | Reason                                                      |
-| ----------------------------------------------------- | ----------------------------------------------------------- |
-| CORS auto-headers, cookie jar, SW, navigation/favicon | Browser-only                                                |
-| WS frame navigation/detach close, page-closure races  | Browser lifecycle                                           |
-| DOM `binaryType` Blob vs ArrayBuffer object identity  | Client-specific; shared suite asserts bytes                 |
-| npm `ws` / non-global WebSocket constructors          | Step 2 divergence — `globalThis.WebSocket` only             |
-| HAR zip / attach / navigation HAR                     | Non-portable                                                |
-| Page vs context HTTP/WS precedence                    | Product single `backendMocks` scope (oracle optional later) |
-| General `APIRequestContext` client                    | OOS except as `route.fetch` engine                          |
-| Resource timing / TLS                                 | Browser / TLS                                               |
+| Topic                                                 | Reason                                                                      |
+| ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| CORS auto-headers, cookie jar, SW, navigation/favicon | Browser-only                                                                |
+| WS frame navigation/detach close, page-closure races  | Browser lifecycle                                                           |
+| DOM `binaryType` Blob vs ArrayBuffer object identity  | Client-specific; shared suite asserts bytes                                 |
+| npm `ws` / non-global WebSocket constructors          | Step 2 divergence — `globalThis.WebSocket` only                             |
+| HAR zip / attach / navigation HAR                     | Non-portable                                                                |
+| Page vs context HTTP precedence                       | Product single `backendMocks` scope (HTTP); WS precedence covered in oracle |
+| General `APIRequestContext` client                    | OOS except as `route.fetch` engine                                          |
+| Resource timing / TLS                                 | Browser / TLS                                                               |
 
 ## Library-only (not in this suite)
 

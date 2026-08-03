@@ -183,7 +183,7 @@ These are Playwright browser-network features. Near-full parity of _AJAX request
 - Service worker / shared worker / blob / data: URL quirks
 - `networkidle`, resource timing, transfer sizes from browser
 - Favicon auto-abort
-- ~~`routeWebSocket` (app WebSockets are out of v1 scope; our WS is control-plane only)~~ **Now in scope** for `globalThis.WebSocket` (see rewrite-specification §4). Control-plane WS remains separate from application sockets.
+- ~~`routeWebSocket` (app WebSockets are out of v1 scope; our WS is control-plane only)~~ **Now in scope** for `globalThis.WebSocket` (see rewrite-specification §4). Control-plane WS remains separate from application sockets. **Partial client coverage:** unlike HTTP (virtually all common clients), WS mocks only the WHATWG global — npm `ws` / direct Undici imports bypass. Product docs must call this out loudly on every WS page; we are not waiting on MSW custom-client support.
 - HAR recording format, HAR zip attach mode, tracing HAR
 - Global / context `APIRequestContext` as a general HTTP client (only needed as the engine behind `route.fetch`)
 
@@ -287,37 +287,37 @@ Full machine-readable dump: [`research/playwright-network-tests.json`](./playwri
 
 ### Files and counts
 
-| File                                                        | ~Tests | Focus                                              |
-| ----------------------------------------------------------- | -----: | -------------------------------------------------- |
-| `tests/page/page-route.spec.ts`                             |     52 | Intercept, abort, CORS, redirects, times, chaining |
-| `tests/page/page-request-fulfill.spec.ts`                   |     24 | `route.fulfill`                                    |
-| `tests/page/page-request-continue.spec.ts`                  |     39 | `route.continue` (+ postData)                      |
-| `tests/page/page-request-fallback.spec.ts`                  |     14 | `route.fallback` chaining                          |
-| `tests/page/page-request-intercept.spec.ts`                 |     15 | `route.fetch` + fulfill                            |
-| `tests/page/interception.spec.ts`                           |     14 | Glob/regex, workers, cache                         |
-| `tests/page/page-wait-for-request.spec.ts`                  |      8 | `waitForRequest`                                   |
-| `tests/page/page-wait-for-response.spec.ts`                 |      8 | `waitForResponse` (browser; lower priority for us) |
-| `tests/page/page-event-request.spec.ts`                     |     16 | Request events                                     |
-| `tests/page/page-event-network.spec.ts`                     |      7 | Event ordering                                     |
-| `tests/page/page-network-request.spec.ts`                   |     29 | Request object API                                 |
-| `tests/page/page-network-response.spec.ts`                  |     26 | Response object API                                |
-| `tests/page/page-network-idle.spec.ts`                      |     14 | `networkidle` (N/A for us)                         |
-| `tests/page/page-network-sizes.spec.ts`                     |     12 | Sizes (mostly N/A)                                 |
-| `tests/page/network-post-data.spec.ts`                      |      6 | postData edge cases                                |
-| `tests/library/browsercontext-route.spec.ts`                |     20 | context.route + precedence                         |
-| `tests/library/unroute-behavior.spec.ts`                    |     16 | unroute / unrouteAll lifecycle                     |
+| File                                                        | ~Tests | Focus                                                            |
+| ----------------------------------------------------------- | -----: | ---------------------------------------------------------------- |
+| `tests/page/page-route.spec.ts`                             |     52 | Intercept, abort, CORS, redirects, times, chaining               |
+| `tests/page/page-request-fulfill.spec.ts`                   |     24 | `route.fulfill`                                                  |
+| `tests/page/page-request-continue.spec.ts`                  |     39 | `route.continue` (+ postData)                                    |
+| `tests/page/page-request-fallback.spec.ts`                  |     14 | `route.fallback` chaining                                        |
+| `tests/page/page-request-intercept.spec.ts`                 |     15 | `route.fetch` + fulfill                                          |
+| `tests/page/interception.spec.ts`                           |     14 | Glob/regex, workers, cache                                       |
+| `tests/page/page-wait-for-request.spec.ts`                  |      8 | `waitForRequest`                                                 |
+| `tests/page/page-wait-for-response.spec.ts`                 |      8 | `waitForResponse` (browser; lower priority for us)               |
+| `tests/page/page-event-request.spec.ts`                     |     16 | Request events                                                   |
+| `tests/page/page-event-network.spec.ts`                     |      7 | Event ordering                                                   |
+| `tests/page/page-network-request.spec.ts`                   |     29 | Request object API                                               |
+| `tests/page/page-network-response.spec.ts`                  |     26 | Response object API                                              |
+| `tests/page/page-network-idle.spec.ts`                      |     14 | `networkidle` (N/A for us)                                       |
+| `tests/page/page-network-sizes.spec.ts`                     |     12 | Sizes (mostly N/A)                                               |
+| `tests/page/network-post-data.spec.ts`                      |      6 | postData edge cases                                              |
+| `tests/library/browsercontext-route.spec.ts`                |     20 | context.route + precedence                                       |
+| `tests/library/unroute-behavior.spec.ts`                    |     16 | unroute / unrouteAll lifecycle                                   |
 | `tests/library/route-web-socket.spec.ts`                    |     25 | `routeWebSocket` — **now in oracle** (`route-websocket.spec.ts`) |
-| `tests/library/har.spec.ts`                                 |     63 | HAR recording                                      |
-| `tests/library/har-websocket.spec.ts`                       |     12 | HAR + WS                                           |
-| `tests/library/browsercontext-har.spec.ts`                  |     33 | `routeFromHAR` replay/update                       |
-| `tests/library/browsercontext-network-event.spec.ts`        |      7 | Context events                                     |
-| `tests/library/browsercontext-fetch.spec.ts`                |     87 | APIRequestContext                                  |
-| `tests/library/browsercontext-fetch-algorithms.spec.ts`     |     15 | gzip/deflate/br                                    |
-| `tests/library/browsercontext-fetch-happy-eyeballs.spec.ts` |      4 | IPv6                                               |
-| `tests/library/global-fetch.spec.ts`                        |     49 | Global request                                     |
-| `tests/library/global-fetch-cookie.spec.ts`                 |     20 | Cookie jar                                         |
-| `tests/library/fetch-proxy.spec.ts`                         |      6 | Fetch via proxy                                    |
-| `tests/library/resource-timing.spec.ts`                     |      5 | Resource timing (N/A)                              |
+| `tests/library/har.spec.ts`                                 |     63 | HAR recording                                                    |
+| `tests/library/har-websocket.spec.ts`                       |     12 | HAR + WS                                                         |
+| `tests/library/browsercontext-har.spec.ts`                  |     33 | `routeFromHAR` replay/update                                     |
+| `tests/library/browsercontext-network-event.spec.ts`        |      7 | Context events                                                   |
+| `tests/library/browsercontext-fetch.spec.ts`                |     87 | APIRequestContext                                                |
+| `tests/library/browsercontext-fetch-algorithms.spec.ts`     |     15 | gzip/deflate/br                                                  |
+| `tests/library/browsercontext-fetch-happy-eyeballs.spec.ts` |      4 | IPv6                                                             |
+| `tests/library/global-fetch.spec.ts`                        |     49 | Global request                                                   |
+| `tests/library/global-fetch-cookie.spec.ts`                 |     20 | Cookie jar                                                       |
+| `tests/library/fetch-proxy.spec.ts`                         |      6 | Fetch via proxy                                                  |
+| `tests/library/resource-timing.spec.ts`                     |      5 | Resource timing (N/A)                                            |
 
 ### Priority subsets for _our_ parity suite
 
