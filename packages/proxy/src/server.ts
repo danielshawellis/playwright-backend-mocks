@@ -707,6 +707,9 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           requestId: message.requestId,
           fetchId: result.fetchId,
           ...(result.overrides !== undefined ? { overrides: result.overrides } : {}),
+          ...(result.maxRedirects !== undefined
+            ? { maxRedirects: result.maxRedirects }
+            : {}),
         });
 
         const fetchResult = await new Promise<

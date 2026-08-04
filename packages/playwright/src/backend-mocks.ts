@@ -370,6 +370,9 @@ class BackendRouteImpl implements BackendRoute {
         action: "fetch",
         fetchId,
         ...(overrides !== undefined ? { overrides } : {}),
+        ...(options.maxRedirects !== undefined
+          ? { maxRedirects: options.maxRedirects }
+          : {}),
       },
     });
 

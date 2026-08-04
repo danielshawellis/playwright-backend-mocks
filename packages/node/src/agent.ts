@@ -45,6 +45,8 @@ const DISCONNECTED_MESSAGE =
 /** When true, interceptor listeners pass through without consulting the proxy. */
 const upstreamBypass = new AsyncLocalStorage<true>();
 
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
+
 export async function startBackendMocks(
   options: StartBackendMocksOptions = {},
 ): Promise<BackendMocksAgent> {
@@ -223,7 +225,9 @@ function handleProxyMessage(
     case "decision:fetch": {
       const item = pending.get(message.requestId);
       if (!item) return;
-      void performUpstream(item.request, message.overrides)
+      void performUpstream(item.request, message.overrides, {
+        maxRedirects: message.maxRedirects,
+      })
         .then(async (response) => {
           const serialized = await serializeResponse(response);
           connection.send({
@@ -250,48 +254,115 @@ function handleProxyMessage(
   }
 }
 
+/**
+ * Perform an upstream request with continue/fetch overrides.
+ * Redirect handling mirrors Playwright APIRequestContext / browser continue:
+ * headers persist across hops; url/method/postData apply to the first hop only
+ * (method/body rewrite on 301/302/303 per fetch spec).
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts
+ */
 async function performUpstream(
   original: Request,
   overrides?: RequestOverrides,
+  options: { maxRedirects?: number } = {},
 ): Promise<Response> {
   return upstreamBypass.run(true, async () => {
-    const url = overrides?.url ?? original.url;
-    const method = overrides?.method ?? original.method;
-    const headers = new Headers(overrides?.headers ?? normalizeHeaders(original.headers));
+    // Playwright: maxRedirects ?? 20; 0 → -1 meaning "do not follow".
+    let redirectsRemaining = options.maxRedirects ?? 20;
+    if (options.maxRedirects === 0) {
+      redirectsRemaining = -1;
+    }
+
+    let url = overrides?.url ?? original.url;
+    let method = overrides?.method ?? original.method;
+    const headers = new Headers(
+      overrides?.headers ?? normalizeHeaders(original.headers),
+    );
 
     let body: Uint8Array | null = null;
     if (overrides?.bodyBase64 !== undefined) {
       const decoded = decodeBody(overrides.bodyBase64);
       body = decoded === null ? null : new Uint8Array(decoded);
       // Chromium Fetch.continueRequest recalculates Content-Length from postData.
-      // Stale Content-Length from the original request (or a forbidden override)
-      // must not truncate/reject the amended body.
-      if (body === null || body.byteLength === 0) {
-        headers.delete("content-length");
-      } else {
-        headers.set("content-length", String(body.byteLength));
-      }
+      syncContentLength(headers, body);
     } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
       body = new Uint8Array(await original.clone().arrayBuffer());
     }
 
-    const init: RequestInit = {
-      method,
-      headers,
-      redirect: "manual",
-    };
+    for (;;) {
+      const init: RequestInit = {
+        method,
+        headers,
+        redirect: "manual",
+      };
 
-    if (
-      body !== null &&
-      method.toUpperCase() !== "GET" &&
-      method.toUpperCase() !== "HEAD"
-    ) {
-      // Copy into a fresh ArrayBuffer-backed view for DOM BodyInit typings.
-      init.body = Uint8Array.from(body);
+      if (
+        body !== null &&
+        method.toUpperCase() !== "GET" &&
+        method.toUpperCase() !== "HEAD"
+      ) {
+        // Copy into a fresh ArrayBuffer-backed view for DOM BodyInit typings.
+        init.body = Uint8Array.from(body);
+      }
+
+      const response = await fetch(url, init);
+
+      if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
+        return response;
+      }
+      if (redirectsRemaining === 0) {
+        throw new Error("Max redirect count exceeded");
+      }
+
+      const locationHeader = response.headers.get("location");
+      if (locationHeader === null || locationHeader.length === 0) {
+        return response;
+      }
+
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(locationHeader, url);
+      } catch {
+        throw new Error(
+          `uri requested responds with an invalid redirect URL: ${locationHeader}`,
+        );
+      }
+
+      // Drain the redirect body so the socket can be reused.
+      await response.arrayBuffer().catch(() => undefined);
+
+      const status = response.status;
+      const upperMethod = method.toUpperCase();
+      if (
+        ((status === 301 || status === 302) && upperMethod === "POST") ||
+        (status === 303 && upperMethod !== "GET" && upperMethod !== "HEAD")
+      ) {
+        method = "GET";
+        body = null;
+        headers.delete("content-encoding");
+        headers.delete("content-language");
+        headers.delete("content-length");
+        headers.delete("content-location");
+        headers.delete("content-type");
+      }
+
+      if (nextUrl.origin !== new URL(url).origin) {
+        headers.delete("authorization");
+      }
+      headers.set("host", nextUrl.host);
+
+      url = nextUrl.href;
+      redirectsRemaining -= 1;
     }
-
-    return fetch(url, init);
   });
+}
+
+function syncContentLength(headers: Headers, body: Uint8Array | null): void {
+  if (body === null || body.byteLength === 0) {
+    headers.delete("content-length");
+  } else {
+    headers.set("content-length", String(body.byteLength));
+  }
 }
 
 function responseFromSerialized(response: SerializedResponse): Response {

@@ -204,6 +204,8 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
         action: z.literal("fetch"),
         fetchId: z.string(),
         overrides: requestOverridesSchema.optional(),
+        /** Playwright route.fetch maxRedirects; omit → default 20; 0 → do not follow. */
+        maxRedirects: z.number().int().optional(),
       }),
     ]),
   }),
@@ -270,6 +272,8 @@ export const proxyToClientMessageSchema = z.discriminatedUnion("type", [
     requestId: z.string(),
     fetchId: z.string(),
     overrides: requestOverridesSchema.optional(),
+    /** Playwright route.fetch maxRedirects; omit → default 20; 0 → do not follow. */
+    maxRedirects: z.number().int().optional(),
   }),
   z.object({
     type: z.literal("decision:passthrough"),
