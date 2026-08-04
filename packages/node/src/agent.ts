@@ -259,11 +259,12 @@ async function performUpstream(
     const method = overrides?.method ?? original.method;
     const headers = new Headers(overrides?.headers ?? normalizeHeaders(original.headers));
 
-    let body: Buffer | null = null;
+    let body: Uint8Array | null = null;
     if (overrides?.bodyBase64 !== undefined) {
-      body = decodeBody(overrides.bodyBase64);
+      const decoded = decodeBody(overrides.bodyBase64);
+      body = decoded === null ? null : new Uint8Array(decoded);
     } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
-      body = Buffer.from(await original.clone().arrayBuffer());
+      body = new Uint8Array(await original.clone().arrayBuffer());
     }
 
     const init: RequestInit = {
@@ -277,7 +278,8 @@ async function performUpstream(
       method.toUpperCase() !== "GET" &&
       method.toUpperCase() !== "HEAD"
     ) {
-      init.body = body;
+      // Copy into a fresh ArrayBuffer-backed view for DOM BodyInit typings.
+      init.body = Uint8Array.from(body);
     }
 
     return fetch(url, init);
@@ -285,7 +287,8 @@ async function performUpstream(
 }
 
 function responseFromSerialized(response: SerializedResponse): Response {
-  const body = decodeBody(response.bodyBase64);
+  const decoded = decodeBody(response.bodyBase64);
+  const body = decoded === null ? null : Uint8Array.from(decoded);
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
