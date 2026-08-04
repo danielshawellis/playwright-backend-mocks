@@ -31,7 +31,7 @@ Before greenfield work lands in the normal project paths:
 2. Do **not** wire `historical/` into the workspace, build, lint, or CI.
 3. Treat it as short-lived reference material; delete it once the rewrite no longer needs it.
 
-Root config, `documentation/`, `research/`, and product docs may remain living. Update the workspace so only the new tree builds.
+Root config and `research/` remain living. The prototype VitePress site lives under `historical/documentation/` (not deployed). Update the workspace so only the new tree builds.
 
 ---
 

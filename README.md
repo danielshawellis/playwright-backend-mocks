@@ -117,7 +117,7 @@ Then open `http://127.0.0.1:4311/`.
 
 **High-level source of truth:** [`PHILOSOPHY.md`](./PHILOSOPHY.md). Agent entrypoint: [`AGENTS.md`](./AGENTS.md).
 
-Supporting material: [`research/`](./research) (rewrite / parity plans), [`SPECIFICATION.md`](./SPECIFICATION.md) (early vision — defer to PHILOSOPHY on conflict). User-facing VitePress docs in [`documentation/`](./documentation) **may lag** the rewrite; they deploy to [danielshawellis.github.io/playwright-backend-mocks-msw](https://danielshawellis.github.io/playwright-backend-mocks-msw/).
+Rewrite / parity research: [`research/`](./research). Archived prototype + old VitePress site: [`historical/`](./historical/) (not wired into the workspace).
 
 ## Development
 
@@ -127,14 +127,6 @@ pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
 pnpm test          # oracle parity suite (browser mode)
 pnpm typecheck
 pnpm lint
-```
-
-### Documentation site
-
-```bash
-pnpm docs:dev      # local preview
-pnpm docs:build    # production build
-pnpm docs:preview  # serve the production build
 ```
 
 ## License

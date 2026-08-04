@@ -4,7 +4,4 @@ pnpm-lock.yaml
 coverage
 playwright-report
 test-results
-SPECIFICATION.md
 historical/**
-documentation/.vitepress/cache
-documentation/.vitepress/dist

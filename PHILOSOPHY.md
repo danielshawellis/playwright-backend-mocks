@@ -2,14 +2,13 @@
 
 **This is the high-level source of truth** for how this repository is developed and how the system should work.
 
-Other docs are supporting detail and may lag:
-
 | Kind | Role |
 | ---- | ---- |
-| [`SPECIFICATION.md`](./SPECIFICATION.md) | Early product vision; defer here on conflict |
-| [`research/`](./research/) | Plans and deep dives (rewrite, parity, protocol) |
-| [`documentation/`](./documentation/) | User-facing VitePress site — **may be outdated** during the rewrite |
+| [`research/rewrite-specification.md`](./research/rewrite-specification.md) | Step 1 → Step 2 rewrite plan |
+| [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md) | Oracle / dual-mode TDD strategy |
+| [`research/playwright-network-parity.md`](./research/playwright-network-parity.md) | Playwright module map and deep dive |
 | [`tests/parity/`](./tests/parity/) | Living oracle suite (executable contract) |
+| [`historical/`](./historical/) | Archived prototype code + old VitePress site (reference only) |
 
 Further assertions will be added over time. Start here.
 
@@ -41,7 +40,7 @@ Playwright test  ──WebSocket──►  Proxy coordinator  ◄──WebSocket
 
 Three processes, one coordinator. The app stays production-shaped; the DX stays Playwright-shaped.
 
-Supporting detail (may lag): [`research/rewrite-specification.md`](./research/rewrite-specification.md), [`research/protocol.md`](./research/protocol.md).
+Supporting detail: [`research/rewrite-specification.md`](./research/rewrite-specification.md).
 
 ---
 

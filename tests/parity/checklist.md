@@ -3,7 +3,7 @@
 Guaranteed API surface from [`research/rewrite-specification.md`](../../research/rewrite-specification.md) §4.
 Scenarios adapted from Playwright’s network suite at research commit `15b1aec` and the public Route / Page / Request / Mock / WebSocketRoute API docs.
 
-**Coverage analysis:** [`coverage-pass.md`](./coverage-pass.md) · **Source fine-tooth pass:** [`source-coverage-pass.md`](./source-coverage-pass.md) (322 green).
+**Source fine-tooth pass:** [`source-coverage-pass.md`](./source-coverage-pass.md) (322 green).
 
 ## In-scope surface
 

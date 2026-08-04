@@ -160,23 +160,15 @@ When backend mode cannot match Playwright, either:
 
 …but do **not** silently weaken assertions.
 
-## Relationship to existing tests
+## Relationship to other suites
 
-This plan complements, rather than replaces, the current pyramid:
-
-| Layer                         | Role after this plan                                                                    |
+| Layer                         | Role                                                                                    |
 | ----------------------------- | --------------------------------------------------------------------------------------- |
-| `tests/unit`                  | Combinatorial helpers (matchers, body encoding, HAR parse)                              |
-| `tests/contract`              | Wire protocol serialize/parse                                                           |
-| Existing `tests/e2e`          | Full cross-process product confidence (proxy, agents, dashboard, security)              |
-| **New parity / oracle suite** | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity |
+| **Parity / oracle suite**     | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity |
+| Library-only suite (Step 2)   | `clientId`, cross-test `ambiguous_route`, disconnects, dashboard — outside Playwright DX |
+| Unit / contract (as needed)   | Pure helpers and wire protocol                                                          |
 
-Existing e2e already follows “test the library by being its user.” The parity suite makes that stricter: **Playwright itself becomes the reference for what the user experience should be.**
-
-Keep both if useful:
-
-- Parity suite: API behavior vs Playwright
-- Broader e2e: multi-process, proxy auth, disconnects, dashboard — topics outside browser `page.route`
+The parity suite makes the DX contract strict: **Playwright itself is the reference for what the user experience should be.**
 
 ## Simplicity constraints
 

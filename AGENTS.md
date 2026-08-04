@@ -6,9 +6,8 @@ Doc hierarchy when sources disagree:
 
 1. [`PHILOSOPHY.md`](./PHILOSOPHY.md)
 2. Living oracle suite: [`tests/parity/`](./tests/parity/)
-3. Rewrite / parity research under [`research/`](./research/)
-4. [`SPECIFICATION.md`](./SPECIFICATION.md) — early vision; defer upward on conflict
-5. [`documentation/`](./documentation/) — VitePress user docs; **may lag** the rewrite
+3. Rewrite / parity research: [`research/rewrite-specification.md`](./research/rewrite-specification.md), [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md), [`research/playwright-network-parity.md`](./research/playwright-network-parity.md)
+4. [`historical/`](./historical/) — archived prototype + old VitePress site; reference only, not wired into the workspace
 
 Key pointers from the philosophy:
 
