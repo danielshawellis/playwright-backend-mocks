@@ -16,6 +16,26 @@ This library makes the server half as easy as the browser half: a Playwright-sha
 
 ---
 
+## Architecture
+
+How that is possible without test seams in app code:
+
+```text
+Playwright test  ──WebSocket──►  Proxy coordinator  ◄──WebSocket──  Node app
+   backendMocks                     claims / settle                    startBackendMocks
+   (fixture)                        history / REST                     @mswjs/interceptors
+```
+
+- **Node agent** — `@mswjs/interceptors` pauses nearly all outbound HTTP (and `globalThis.WebSocket`) inside the real app process. No per-call mock wiring in application code; start the agent once.
+- **Playwright fixture** — tests use `backendMocks` like `page.route`: register handlers, fulfill / continue / abort / fetch. Handlers run in the Playwright worker.
+- **Proxy** — both sides connect over WebSockets. When Node reports traffic, the proxy broadcasts claims, picks an owning test (or passthrough / loud ambiguity), and relays the settle decision back to Node.
+
+Three processes, one coordinator. The app stays production-shaped; the DX stays Playwright-shaped.
+
+Detail: [`documentation/guide/concepts.md`](./documentation/guide/concepts.md).
+
+---
+
 ## 1. Playwright is the oracle
 
 We practice test-driven development against **Playwright itself**.

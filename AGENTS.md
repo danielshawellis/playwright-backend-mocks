@@ -1,6 +1,6 @@
 # Agent notes
 
-Read [`PHILOSOPHY.md`](./PHILOSOPHY.md) first. Intention: run the real app, mock only the outside world — then the development assertions.
+Read [`PHILOSOPHY.md`](./PHILOSOPHY.md) first. Intention + architecture (proxy ↔ Node agent ↔ Playwright fixture), then the development assertions.
 
 Key pointers:
 
