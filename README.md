@@ -1,12 +1,29 @@
 # Playwright Backend Mocks
 
-Mock outbound HTTP/HTTPS requests made by Node.js application processes from Playwright tests.
+**Run the real app. Mock only the outside world.**
 
-The experience mirrors Playwright’s browser-side `route()` API, while interception runs inside your Node processes via [`@mswjs/interceptors`](https://github.com/mswjs/interceptors).
+Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application processes in Playwright tests — with a DX that matches Playwright’s browser interception APIs as closely as practical.
 
-> **Rewrite in progress.** The prototype implementation lives under [`historical/`](./historical/) (not wired into the workspace). Step 1 is the Playwright oracle suite in [`tests/parity/`](./tests/parity/) — see [`research/rewrite-specification.md`](./research/rewrite-specification.md).
+> **Rewrite in progress.** Living work is the Playwright oracle suite and rewrite plan. The old prototype (packages + VitePress site) is under [`historical/`](./historical/) and is **not** wired into the workspace.
 
-## Packages (rewrite target)
+**How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) · agent notes: [`AGENTS.md`](./AGENTS.md) · plan: [`research/rewrite-specification.md`](./research/rewrite-specification.md)
+
+## Current status (Step 1)
+
+The executable contract is the dual-mode parity suite in [`tests/parity/`](./tests/parity/):
+
+```bash
+pnpm install
+pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
+pnpm test          # browser oracle (Playwright-against-Playwright)
+pnpm test:parity:node   # Node downstream smokes (library wiring is Step 2)
+pnpm typecheck
+pnpm lint
+```
+
+Step 2 reimplements the packages against that suite (starting with Playwright-aligned TypeScript / ESLint).
+
+## Packages (Step 2 target)
 
 | Package                                | Description                                   |
 | -------------------------------------- | --------------------------------------------- |
@@ -16,15 +33,9 @@ The experience mirrors Playwright’s browser-side `route()` API, while intercep
 | `@playwright-backend-mocks/dashboard`  | Optional Vue dashboard (separate process)     |
 | `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
 
-These packages will be reintroduced in Step 2 against the oracle suite. Until then, run:
+These are **not published from this tree yet**. Target DX below is what Step 2 is building toward (also reflected in the archived prototype under `historical/`).
 
-```bash
-pnpm install
-pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
-pnpm test:parity
-```
-
-## Quick start
+## Target DX (after Step 2)
 
 ### 1. Start the proxy (usually via Playwright `webServer`)
 
@@ -73,7 +84,7 @@ test("handles a declined payment", async ({ page, backendMocks }) => {
 });
 ```
 
-## Playwright config
+### Playwright config (sketch)
 
 ```ts
 import { defineConfig } from "@playwright/test";
@@ -102,32 +113,17 @@ export default defineConfig({
 });
 ```
 
-## Dashboard (optional)
-
-The proxy exposes a read-only REST API (`/api/history`, `/api/connections`). For a UI, install and run the separate dashboard package:
-
-```bash
-npm install -D @playwright-backend-mocks/dashboard
-playwright-backend-mocks-dashboard --proxy-url http://127.0.0.1:4310
-```
-
-Then open `http://127.0.0.1:4311/`.
+Optional dashboard (separate process) will consume the proxy REST API (`/api/history`, `/api/connections`).
 
 ## Design docs
 
-**High-level source of truth:** [`PHILOSOPHY.md`](./PHILOSOPHY.md). Agent entrypoint: [`AGENTS.md`](./AGENTS.md).
-
-Rewrite / parity research: [`research/`](./research). Archived prototype + old VitePress site: [`historical/`](./historical/) (not wired into the workspace).
-
-## Development
-
-```bash
-pnpm install
-pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
-pnpm test          # oracle parity suite (browser mode)
-pnpm typecheck
-pnpm lint
-```
+| Doc | Role |
+| --- | ---- |
+| [`PHILOSOPHY.md`](./PHILOSOPHY.md) | High-level source of truth |
+| [`AGENTS.md`](./AGENTS.md) | Agent entrypoint |
+| [`research/`](./research) | Rewrite + parity research |
+| [`tests/parity/`](./tests/parity/) | Living oracle suite |
+| [`historical/`](./historical/) | Archived prototype + old VitePress site |
 
 ## License
 
