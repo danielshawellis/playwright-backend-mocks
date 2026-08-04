@@ -8,6 +8,16 @@ let lastClose = null;
 
 const httpServer = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+  res.setHeader("access-control-allow-headers", "*");
+  res.setHeader("access-control-expose-headers", "*");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
   if (req.method === "GET" && url.pathname === "/health") {
     const body = JSON.stringify({ ok: true });
@@ -29,7 +39,10 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  if (req.method === "POST" && url.pathname === "/reset-last-close") {
+  if (
+    (req.method === "GET" || req.method === "POST") &&
+    url.pathname === "/reset-last-close"
+  ) {
     lastClose = null;
     res.writeHead(204);
     res.end();

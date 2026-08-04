@@ -1,4 +1,4 @@
-import { test, expect, UPSTREAM } from "../harness.js";
+import { test, expect, UPSTREAM, sleep } from "../harness.js";
 
 test.describe("route.fallback", () => {
   test("falls through to the network", async ({ route, trigger }) => {
@@ -359,7 +359,7 @@ test.describe("route.fallback", () => {
   test("fallback url override with a different protocol does not throw", async ({
     route,
     trigger,
-    page,
+    unrouteAll,
   }) => {
     // Observed Playwright behavior: unlike continue(), fallback({ url }) with a
     // different protocol resolves without throwing, but the request does not
@@ -378,12 +378,12 @@ test.describe("route.fallback", () => {
 
     const result = await Promise.race([
       trigger("/users"),
-      page.waitForTimeout(1000).then(() => ({ timeout: true as const })),
+      sleep(1000).then(() => ({ timeout: true as const })),
     ]);
 
     expect(threw).toBe(false);
     expect(fallbackResolved).toBe(true);
     expect(result).toEqual({ timeout: true });
-    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await unrouteAll({ behavior: "ignoreErrors" });
   });
 });
