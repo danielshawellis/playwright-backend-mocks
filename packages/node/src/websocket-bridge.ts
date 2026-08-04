@@ -80,7 +80,38 @@ function dataToWire(
     });
     return;
   }
-  cb({ data: bufferToBase64(new Uint8Array(data)), isBase64: true });
+  // Remaining: ArrayBuffer (Blob already handled above; TS may still widen).
+  cb({
+    data: bufferToBase64(new Uint8Array(data as ArrayBuffer)),
+    isBase64: true,
+  });
+}
+
+/** Mock page sockets expose writable protocol/extensions like Playwright's webSocketMock. */
+function setMockSocketHandshake(
+  socket: WebSocket,
+  protocol: string,
+  extensions: string,
+): void {
+  const target = socket as WebSocket & {
+    protocol: string;
+    extensions: string;
+  };
+  try {
+    target.protocol = protocol;
+    target.extensions = extensions;
+  } catch {
+    Object.defineProperty(target, "protocol", {
+      value: protocol,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(target, "extensions", {
+      value: extensions,
+      writable: true,
+      configurable: true,
+    });
+  }
 }
 
 function wireToData(
@@ -298,8 +329,11 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           item.server.addEventListener("open", () => {
             try {
               const real = item.server.socket;
-              item.client.socket.protocol = real.protocol;
-              item.client.socket.extensions = real.extensions;
+              setMockSocketHandshake(
+                item.client.socket,
+                real.protocol,
+                real.extensions,
+              );
             } catch {
               /* ignore */
             }
@@ -335,8 +369,11 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           item.server.addEventListener("open", () => {
             try {
               const real = item.server.socket;
-              item.client.socket.protocol = real.protocol;
-              item.client.socket.extensions = real.extensions;
+              setMockSocketHandshake(
+                item.client.socket,
+                real.protocol,
+                real.extensions,
+              );
             } catch {
               /* ignore */
             }
@@ -386,8 +423,11 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           if (!item) return true;
           // Mock path: first requested subprotocol (Playwright webSocketMock).
           if (!item.connected && item.client.socket.readyState === 0) {
-            item.client.socket.protocol = item.protocols[0] ?? "";
-            item.client.socket.extensions = "";
+            setMockSocketHandshake(
+              item.client.socket,
+              item.protocols[0] ?? "",
+              "",
+            );
           }
           releaseOpen(item);
           return true;
@@ -397,8 +437,11 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           if (!item) return true;
           // Force mock open if still CONNECTING (Playwright sendToPage → _ensureOpened).
           if (!item.connected && item.client.socket.readyState === 0) {
-            item.client.socket.protocol = item.protocols[0] ?? "";
-            item.client.socket.extensions = "";
+            setMockSocketHandshake(
+              item.client.socket,
+              item.protocols[0] ?? "",
+              "",
+            );
           }
           releaseOpen(item);
           const payload = wireToData(

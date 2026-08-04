@@ -74,6 +74,11 @@ interface NetworkWaiter<T> {
   predicate(value: T): boolean | Promise<boolean>;
   resolve(value: T): void;
   reject(error: Error): void;
+  /**
+   * waitForResponse only: ignore responses whose request was observed at or
+   * before this generation (future-only across async proxy delivery).
+   */
+  minRequestGeneration?: number;
 }
 
 interface ActiveInvocation {
@@ -105,6 +110,8 @@ class BackendRequestImpl implements BackendRequest {
   private _responseResolved = false;
   private readonly _responsePromise: Promise<BackendResponse | null>;
   private _resolveResponse!: (response: BackendResponse | null) => void;
+  /** Monotonic observe generation for future-only waitForResponse filtering. */
+  _observeGeneration = 0;
 
   constructor(request: SerializedRequest, clientId: string) {
     this._url = request.url;
@@ -753,6 +760,8 @@ export function createBackendMocks(options: {
   const pendingRedirects = new Map<string, BackendRequestImpl>();
   const requestWaiters = new Set<NetworkWaiter<BackendRequest>>();
   const responseWaiters = new Set<NetworkWaiter<BackendResponse>>();
+  /** Bumps when a request is first observed; waitForResponse snapshots this. */
+  let requestObserveGeneration = 0;
   const errors: Error[] = [];
   const jsonSessions: RouteFromJSONSession[] = [];
   const harSessions: RouteFromHARSession[] = [];
@@ -774,6 +783,7 @@ export function createBackendMocks(options: {
     let request = requestsById.get(requestId);
     if (request === undefined) {
       request = new BackendRequestImpl(serialized, clientId);
+      request._observeGeneration = ++requestObserveGeneration;
       const redirectKey = `${clientId}\0${serialized.url}`;
       const prior = pendingRedirects.get(redirectKey);
       if (prior !== undefined) {
@@ -838,8 +848,20 @@ export function createBackendMocks(options: {
     }
   }
 
-  async function notifyResponseWaiters(response: BackendResponse): Promise<void> {
+  async function notifyResponseWaiters(
+    response: BackendResponse,
+    request: BackendRequestImpl,
+  ): Promise<void> {
+    // Snapshot waiters registered before this response event is processed.
     for (const waiter of [...responseWaiters]) {
+      // Ignore responses for requests observed before the waiter existed so a
+      // late request:response for a prior trigger cannot satisfy a new waiter.
+      if (
+        waiter.minRequestGeneration !== undefined &&
+        request._observeGeneration <= waiter.minRequestGeneration
+      ) {
+        continue;
+      }
       try {
         if (await waiter.predicate(response)) {
           responseWaiters.delete(waiter);
@@ -901,12 +923,16 @@ export function createBackendMocks(options: {
         }
         // Prefer a single Response object for existingResponse() === waitForResponse.
         let response = request.existingResponse();
+        const firstSettle = response === null;
         if (response === null) {
           response = toBackendResponse(message.response, request);
           request._settleResponse(response);
         }
         noteRedirectResponse(request, message.response);
-        void notifyResponseWaiters(response);
+        // Only the first settle emits Page.Response (Playwright future listeners).
+        if (firstSettle) {
+          void notifyResponseWaiters(response, request);
+        }
         return;
       }
       case "fetch:done": {
@@ -1192,11 +1218,14 @@ export function createBackendMocks(options: {
      */
     async waitForResponse(urlOrPredicate, options = {}) {
       const predicate = createResponseWaitPredicate(urlOrPredicate, baseURL);
+      // Snapshot observe generation so already-started requests cannot match.
+      const minRequestGeneration = requestObserveGeneration;
       return waitForNetworkEvent(
         responseWaiters,
         predicate,
         options,
         `Timeout ${options.timeout ?? 30_000}ms exceeded while waiting for event "response"`,
+        { minRequestGeneration },
       );
     },
 
@@ -1322,17 +1351,6 @@ function stripMatcherUrl(input: RouteMatcherInput): RouteMatcherInput {
   return input;
 }
 
-function describeMatcher(input: RouteMatcherInput, methodFilter?: string): string {
-  if (
-    getRouteUrlPredicate(input) !== undefined ||
-    getRouteURLPattern(input) !== undefined
-  ) {
-    const serialized = toSerializedMatcher(input, methodFilter);
-    return `predicate${serialized.methods ? ` methods=${serialized.methods.join(",")}` : ""}`;
-  }
-  return JSON.stringify(toSerializedMatcher(input, methodFilter));
-}
-
 function toBackendResponse(
   response: SerializedResponse,
   request?: BackendRequest,
@@ -1412,6 +1430,7 @@ function waitForNetworkEvent<T>(
   predicate: (value: T) => boolean | Promise<boolean>,
   options: WaitForNetworkOptions,
   timeoutMessage: string,
+  extras?: { minRequestGeneration?: number },
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeout = options.timeout ?? 30_000;
@@ -1441,6 +1460,9 @@ function waitForNetworkEvent<T>(
         cleanup();
         reject(error);
       },
+      ...(extras?.minRequestGeneration !== undefined
+        ? { minRequestGeneration: extras.minRequestGeneration }
+        : {}),
     };
 
     const onAbort = () => {
@@ -1622,30 +1644,6 @@ function isJsonParsable(value: string): boolean {
     }
     throw error;
   }
-}
-
-function toOverrides(options: ContinueOptions): RequestOverrides | undefined {
-  const hasOverrides =
-    options.url !== undefined ||
-    options.method !== undefined ||
-    options.headers !== undefined ||
-    options.postData !== undefined;
-
-  if (!hasOverrides) {
-    return undefined;
-  }
-
-  const postDataBuffer =
-    options.postData !== undefined ? postDataToBuffer(options.postData) : undefined;
-
-  return {
-    ...(options.url !== undefined ? { url: options.url } : {}),
-    ...(options.method !== undefined ? { method: options.method } : {}),
-    ...(options.headers !== undefined
-      ? { headers: normalizeHeaders(headersObjectLossy(options.headers)) }
-      : {}),
-    ...(postDataBuffer !== undefined ? { bodyBase64: encodeBody(postDataBuffer) } : {}),
-  };
 }
 
 /**
@@ -1956,10 +1954,6 @@ function toBuffer(value: string | Buffer | Uint8Array): Buffer {
     return value;
   }
   return Buffer.from(value);
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export type { HistoryEntry };
