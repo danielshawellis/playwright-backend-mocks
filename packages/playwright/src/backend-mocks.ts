@@ -1,0 +1,1040 @@
+// Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import {
+  decodeBody,
+  encodeBody,
+  normalizeHeaders,
+  type HistoryEntry,
+  type ProxyToClientMessage,
+  type RequestOverrides,
+  type SerializedRequest,
+  type SerializedResponse,
+} from "@playwright-backend-mocks/protocol";
+import type { PlaywrightProxyConnection } from "./connection.js";
+import { matchRouteMatcher } from "./match.js";
+import {
+  createRouteFromJSONSession,
+  flushRouteFromJSONSession,
+  type RouteFromJSONSession,
+} from "./route-from-json.js";
+import {
+  getRouteUrlPredicate,
+  getRouteURLPattern,
+  isURLPattern,
+  toProtocolAbortCode,
+  toSerializedMatcher,
+  type BackendMocks,
+  type BackendRequest,
+  type BackendResponse,
+  type BackendRoute,
+  type ContinueOptions,
+  type FetchOptions,
+  type FulfillOptions,
+  type HeaderArray,
+  type RequestSizes,
+  type ResourceTiming,
+  type RouteFromHAROptions,
+  type RouteFromJSONOptions,
+  type RouteHandler,
+  type RouteMatcherInput,
+  type RouteOptions,
+  type UnrouteAllOptions,
+} from "./types.js";
+
+interface FallbackOverrides {
+  url?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  postDataBuffer?: Buffer;
+}
+
+interface PendingFetch {
+  resolve(response: BackendResponse): void;
+  reject(error: Error): void;
+}
+
+interface ActiveInvocation {
+  complete: Promise<void>;
+  resolveComplete: () => void;
+  didThrow: boolean;
+}
+
+/**
+ * Playwright-shaped Request with local fallback overrides.
+ * Mirrored from Playwright `Request` at pin 26a9e47.
+ */
+class BackendRequestImpl implements BackendRequest {
+  private readonly _url: string;
+  private readonly _method: string;
+  private readonly _headers: Record<string, string>;
+  private readonly _postDataBuffer: Buffer | null;
+  // DIVERGENCE: product addition for multi-app Node targeting
+  readonly clientId: string;
+  // DIVERGENCE END
+  private _fallbackOverrides: FallbackOverrides = {};
+
+  constructor(request: SerializedRequest, clientId: string) {
+    this._url = request.url;
+    this._method = request.method;
+    this._headers = { ...request.headers };
+    this._postDataBuffer = decodeBody(request.bodyBase64);
+    this.clientId = clientId;
+  }
+
+  url(): string {
+    return this._fallbackOverrides.url ?? this._url;
+  }
+
+  method(): string {
+    return this._fallbackOverrides.method ?? this._method;
+  }
+
+  headers(): Record<string, string> {
+    if (this._fallbackOverrides.headers !== undefined) {
+      return { ...this._fallbackOverrides.headers };
+    }
+    return { ...this._headers };
+  }
+
+  async allHeaders(): Promise<Record<string, string>> {
+    return this.headers();
+  }
+
+  async headersArray(): Promise<HeaderArray> {
+    return Object.entries(this.headers()).map(([name, value]) => ({ name, value }));
+  }
+
+  async headerValue(name: string): Promise<string | null> {
+    const lower = name.toLowerCase();
+    for (const [key, value] of Object.entries(this.headers())) {
+      if (key.toLowerCase() === lower) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  postData(): string | null {
+    const buffer = this.postDataBuffer();
+    return buffer?.toString("utf8") ?? null;
+  }
+
+  postDataBuffer(): Buffer | null {
+    return this._fallbackOverrides.postDataBuffer ?? this._postDataBuffer;
+  }
+
+  postDataJSON(): unknown {
+    const postData = this.postData();
+    if (postData === null) {
+      return null;
+    }
+
+    const contentType = this.headers()["content-type"];
+    if (contentType?.includes("application/x-www-form-urlencoded")) {
+      const entries: Record<string, string> = {};
+      const parsed = new URLSearchParams(postData);
+      for (const [key, value] of parsed.entries()) {
+        entries[key] = value;
+      }
+      return entries;
+    }
+
+    try {
+      return JSON.parse(postData) as unknown;
+    } catch {
+      throw new Error(`POST data is not a valid JSON object: ${postData}`);
+    }
+  }
+
+  resourceType(): "fetch" | "other" {
+    // DIVERGENCE: Node outbound traffic is not browser-typed; expose a stable stub.
+    return "other";
+  }
+
+  frame(): never {
+    throw new Error("Backend mock requests do not have an associated frame.");
+  }
+
+  serviceWorker(): null {
+    return null;
+  }
+
+  isNavigationRequest(): boolean {
+    return false;
+  }
+
+  redirectedFrom(): BackendRequest | null {
+    return null;
+  }
+
+  redirectedTo(): BackendRequest | null {
+    return null;
+  }
+
+  failure(): { errorText: string } | null {
+    return null;
+  }
+
+  timing(): ResourceTiming {
+    return {
+      startTime: 0,
+      domainLookupStart: -1,
+      domainLookupEnd: -1,
+      connectStart: -1,
+      secureConnectionStart: -1,
+      connectEnd: -1,
+      requestStart: -1,
+      responseStart: -1,
+      responseEnd: -1,
+    };
+  }
+
+  async sizes(): Promise<RequestSizes> {
+    return {
+      requestBodySize: 0,
+      requestHeadersSize: 0,
+      responseBodySize: 0,
+      responseHeadersSize: 0,
+    };
+  }
+
+  async response(): Promise<BackendResponse | null> {
+    // TODO: wire response correlation when the proxy exposes it.
+    return null;
+  }
+
+  _applyFallbackOverrides(overrides: ContinueOptions): void {
+    if (overrides.url !== undefined) {
+      this._fallbackOverrides.url = overrides.url;
+    }
+    if (overrides.method !== undefined) {
+      this._fallbackOverrides.method = overrides.method;
+    }
+    if (overrides.headers !== undefined) {
+      this._fallbackOverrides.headers = headersObjectLossy(overrides.headers);
+    }
+    if (overrides.postData !== undefined) {
+      const buffer = postDataToBuffer(overrides.postData);
+      if (buffer !== undefined) {
+        this._fallbackOverrides.postDataBuffer = buffer;
+      }
+    }
+  }
+
+  _fallbackOverridesForContinue(): RequestOverrides | undefined {
+    const overrides = this._fallbackOverrides;
+    const hasOverrides =
+      overrides.url !== undefined ||
+      overrides.method !== undefined ||
+      overrides.headers !== undefined ||
+      overrides.postDataBuffer !== undefined;
+    if (!hasOverrides) {
+      return undefined;
+    }
+    return {
+      ...(overrides.url !== undefined ? { url: overrides.url } : {}),
+      ...(overrides.method !== undefined ? { method: overrides.method } : {}),
+      ...(overrides.headers !== undefined
+        ? { headers: normalizeHeaders(overrides.headers) }
+        : {}),
+      ...(overrides.postDataBuffer !== undefined
+        ? { bodyBase64: encodeBody(overrides.postDataBuffer) }
+        : {}),
+    };
+  }
+
+  toMatchRequest(): SerializedRequest {
+    return {
+      url: this.url(),
+      method: this.method(),
+      headers: this.headers(),
+      bodyBase64: encodeBody(this.postDataBuffer()),
+    };
+  }
+}
+
+/**
+ * Playwright-shaped Route with fulfill / continue / abort / fallback / fetch.
+ * Mirrored from Playwright `Route` at pin 26a9e47.
+ */
+class BackendRouteImpl implements BackendRoute {
+  private _handlingPromise: {
+    promise: Promise<boolean>;
+    resolve: (handled: boolean) => void;
+  } | null = null;
+  private _terminalSettled = false;
+  didThrow = false;
+
+  constructor(
+    private readonly _request: BackendRequestImpl,
+    private readonly _requestId: string,
+    private readonly _connection: PlaywrightProxyConnection,
+    private readonly _pendingFetches: Map<string, PendingFetch>,
+  ) {}
+
+  request(): BackendRequest {
+    return this._request;
+  }
+
+  isTerminalSettled(): boolean {
+    return this._terminalSettled;
+  }
+
+  async _startHandling(): Promise<boolean> {
+    let resolve!: (handled: boolean) => void;
+    const promise = new Promise<boolean>((res) => {
+      resolve = res;
+    });
+    this._handlingPromise = { promise, resolve };
+    return promise;
+  }
+
+  async fallback(options: ContinueOptions = {}): Promise<void> {
+    this._checkNotHandled();
+    this._request._applyFallbackOverrides(options);
+    this._reportHandled(false);
+  }
+
+  async abort(errorCode = "failed"): Promise<void> {
+    await this._handleRoute(async () => {
+      this._terminalSettled = true;
+      this._connection.send({
+        type: "handler:result",
+        requestId: this._requestId,
+        result: {
+          action: "abort",
+          errorCode: toProtocolAbortCode(errorCode),
+        },
+      });
+    });
+  }
+
+  async fetch(options: FetchOptions = {}): Promise<BackendResponse> {
+    // fetch is non-terminal — does not settle the route and does not mutate
+    // fallback overrides (Playwright passes options into the fetch call only).
+    const fetchId = randomUUID();
+    const overrides = fetchOverridesForRequest(this._request, options);
+    const responsePromise = new Promise<BackendResponse>((resolve, reject) => {
+      this._pendingFetches.set(fetchId, { resolve, reject });
+      const timeout = options.timeout ?? 30_000;
+      setTimeout(() => {
+        if (this._pendingFetches.delete(fetchId)) {
+          reject(new Error(`route.fetch timed out after ${timeout}ms`));
+        }
+      }, timeout);
+    });
+
+    this._connection.send({
+      type: "handler:result",
+      requestId: this._requestId,
+      result: {
+        action: "fetch",
+        fetchId,
+        ...(overrides !== undefined ? { overrides } : {}),
+      },
+    });
+
+    return responsePromise;
+  }
+
+  async fulfill(options: FulfillOptions = {}): Promise<void> {
+    await this._handleRoute(async () => {
+      const response = await buildFulfillResponse(options);
+      this._terminalSettled = true;
+      this._connection.send({
+        type: "handler:result",
+        requestId: this._requestId,
+        result: {
+          action: "fulfill",
+          response,
+        },
+      });
+    });
+  }
+
+  async continue(options: ContinueOptions = {}): Promise<void> {
+    await this._handleRoute(async () => {
+      this._request._applyFallbackOverrides(options);
+      const overrides = this._request._fallbackOverridesForContinue();
+      this._terminalSettled = true;
+      this._connection.send({
+        type: "handler:result",
+        requestId: this._requestId,
+        result: {
+          action: "continue",
+          ...(overrides !== undefined ? { overrides } : {}),
+        },
+      });
+    });
+  }
+
+  /** Final network continue after the handler chain falls through. */
+  sendFinalContinue(): void {
+    if (this._terminalSettled) {
+      return;
+    }
+    this._terminalSettled = true;
+    const overrides = this._request._fallbackOverridesForContinue();
+    this._connection.send({
+      type: "handler:result",
+      requestId: this._requestId,
+      result: {
+        action: "continue",
+        ...(overrides !== undefined ? { overrides } : {}),
+      },
+    });
+  }
+
+  sendAbortFailed(message: string): void {
+    if (this._terminalSettled) {
+      return;
+    }
+    this._terminalSettled = true;
+    this._connection.send({
+      type: "handler:result",
+      requestId: this._requestId,
+      result: {
+        action: "abort",
+        errorCode: "failed",
+        message,
+      },
+    });
+  }
+
+  private async _handleRoute(callback: () => Promise<void>): Promise<void> {
+    this._checkNotHandled();
+    try {
+      await callback();
+      this._reportHandled(true);
+    } catch (error) {
+      this.didThrow = true;
+      throw error;
+    }
+  }
+
+  private _checkNotHandled(): void {
+    if (this._handlingPromise === null) {
+      throw new Error("Route is already handled!");
+    }
+  }
+
+  private _reportHandled(done: boolean): void {
+    const chain = this._handlingPromise;
+    this._handlingPromise = null;
+    chain!.resolve(done);
+  }
+}
+
+/**
+ * Playwright-shaped RouteHandler with `times` and active-invocation tracking.
+ * Mirrored from Playwright `RouteHandler` at pin 26a9e47.
+ */
+class RouteHandlerRecord {
+  readonly routeId: string;
+  readonly matcherInput: RouteMatcherInput;
+  readonly handler: RouteHandler;
+  private handledCount = 0;
+  private readonly _times: number;
+  private _ignoreException = false;
+  private readonly _activeInvocations = new Set<ActiveInvocation>();
+
+  constructor(
+    routeId: string,
+    matcherInput: RouteMatcherInput,
+    handler: RouteHandler,
+    times: number = Number.MAX_SAFE_INTEGER,
+  ) {
+    this.routeId = routeId;
+    this.matcherInput = matcherInput;
+    this.handler = handler;
+    this._times = times;
+  }
+
+  matches(request: BackendRequestImpl): boolean {
+    return matchRouteMatcher(this.matcherInput, {
+      request: request.toMatchRequest(),
+      clientId: request.clientId,
+    });
+  }
+
+  willExpire(): boolean {
+    return this.handledCount + 1 >= this._times;
+  }
+
+  async handle(route: BackendRouteImpl): Promise<boolean> {
+    let resolveComplete!: () => void;
+    const complete = new Promise<void>((resolve) => {
+      resolveComplete = resolve;
+    });
+    const invocation: ActiveInvocation = {
+      complete,
+      resolveComplete,
+      didThrow: false,
+    };
+    this._activeInvocations.add(invocation);
+    try {
+      return await this._handleInternal(route);
+    } catch (error) {
+      invocation.didThrow = true;
+      if (this._ignoreException) {
+        return false;
+      }
+      throw error;
+    } finally {
+      resolveComplete();
+      this._activeInvocations.delete(invocation);
+    }
+  }
+
+  async stop(behavior: "wait" | "ignoreErrors"): Promise<void> {
+    if (behavior === "ignoreErrors") {
+      this._ignoreException = true;
+      return;
+    }
+    const promises: Array<Promise<void>> = [];
+    for (const activation of this._activeInvocations) {
+      if (!activation.didThrow) {
+        promises.push(activation.complete);
+      }
+    }
+    await Promise.all(promises);
+  }
+
+  private async _handleInternal(route: BackendRouteImpl): Promise<boolean> {
+    ++this.handledCount;
+    const handledPromise = route._startHandling();
+    // Extract handler into a variable to avoid [RouteHandler.handler] in the stack.
+    const handler = this.handler;
+    const [handled] = await Promise.all([
+      handledPromise,
+      Promise.resolve(handler(route, route.request())),
+    ]);
+    return handled;
+  }
+}
+
+export interface BackendMocksController extends BackendMocks {
+  dispose(): void;
+}
+
+export function createBackendMocks(options: {
+  connection: PlaywrightProxyConnection;
+  testId: string;
+}): BackendMocksController {
+  const { connection, testId } = options;
+  const routes: RouteHandlerRecord[] = [];
+  const pendingFetches = new Map<string, PendingFetch>();
+  const observed: BackendRequest[] = [];
+  const errors: Error[] = [];
+  const jsonSessions: RouteFromJSONSession[] = [];
+
+  const unsubscribe = connection.onMessage((message) => {
+    void handleMessage(message);
+  });
+
+  async function handleMessage(message: ProxyToClientMessage): Promise<void> {
+    switch (message.type) {
+      case "request:claim": {
+        // Report ALL currently matching routeIds (LIFO registration order).
+        // Proxy groups by testId; ignore wire routeId during later orchestration.
+        const matches: Array<{ routeId: string }> = [];
+        for (const route of routes) {
+          if (
+            matchRouteMatcher(route.matcherInput, {
+              request: message.request,
+              clientId: message.clientId,
+            })
+          ) {
+            matches.push({ routeId: route.routeId });
+          }
+        }
+        connection.send({
+          type: "request:claim-result",
+          requestId: message.requestId,
+          testId,
+          matches,
+        });
+        return;
+      }
+      case "request:matched": {
+        if (message.testId !== testId) {
+          return;
+        }
+        // Ignore message.routeId for orchestration — re-evaluate all local routes (LIFO).
+        await handleMatchedRequest(message);
+        return;
+      }
+      case "fetch:done": {
+        const waiter = pendingFetches.get(message.fetchId);
+        if (waiter === undefined) {
+          return;
+        }
+        pendingFetches.delete(message.fetchId);
+        if (!message.ok || message.response === undefined) {
+          waiter.reject(
+            new Error(
+              message.error?.message ?? "Upstream fetch failed for backend mock route",
+            ),
+          );
+          return;
+        }
+        waiter.resolve(toBackendResponse(message.response));
+        return;
+      }
+      case "proxy:error": {
+        if (message.testId !== undefined && message.testId !== testId) {
+          return;
+        }
+        errors.push(new Error(message.message));
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  /**
+   * Playwright `Page._onRoute` / `BrowserContext._onRoute` analogue.
+   * Walk matching handlers newest-first; fallback continues the chain;
+   * unsettled handler return stalls; exhausted chain continues to the network.
+   */
+  async function handleMatchedRequest(
+    message: Extract<ProxyToClientMessage, { type: "request:matched" }>,
+  ): Promise<void> {
+    const request = new BackendRequestImpl(message.request, message.clientId);
+    observed.push(request);
+    const routeApi = new BackendRouteImpl(
+      request,
+      message.requestId,
+      connection,
+      pendingFetches,
+    );
+
+    const routeHandlers = routes.slice();
+    for (const routeHandler of routeHandlers) {
+      if (!routeHandler.matches(request)) {
+        continue;
+      }
+      const index = routes.indexOf(routeHandler);
+      if (index === -1) {
+        continue;
+      }
+      if (routeHandler.willExpire()) {
+        routes.splice(index, 1);
+        connection.send({
+          type: "route:unregister",
+          routeId: routeHandler.routeId,
+        });
+      }
+
+      try {
+        const handled = await routeHandler.handle(routeApi);
+        if (handled) {
+          return;
+        }
+        // fallback → try next matcher (overrides already applied on request)
+      } catch (error) {
+        // DIVERGENCE: Playwright stalls + fails the test; we abort the paused
+        // Node request so the app is not left hanging, and still record the error.
+        const err = error instanceof Error ? error : new Error(String(error));
+        errors.push(err);
+        if (!routeApi.isTerminalSettled()) {
+          routeApi.sendAbortFailed(err.message);
+        }
+        return;
+      }
+    }
+
+    // No handler settled — final fallback continues to the network (Playwright).
+    if (!routeApi.isTerminalSettled()) {
+      routeApi.sendFinalContinue();
+    }
+  }
+
+  function unregisterRoute(routeId: string): void {
+    connection.send({
+      type: "route:unregister",
+      routeId,
+    });
+  }
+
+  const api: BackendMocksController = {
+    async route(url, handler, options: RouteOptions = {}) {
+      const routeId = randomUUID();
+      const times = options.times ?? Number.MAX_SAFE_INTEGER;
+      // LIFO: newest handler first (Playwright unshift).
+      routes.unshift(new RouteHandlerRecord(routeId, url, handler, times));
+      connection.send({
+        type: "route:register",
+        routeId,
+        testId,
+        matcher: toSerializedMatcher(url),
+      });
+    },
+
+    async unroute(url, handler) {
+      const remaining: RouteHandlerRecord[] = [];
+      for (const route of routes) {
+        const urlMatches =
+          url === undefined || matcherEquals(route.matcherInput, url);
+        const handlerMatches = handler === undefined || route.handler === handler;
+        if (urlMatches && handlerMatches) {
+          unregisterRoute(route.routeId);
+        } else {
+          remaining.push(route);
+        }
+      }
+      routes.length = 0;
+      routes.push(...remaining);
+    },
+
+    async unrouteAll(options: UnrouteAllOptions = {}) {
+      const removed = [...routes];
+      routes.length = 0;
+      for (const route of removed) {
+        unregisterRoute(route.routeId);
+      }
+
+      const behavior = options.behavior;
+      if (behavior === "wait" || behavior === "ignoreErrors") {
+        await Promise.all(removed.map((route) => route.stop(behavior)));
+      }
+    },
+
+    async routeFromJSON(filePath, options: RouteFromJSONOptions = {}) {
+      // TODO(Step 2): migrate callers to routeFromHAR once HAR support lands.
+      const session = createRouteFromJSONSession(filePath, options);
+      jsonSessions.push(session);
+      await api.route(session.matcher, session.handler);
+    },
+
+    async routeFromHAR(_file: string, _options?: RouteFromHAROptions) {
+      throw new Error("routeFromHAR is not implemented");
+    },
+
+    async waitForRequest(url, options = {}) {
+      const timeout = options.timeout ?? 30_000;
+      const started = Date.now();
+
+      while (Date.now() - started < timeout) {
+        const found = observed.find((request) =>
+          matchRouteMatcher(
+            url,
+            {
+              request: {
+                url: request.url(),
+                method: request.method(),
+                headers: { ...request.headers() },
+                bodyBase64: encodeBody(request.postDataBuffer()),
+              },
+              clientId: request.clientId,
+            },
+            options.method,
+          ),
+        );
+        if (found) {
+          return found;
+        }
+        await delay(25);
+      }
+
+      throw new Error(
+        `Timed out waiting for backend request matching ${describeMatcher(url, options.method)}`,
+      );
+    },
+
+    async requests(url) {
+      if (url === undefined) {
+        return [...observed];
+      }
+      return observed.filter((request) =>
+        matchRouteMatcher(url, {
+          request: {
+            url: request.url(),
+            method: request.method(),
+            headers: { ...request.headers() },
+            bodyBase64: encodeBody(request.postDataBuffer()),
+          },
+          clientId: request.clientId,
+        }),
+      );
+    },
+
+    takeErrors() {
+      const drained = [...errors];
+      errors.length = 0;
+      return drained;
+    },
+
+    dispose() {
+      for (const session of jsonSessions) {
+        flushRouteFromJSONSession(session);
+      }
+      jsonSessions.length = 0;
+
+      unsubscribe();
+      connection.send({
+        type: "route:unregister",
+        testId,
+      });
+      connection.send({
+        type: "test:unregister",
+        testId,
+      });
+      for (const [, waiter] of pendingFetches) {
+        waiter.reject(new Error("Test ended while route.fetch was pending"));
+      }
+      pendingFetches.clear();
+    },
+  };
+
+  return api;
+}
+
+function matcherEquals(a: RouteMatcherInput, b: RouteMatcherInput): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  const patternA = getRouteURLPattern(a);
+  const patternB = getRouteURLPattern(b);
+  if (patternA !== undefined || patternB !== undefined) {
+    return patternA === patternB;
+  }
+
+  const predicateA = getRouteUrlPredicate(a);
+  const predicateB = getRouteUrlPredicate(b);
+  if (predicateA !== undefined || predicateB !== undefined) {
+    if (predicateA !== predicateB) {
+      return false;
+    }
+    return (
+      JSON.stringify(toSerializedMatcher(stripMatcherUrl(a))) ===
+      JSON.stringify(toSerializedMatcher(stripMatcherUrl(b)))
+    );
+  }
+
+  return (
+    JSON.stringify(toSerializedMatcher(a)) === JSON.stringify(toSerializedMatcher(b))
+  );
+}
+
+function stripMatcherUrl(input: RouteMatcherInput): RouteMatcherInput {
+  if (typeof input === "function" || isURLPattern(input)) {
+    return {};
+  }
+  if (typeof input === "object" && !(input instanceof RegExp)) {
+    return {
+      ...(input.method !== undefined ? { method: input.method } : {}),
+      ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+    };
+  }
+  return input;
+}
+
+function describeMatcher(input: RouteMatcherInput, methodFilter?: string): string {
+  if (
+    getRouteUrlPredicate(input) !== undefined ||
+    getRouteURLPattern(input) !== undefined
+  ) {
+    const serialized = toSerializedMatcher(input, methodFilter);
+    return `predicate${serialized.methods ? ` methods=${serialized.methods.join(",")}` : ""}`;
+  }
+  return JSON.stringify(toSerializedMatcher(input, methodFilter));
+}
+
+function toBackendResponse(response: SerializedResponse): BackendResponse {
+  const bodyBuffer = decodeBody(response.bodyBase64) ?? Buffer.alloc(0);
+  const headerMap = { ...response.headers };
+  return {
+    bodyBuffer,
+    status() {
+      return response.status;
+    },
+    statusText() {
+      return response.statusText;
+    },
+    headers() {
+      return { ...headerMap };
+    },
+    headerValue(name: string) {
+      const lower = name.toLowerCase();
+      for (const [key, value] of Object.entries(headerMap)) {
+        if (key.toLowerCase() === lower) {
+          return value;
+        }
+      }
+      return null;
+    },
+    async body() {
+      return bodyBuffer;
+    },
+    async text() {
+      return bodyBuffer.toString("utf8");
+    },
+    async json() {
+      return JSON.parse(bodyBuffer.toString("utf8")) as unknown;
+    },
+  };
+}
+
+/** Merge accumulated request overrides with per-fetch options for the wire. */
+function fetchOverridesForRequest(
+  request: BackendRequestImpl,
+  options: FetchOptions,
+): RequestOverrides | undefined {
+  const base = request._fallbackOverridesForContinue() ?? {};
+  const fromOptions = toOverrides(options);
+  if (fromOptions === undefined && Object.keys(base).length === 0) {
+    return undefined;
+  }
+  return {
+    ...base,
+    ...fromOptions,
+  };
+}
+
+function toOverrides(options: ContinueOptions): RequestOverrides | undefined {
+  const hasOverrides =
+    options.url !== undefined ||
+    options.method !== undefined ||
+    options.headers !== undefined ||
+    options.postData !== undefined;
+
+  if (!hasOverrides) {
+    return undefined;
+  }
+
+  const postDataBuffer =
+    options.postData !== undefined ? postDataToBuffer(options.postData) : undefined;
+
+  return {
+    ...(options.url !== undefined ? { url: options.url } : {}),
+    ...(options.method !== undefined ? { method: options.method } : {}),
+    ...(options.headers !== undefined
+      ? { headers: normalizeHeaders(headersObjectLossy(options.headers)) }
+      : {}),
+    ...(postDataBuffer !== undefined ? { bodyBase64: encodeBody(postDataBuffer) } : {}),
+  };
+}
+
+async function buildFulfillResponse(
+  options: FulfillOptions,
+): Promise<SerializedResponse> {
+  if (options.response !== undefined) {
+    const headers = stripBodyLengthHeaders({
+      ...options.response.headers(),
+      ...options.headers,
+    });
+    let body = options.response.bodyBuffer;
+    if (options.json !== undefined) {
+      body = Buffer.from(JSON.stringify(options.json), "utf8");
+      headers["content-type"] = headers["content-type"] ?? "application/json";
+    } else if (options.body !== undefined) {
+      body = toBuffer(options.body);
+    }
+    if (options.contentType !== undefined) {
+      headers["content-type"] = options.contentType;
+    }
+    return {
+      // Playwright: statusOption || 200 (status 0 → 200)
+      status: options.status || options.response.status() || 200,
+      statusText: options.response.statusText(),
+      headers: normalizeHeaders(headers),
+      bodyBase64: encodeBody(body),
+    };
+  }
+
+  const headers = stripBodyLengthHeaders({ ...options.headers });
+  let body: Buffer | null = null;
+
+  if (options.json !== undefined) {
+    body = Buffer.from(JSON.stringify(options.json), "utf8");
+    headers["content-type"] = headers["content-type"] ?? "application/json";
+  } else if (options.path !== undefined) {
+    body = await readFile(options.path);
+  } else if (options.body !== undefined) {
+    body = toBuffer(options.body);
+  }
+
+  if (options.contentType !== undefined) {
+    headers["content-type"] = options.contentType;
+  }
+
+  return {
+    // Playwright: statusOption || 200 (status 0 → 200)
+    status: options.status || 200,
+    statusText: "",
+    headers: normalizeHeaders(headers),
+    bodyBase64: encodeBody(body),
+  };
+}
+
+function stripBodyLengthHeaders(
+  headers: Record<string, string | undefined>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined) {
+      continue;
+    }
+    const lower = key.toLowerCase();
+    if (lower === "content-length" || lower === "transfer-encoding") {
+      continue;
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function headersObjectLossy(
+  headers: Record<string, string | undefined>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined) {
+      continue;
+    }
+    result[key.toLowerCase()] = String(value);
+  }
+  return result;
+}
+
+/**
+ * Playwright `_applyFallbackOverrides` postData coercion.
+ * `0` / `false` / `null` are ignored; empty Buffer clears the body.
+ */
+function postDataToBuffer(
+  postData: string | Buffer | Uint8Array | object,
+): Buffer | undefined {
+  if (typeof postData === "string") {
+    return Buffer.from(postData, "utf8");
+  }
+  if (Buffer.isBuffer(postData)) {
+    return postData;
+  }
+  if (postData instanceof Uint8Array) {
+    return Buffer.from(postData);
+  }
+  if (postData) {
+    return Buffer.from(JSON.stringify(postData), "utf8");
+  }
+  return undefined;
+}
+
+function toBuffer(value: string | Buffer | Uint8Array): Buffer {
+  if (typeof value === "string") {
+    return Buffer.from(value, "utf8");
+  }
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+  return Buffer.from(value);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export type { HistoryEntry };
