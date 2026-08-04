@@ -74,7 +74,11 @@ interface ActiveInvocation {
   complete: Promise<void>;
   resolveComplete: () => void;
   didThrow: boolean;
+  route: BackendRouteImpl;
 }
+
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
+const disposedResponses = new WeakSet<object>();
 
 /**
  * Playwright-shaped Request with local fallback overrides.
@@ -89,6 +93,12 @@ class BackendRequestImpl implements BackendRequest {
   readonly clientId: string;
   // DIVERGENCE END
   private _fallbackOverrides: FallbackOverrides = {};
+  private _redirectedFrom: BackendRequestImpl | null = null;
+  private _redirectedTo: BackendRequestImpl | null = null;
+  private _response: BackendResponse | null = null;
+  private _responseResolved = false;
+  private readonly _responsePromise: Promise<BackendResponse | null>;
+  private _resolveResponse!: (response: BackendResponse | null) => void;
 
   constructor(request: SerializedRequest, clientId: string) {
     this._url = request.url;
@@ -96,6 +106,9 @@ class BackendRequestImpl implements BackendRequest {
     this._headers = { ...request.headers };
     this._postDataBuffer = decodeBody(request.bodyBase64);
     this.clientId = clientId;
+    this._responsePromise = new Promise<BackendResponse | null>((resolve) => {
+      this._resolveResponse = resolve;
+    });
   }
 
   url(): string {
@@ -181,11 +194,11 @@ class BackendRequestImpl implements BackendRequest {
   }
 
   redirectedFrom(): BackendRequest | null {
-    return null;
+    return this._redirectedFrom;
   }
 
   redirectedTo(): BackendRequest | null {
-    return null;
+    return this._redirectedTo;
   }
 
   failure(): { errorText: string } | null {
@@ -216,20 +229,44 @@ class BackendRequestImpl implements BackendRequest {
   }
 
   async response(): Promise<BackendResponse | null> {
-    // TODO: wire response correlation when the proxy exposes it.
-    return null;
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Request.response)
+    return this._responsePromise;
+  }
+
+  existingResponse(): BackendResponse | null {
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Request.existingResponse)
+    return this._response;
+  }
+
+  _settleResponse(response: BackendResponse | null): void {
+    if (this._responseResolved) {
+      return;
+    }
+    this._responseResolved = true;
+    this._response = response;
+    this._resolveResponse(response);
+  }
+
+  _linkRedirectedFrom(prior: BackendRequestImpl): void {
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Request constructor)
+    this._redirectedFrom = prior;
+    prior._redirectedTo = this;
   }
 
   _applyFallbackOverrides(overrides: ContinueOptions): void {
     // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (_applyFallbackOverrides)
-    if (overrides.url !== undefined) {
+    // Truthy checks — empty string url/method overrides are ignored.
+    if (overrides.url) {
       this._fallbackOverrides.url = overrides.url;
     }
-    if (overrides.method !== undefined) {
+    if (overrides.method) {
       this._fallbackOverrides.method = overrides.method;
     }
-    if (overrides.headers !== undefined) {
-      this._fallbackOverrides.headers = headersObjectLossy(overrides.headers);
+    if (overrides.headers) {
+      // Keep values as-is; non-string values are rejected when continuing.
+      this._fallbackOverrides.headers = headersObjectStrict(
+        overrides.headers as Record<string, unknown>,
+      );
     }
     if (overrides.postData !== undefined) {
       const buffer = postDataToBuffer(overrides.postData);
@@ -353,6 +390,8 @@ class BackendRouteImpl implements BackendRoute {
   async abort(errorCode = "failed"): Promise<void> {
     await this._handleRoute(async () => {
       this._terminalSettled = true;
+      // Playwright: aborted requests resolve request.response() to null.
+      this._request._settleResponse(null);
       this._connection.send({
         type: "handler:result",
         requestId: this._requestId,
@@ -527,6 +566,7 @@ class BackendRouteImpl implements BackendRoute {
       return;
     }
     this._terminalSettled = true;
+    this._request._settleResponse(null);
     this._connection.send({
       type: "handler:result",
       requestId: this._requestId,
@@ -536,6 +576,23 @@ class BackendRouteImpl implements BackendRoute {
         message,
       },
     });
+  }
+
+  /**
+   * Force-continue an in-flight route when interception is cleared
+   * (`unrouteAll({ behavior: 'default' })`), mirroring Playwright disabling
+   * Fetch interception patterns.
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts (_unrouteInternal)
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/network.ts (Route.removeHandler)
+   */
+  forceContinueFromUnroute(): void {
+    if (this._terminalSettled) {
+      return;
+    }
+    this.sendFinalContinue();
+    if (this._handlingPromise !== null) {
+      this._reportHandled(true);
+    }
   }
 
   private async _handleRoute(callback: () => Promise<void>): Promise<void> {
@@ -617,6 +674,7 @@ class RouteHandlerRecord {
       complete,
       resolveComplete,
       didThrow: false,
+      route,
     };
     this._activeInvocations.add(invocation);
     try {
@@ -647,6 +705,13 @@ class RouteHandlerRecord {
     await Promise.all(promises);
   }
 
+  /** Force-continue active invocations when routes are cleared with default behavior. */
+  forceContinueActive(): void {
+    for (const activation of [...this._activeInvocations]) {
+      activation.route.forceContinueFromUnroute();
+    }
+  }
+
   private async _handleInternal(route: BackendRouteImpl): Promise<boolean> {
     ++this.handledCount;
     const handledPromise = route._startHandling();
@@ -675,6 +740,8 @@ export function createBackendMocks(options: {
   const pendingFetches = new Map<string, PendingFetch>();
   const observed: BackendRequest[] = [];
   const requestsById = new Map<string, BackendRequestImpl>();
+  /** Pending redirect targets: `${clientId}\0${absoluteUrl}` → prior request. */
+  const pendingRedirects = new Map<string, BackendRequestImpl>();
   const requestWaiters = new Set<NetworkWaiter<BackendRequest>>();
   const responseWaiters = new Set<NetworkWaiter<BackendResponse>>();
   const errors: Error[] = [];
@@ -698,11 +765,54 @@ export function createBackendMocks(options: {
     let request = requestsById.get(requestId);
     if (request === undefined) {
       request = new BackendRequestImpl(serialized, clientId);
+      const redirectKey = `${clientId}\0${serialized.url}`;
+      const prior = pendingRedirects.get(redirectKey);
+      if (prior !== undefined) {
+        pendingRedirects.delete(redirectKey);
+        request._linkRedirectedFrom(prior);
+      }
       requestsById.set(requestId, request);
       observed.push(request);
       void notifyRequestWaiters(request);
     }
     return request;
+  }
+
+  function noteRedirectResponse(
+    request: BackendRequestImpl,
+    response: SerializedResponse,
+  ): void {
+    if (!REDIRECT_STATUS.has(response.status)) {
+      return;
+    }
+    const location =
+      response.headers["location"] ?? response.headers["Location"];
+    if (location === undefined || location.length === 0) {
+      return;
+    }
+    try {
+      const resolved = new URL(location, request.url()).href;
+      const key = `${request.clientId}\0${resolved}`;
+      // Follow-up may already be observed (race with request:response). Link
+      // either way so waitForRequest predicates see redirectedFrom.
+      const already = [...requestsById.values()]
+        .reverse()
+        .find(
+          (candidate) =>
+            candidate.clientId === request.clientId &&
+            candidate.url() === resolved &&
+            candidate.redirectedFrom() === null &&
+            candidate !== request,
+        );
+      if (already !== undefined) {
+        already._linkRedirectedFrom(request);
+        void notifyRequestWaiters(already);
+      } else {
+        pendingRedirects.set(key, request);
+      }
+    } catch {
+      // Invalid Location — no redirect chain link.
+    }
   }
 
   async function notifyRequestWaiters(request: BackendRequest): Promise<void> {
@@ -772,14 +882,21 @@ export function createBackendMocks(options: {
         return;
       }
       case "request:response": {
-        if (!message.ok || message.response === undefined) {
-          return;
-        }
         const request = requestsById.get(message.requestId);
         if (request === undefined) {
           return;
         }
-        const response = toBackendResponse(message.response, request);
+        if (!message.ok || message.response === undefined) {
+          request._settleResponse(null);
+          return;
+        }
+        // Prefer a single Response object for existingResponse() === waitForResponse.
+        let response = request.existingResponse();
+        if (response === null) {
+          response = toBackendResponse(message.response, request);
+          request._settleResponse(response);
+        }
+        noteRedirectResponse(request, message.response);
         void notifyResponseWaiters(response);
         return;
       }
@@ -914,15 +1031,22 @@ export function createBackendMocks(options: {
     },
 
     async unrouteAll(options: UnrouteAllOptions = {}) {
+      // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts (_unrouteInternal)
       const removed = [...routes];
       routes.length = 0;
       for (const route of removed) {
         unregisterRoute(route.routeId);
       }
 
-      const behavior = options.behavior;
+      const behavior = options.behavior ?? "default";
       if (behavior === "wait" || behavior === "ignoreErrors") {
         await Promise.all(removed.map((route) => route.stop(behavior)));
+      } else {
+        // default: do not wait; clearing interception force-continues in-flight
+        // requests (Playwright Fetch.disable / empty interception patterns).
+        for (const route of removed) {
+          route.forceContinueActive();
+        }
       }
     },
 
@@ -1116,14 +1240,13 @@ function toBackendResponse(
   // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Response)
   const bodyBuffer = decodeBody(response.bodyBase64) ?? Buffer.alloc(0);
   const headerMap = { ...response.headers };
-  let disposed = false;
   const assertNotDisposed = () => {
-    if (disposed) {
+    if (disposedResponses.has(api)) {
       throw new Error("Response has been disposed");
     }
   };
 
-  return {
+  const api: BackendResponse = {
     bodyBuffer,
     ok() {
       return response.status >= 200 && response.status <= 299;
@@ -1171,9 +1294,11 @@ function toBackendResponse(
       return JSON.parse(bodyBuffer.toString("utf8")) as unknown;
     },
     async dispose() {
-      disposed = true;
+      // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (APIResponse.dispose)
+      disposedResponses.add(api);
     },
   };
+  return api;
 }
 
 /**
@@ -1321,6 +1446,7 @@ function toFetchOverrides(
   request: BackendRequestImpl,
   options: FetchOptions,
 ): RequestOverrides | undefined {
+  // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (_innerFetch)
   const hasOverrides =
     options.url !== undefined ||
     options.method !== undefined ||
@@ -1331,9 +1457,6 @@ function toFetchOverrides(
     return undefined;
   }
 
-  const postDataBuffer =
-    options.postData !== undefined ? postDataToBuffer(options.postData) : undefined;
-
   let headers: Record<string, string> | undefined;
   if (options.headers !== undefined) {
     headers = normalizeHeaders(headersObjectLossy(options.headers));
@@ -1342,8 +1465,12 @@ function toFetchOverrides(
     headers = normalizeHeaders({ ...request.headers() });
   }
 
-  if (options.postData !== undefined && headers !== undefined) {
-    applyPostDataContentTypeDefault(headers, options.postData);
+  let postDataBuffer: Buffer | undefined;
+  if (options.postData !== undefined) {
+    postDataBuffer = serializeFetchPostData(options.postData, headers);
+    if (headers !== undefined) {
+      applyPostDataContentTypeDefault(headers, options.postData);
+    }
   }
 
   return {
@@ -1352,6 +1479,48 @@ function toFetchOverrides(
     ...(headers !== undefined ? { headers } : {}),
     ...(postDataBuffer !== undefined ? { bodyBase64: encodeBody(postDataBuffer) } : {}),
   };
+}
+
+/**
+ * Playwright APIRequestContext string postData under exact `application/json`
+ * is JSON-stringified when the string is not already JSON-parsable.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (_innerFetch)
+ */
+function serializeFetchPostData(
+  postData: string | Buffer | Uint8Array | object,
+  headers: Record<string, string> | undefined,
+): Buffer | undefined {
+  if (typeof postData === "string" && isExactJsonContentType(headers)) {
+    const payload = isJsonParsable(postData) ? postData : JSON.stringify(postData);
+    return Buffer.from(payload, "utf8");
+  }
+  return postDataToBuffer(postData);
+}
+
+function isExactJsonContentType(
+  headers: Record<string, string> | undefined,
+): boolean {
+  if (headers === undefined) {
+    return false;
+  }
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === "content-type") {
+      return value === "application/json";
+    }
+  }
+  return false;
+}
+
+function isJsonParsable(value: string): boolean {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function toOverrides(options: ContinueOptions): RequestOverrides | undefined {
@@ -1439,67 +1608,69 @@ async function buildFulfillResponse(
     throw new Error("Can specify either body or json parameters");
   }
 
+  if (options.response !== undefined && disposedResponses.has(options.response)) {
+    // Playwright server: assert(buffer, 'Fetch response has been disposed')
+    throw new Error("Fetch response has been disposed");
+  }
+
+  let statusOption = options.status;
+  let headersOption = options.headers;
+  let body: string | Buffer | Uint8Array | null = null;
+  let statusText = "";
+  let responseUrl = requestUrl;
+
+  if (options.json !== undefined) {
+    body = JSON.stringify(options.json);
+  }
+
   if (options.response !== undefined) {
     // Playwright: headersOption ??= response.headers() — provided headers replace,
     // they are not merged with the fetched response headers.
-    const headers = coerceFulfillHeaders(
-      options.headers !== undefined ? options.headers : options.response.headers(),
-    );
-    let body = options.response.bodyBuffer;
-    if (options.json !== undefined) {
-      body = Buffer.from(JSON.stringify(options.json), "utf8");
-      if (!("content-type" in headers)) headers["content-type"] = "application/json";
-    } else if (options.body !== undefined) {
-      body = toBuffer(options.body);
+    statusOption ??= options.response.status();
+    headersOption ??= options.response.headers();
+    statusText = options.response.statusText();
+    responseUrl = options.response.url() || requestUrl;
+    if (body === null && options.path === undefined) {
+      body = options.response.bodyBuffer;
     }
-    if (options.contentType !== undefined) {
-      headers["content-type"] = String(options.contentType);
-    }
-    if (body.length > 0 && !("content-length" in headers)) {
-      headers["content-length"] = String(body.length);
-    }
-    return {
-      // Playwright: statusOption || 200 (status 0 → 200)
-      status: options.status || options.response.status() || 200,
-      statusText: options.response.statusText(),
-      headers: normalizeHeaders(headers),
-      bodyBase64: encodeBody(body),
-      url: options.response.url() || requestUrl,
-    };
   }
 
-  const headers = coerceFulfillHeaders({ ...options.headers });
-  let body: Buffer | null = null;
+  if (options.body !== undefined && options.json === undefined) {
+    body = options.body;
+  }
 
-  if (options.json !== undefined) {
-    body = Buffer.from(JSON.stringify(options.json), "utf8");
-    if (!("content-type" in headers)) headers["content-type"] = "application/json";
-  } else if (options.path !== undefined) {
+  // path overwrites body (including json-serialized body) but json still wins
+  // for the application/json content-type default below.
+  let isFromPath = false;
+  if (options.path !== undefined) {
     body = await readFile(options.path);
-    if (!("content-type" in headers)) {
-      headers["content-type"] =
-        getMimeTypeForPath(options.path) || "application/octet-stream";
-    }
-  } else if (options.body !== undefined) {
-    body = toBuffer(options.body);
+    isFromPath = true;
   }
 
+  const headers = coerceFulfillHeaders(headersOption);
   if (options.contentType !== undefined) {
     headers["content-type"] = String(options.contentType);
+  } else if (options.json !== undefined) {
+    headers["content-type"] = "application/json";
+  } else if (isFromPath && options.path !== undefined) {
+    headers["content-type"] =
+      getMimeTypeForPath(options.path) || "application/octet-stream";
   }
 
-  const length = body?.length ?? 0;
+  const bodyBuffer =
+    body === null ? null : typeof body === "string" ? Buffer.from(body, "utf8") : toBuffer(body);
+  const length = bodyBuffer?.length ?? 0;
   if (length > 0 && !("content-length" in headers)) {
     headers["content-length"] = String(length);
   }
 
   return {
     // Playwright: statusOption || 200 (status 0 → 200)
-    status: options.status || 200,
-    statusText: "",
+    status: statusOption || 200,
+    statusText,
     headers: normalizeHeaders(headers),
-    bodyBase64: encodeBody(body),
-    ...(requestUrl !== undefined ? { url: requestUrl } : {}),
+    bodyBase64: encodeBody(bodyBuffer),
+    ...(responseUrl !== undefined ? { url: responseUrl } : {}),
   };
 }
 
@@ -1559,6 +1730,29 @@ function headersObjectLossy(
       continue;
     }
     result[key.toLowerCase()] = String(value);
+  }
+  return result;
+}
+
+/**
+ * Continue/fallback header overrides — reject non-string values (Playwright
+ * channel validation) rather than coercing via String().
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (_applyFallbackOverrides)
+ */
+function headersObjectStrict(
+  headers: Record<string, unknown>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(
+        `Expected string for header value of '${key}', got ${typeof value}`,
+      );
+    }
+    result[key.toLowerCase()] = value;
   }
   return result;
 }

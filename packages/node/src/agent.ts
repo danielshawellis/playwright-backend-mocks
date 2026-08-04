@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import http from "node:http";
+import https from "node:https";
 import { BatchInterceptor } from "@mswjs/interceptors";
 import nodeInterceptors from "@mswjs/interceptors/presets/node";
 import {
@@ -218,7 +220,10 @@ function handleProxyMessage(
         maxRetries: message.maxRetries,
       })
         .then(async (response) => {
-          const serialized = await serializeResponse(response);
+          const serialized = await serializeResponse(
+            response,
+            message.overrides?.url ?? item.request.url,
+          );
           connection.send({
             type: "fetch:result",
             requestId: message.requestId,
@@ -246,6 +251,11 @@ function handleProxyMessage(
 /**
  * Continue/passthrough settlement: fetch upstream, respond to the app, and
  * report `request:response` for Playwright waitForResponse waiters.
+ *
+ * Do not auto-follow redirects — the app client follows, producing a separate
+ * intercepted request so redirectedFrom/redirectedTo can link the chain
+ * (Playwright browser continue semantics).
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
  */
 function settleWithUpstream(
   connection: ProxyConnection,
@@ -253,9 +263,17 @@ function settleWithUpstream(
   item: PendingController,
   overrides?: RequestOverrides,
 ): void {
-  void performUpstream(item.request, overrides)
+  void performUpstream(item.request, overrides, {
+    maxRedirects: 0,
+    // Header overrides replace the set (Playwright continue); use http/https so
+    // undici does not re-inject Accept: */* and other fetch defaults.
+    exactHeaders: overrides?.headers !== undefined,
+  })
     .then(async (response) => {
-      const serialized = await serializeResponse(response);
+      const serialized = await serializeResponse(
+        response,
+        overrides?.url ?? item.request.url,
+      );
       item.controller.respondWith(responseFromSerialized(serialized));
       item.resolve();
       try {
@@ -296,7 +314,11 @@ function settleWithUpstream(
 async function performUpstream(
   original: Request,
   overrides?: RequestOverrides,
-  options: { maxRedirects?: number; maxRetries?: number } = {},
+  options: {
+    maxRedirects?: number;
+    maxRetries?: number;
+    exactHeaders?: boolean;
+  } = {},
 ): Promise<Response> {
   return upstreamBypass.run(true, async () => {
     // Playwright: maxRetries ?? 0; retry only ECONNRESET with exponential backoff.
@@ -328,7 +350,7 @@ async function performUpstream(
 async function performUpstreamOnce(
   original: Request,
   overrides: RequestOverrides | undefined,
-  options: { maxRedirects?: number },
+  options: { maxRedirects?: number; exactHeaders?: boolean },
 ): Promise<Response> {
   // Playwright: maxRedirects ?? 20; 0 → -1 meaning "do not follow".
   let redirectsRemaining = options.maxRedirects ?? 20;
@@ -338,37 +360,24 @@ async function performUpstreamOnce(
 
   let url = overrides?.url ?? original.url;
   let method = overrides?.method ?? original.method;
-  const headers = new Headers(
-    overrides?.headers ?? normalizeHeaders(original.headers),
-  );
+  const headerRecord = {
+    ...(overrides?.headers ?? normalizeHeaders(original.headers)),
+  };
 
   let body: Uint8Array | null = null;
   if (overrides?.bodyBase64 !== undefined) {
     const decoded = decodeBody(overrides.bodyBase64);
     body = decoded === null ? null : new Uint8Array(decoded);
     // Chromium Fetch.continueRequest recalculates Content-Length from postData.
-    syncContentLength(headers, body);
+    syncContentLengthRecord(headerRecord, body);
   } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
     body = new Uint8Array(await original.clone().arrayBuffer());
   }
 
   for (;;) {
-    const init: RequestInit = {
-      method,
-      headers,
-      redirect: "manual",
-    };
-
-    if (
-      body !== null &&
-      method.toUpperCase() !== "GET" &&
-      method.toUpperCase() !== "HEAD"
-    ) {
-      // Copy into a fresh ArrayBuffer-backed view for DOM BodyInit typings.
-      init.body = Uint8Array.from(body);
-    }
-
-    const response = await fetch(url, init);
+    const response = options.exactHeaders
+      ? await httpRequestExact(url, method, headerRecord, body)
+      : await fetchRequest(url, method, headerRecord, body);
 
     if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
       return response;
@@ -402,21 +411,137 @@ async function performUpstreamOnce(
     ) {
       method = "GET";
       body = null;
-      headers.delete("content-encoding");
-      headers.delete("content-language");
-      headers.delete("content-length");
-      headers.delete("content-location");
-      headers.delete("content-type");
+      deleteHeaderRecord(headerRecord, "content-encoding");
+      deleteHeaderRecord(headerRecord, "content-language");
+      deleteHeaderRecord(headerRecord, "content-length");
+      deleteHeaderRecord(headerRecord, "content-location");
+      deleteHeaderRecord(headerRecord, "content-type");
     }
 
     if (nextUrl.origin !== new URL(url).origin) {
-      headers.delete("authorization");
+      deleteHeaderRecord(headerRecord, "authorization");
     }
-    headers.set("host", nextUrl.host);
+    headerRecord.host = nextUrl.host;
 
     url = nextUrl.href;
     redirectsRemaining -= 1;
   }
+}
+
+async function fetchRequest(
+  url: string,
+  method: string,
+  headerRecord: Record<string, string>,
+  body: Uint8Array | null,
+): Promise<Response> {
+  const headers = new Headers(headerRecord);
+  const init: RequestInit = {
+    method,
+    headers,
+    redirect: "manual",
+  };
+  if (
+    body !== null &&
+    method.toUpperCase() !== "GET" &&
+    method.toUpperCase() !== "HEAD"
+  ) {
+    init.body = Uint8Array.from(body);
+  }
+  return fetch(url, init);
+}
+
+/**
+ * node:http/https request with exact header set — no undici fetch default headers
+ * (Accept star-slash-star, etc.). Used for continue() header replacement parity
+ * with Chromium Fetch.continueRequest.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts
+ */
+function httpRequestExact(
+  url: string,
+  method: string,
+  headerRecord: Record<string, string>,
+  body: Uint8Array | null,
+): Promise<Response> {
+  const parsed = new URL(url);
+  const transport = parsed.protocol === "https:" ? https : http;
+  const headers: Record<string, string> = { ...headerRecord };
+  if (!hasHeaderRecord(headers, "host")) {
+    headers.host = parsed.host;
+  }
+
+  const canHaveBody =
+    body !== null &&
+    method.toUpperCase() !== "GET" &&
+    method.toUpperCase() !== "HEAD";
+
+  return new Promise<Response>((resolve, reject) => {
+    const req = transport.request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || undefined,
+        path: `${parsed.pathname}${parsed.search}`,
+        method,
+        headers,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          const responseHeaders = new Headers();
+          for (const [name, value] of Object.entries(res.headers)) {
+            if (value === undefined) continue;
+            if (Array.isArray(value)) {
+              for (const entry of value) {
+                responseHeaders.append(name, entry);
+              }
+            } else {
+              responseHeaders.set(name, value);
+            }
+          }
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: res.statusCode ?? 0,
+              statusText: res.statusMessage ?? "",
+              headers: responseHeaders,
+            }),
+          );
+        });
+        res.on("error", reject);
+      },
+    );
+    req.on("error", reject);
+    if (canHaveBody && body !== null) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
+function syncContentLengthRecord(
+  headers: Record<string, string>,
+  body: Uint8Array | null,
+): void {
+  deleteHeaderRecord(headers, "content-length");
+  if (body !== null && body.byteLength > 0) {
+    headers["content-length"] = String(body.byteLength);
+  }
+}
+
+function deleteHeaderRecord(headers: Record<string, string>, name: string): void {
+  const lower = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) {
+      delete headers[key];
+    }
+  }
+}
+
+function hasHeaderRecord(headers: Record<string, string>, name: string): boolean {
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
 }
 
 /**
@@ -464,14 +589,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function syncContentLength(headers: Headers, body: Uint8Array | null): void {
-  if (body === null || body.byteLength === 0) {
-    headers.delete("content-length");
-  } else {
-    headers.set("content-length", String(body.byteLength));
-  }
-}
-
 function responseFromSerialized(response: SerializedResponse): Response {
   const decoded = decodeBody(response.bodyBase64);
   const body = decoded === null ? null : Uint8Array.from(decoded);
@@ -482,13 +599,17 @@ function responseFromSerialized(response: SerializedResponse): Response {
   });
 }
 
-async function serializeResponse(response: Response): Promise<SerializedResponse> {
+async function serializeResponse(
+  response: Response,
+  fallbackUrl?: string,
+): Promise<SerializedResponse> {
   const buffer = Buffer.from(await response.arrayBuffer());
   return {
     status: response.status,
     statusText: response.statusText,
     headers: normalizeHeaders(response.headers),
     bodyBase64: encodeBody(buffer),
-    url: response.url,
+    // node:http-backed Response has an empty url; prefer the request URL.
+    url: response.url || fallbackUrl || "",
   };
 }

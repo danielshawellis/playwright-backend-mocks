@@ -94,6 +94,11 @@ export interface BackendRequest {
   sizes(): Promise<RequestSizes>;
   response(): Promise<BackendResponse | null>;
   /**
+   * Immediate response if already available; null before settlement.
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Request.existingResponse)
+   */
+  existingResponse(): BackendResponse | null;
+  /**
    * DIVERGENCE: product addition for multi-app Node targeting.
    * Not present on Playwright's Request.
    */
