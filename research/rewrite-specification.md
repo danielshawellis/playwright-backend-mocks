@@ -207,6 +207,8 @@ Rules:
 
 Switch the same suite to library mode and implement until green.
 
+**Start here:** prove the dual-mode *routing* switch with one green oracle case (see below) before grinding through the full parity backlog. Passthrough smokes already cover the host/control-plane half.
+
 ### What changes in node / library mode
 
 | Piece         | Change                                                                                      |
@@ -232,11 +234,26 @@ Before scaffolding packages, set up TypeScript and ESLint so they do **not** fig
 
 Lint and typecheck should make Playwright-close code easy to land, not something you constantly `# eslint-disable` around.
 
+### First milestone — prove the dual-mode routing switch
+
+Step 1 already proves the **host** half of dual-mode: `PARITY_MODE=node` passthrough smokes (`smoke-passthrough.spec.ts`) are green — shared downstream, control-plane drive path, upstream unchanged. That does **not** prove the **routing** half (`harness.route` → `backendMocks.route` → intercept → settle).
+
+Before the full parity TDD backlog, land a **minimal real skeleton** (not a throwaway fake library) that gets **one** existing oracle case green in node mode — preferably a simple HTTP `fulfill` (e.g. mock `/users`). That case must use the same harness fixtures and assertions as browser mode.
+
+Gate criteria:
+
+1. Process glue loads: proxy + `startBackendMocks` in `fixtures/node-downstream` (`ENABLE_BACKEND_MOCKS=1`).
+2. Harness node path wires routing fixtures to real `backendMocks.*` (replace `notWired` for the APIs that case needs).
+3. One routed oracle case passes in `PARITY_MODE=node` with the same assertion intent as browser mode.
+4. Failures after that are product / parity gaps, not missing topology or harness wiring.
+
+Do **not** build a temporary stub that invents parallel mock semantics. The skeleton is the start of the real packages; it is just scoped to the smallest path that proves the strategy.
+
 ### Implementation approach
 
 1. Land Playwright-aligned TS + ESLint configs (above).
-2. Add the thinnest skeleton that can load backend mode (protocol, proxy, node agent, playwright fixture wiring) so failures are product failures, not missing process glue.
-3. Drive work from failing backend-mode cases.
+2. Hit the dual-mode routing gate (previous subsection): thinnest protocol / proxy / node agent / playwright fixture wiring + one green `fulfill` case in node mode.
+3. Drive remaining work from failing backend-mode cases (`PARITY_NODE_FULL=1`).
 4. Mirror Playwright client handler orchestration closely (`Route` / `RouteHandler`, fallback, times, LIFO, settle checks).
 5. Keep proxy ownership rules: chain within one test; fail across tests.
 6. Port glob matching and settle semantics deliberately from the pinned Playwright revision.
@@ -273,8 +290,8 @@ CI: run browser oracle against pinned Playwright; run backend parity against bui
 
 1. Archive prototype → `historical/`; clear living package/test/fixture paths for greenfield use.
 2. Pin Playwright; build upstream + browser harness; land Step 1 suite green in browser mode.
-3. Extract thin dual-mode seam including `routeFromHAR` (same HAR files in both modes).
-4. Align TS + ESLint with the pinned Playwright revision; then scaffold Step 2 skeleton and enable backend mode (expect red).
+3. Extract thin dual-mode seam including `routeFromHAR` (same HAR files in both modes). Node passthrough smokes prove the host switch; routing fixtures stay `notWired` until Step 2.
+4. Align TS + ESLint with the pinned Playwright revision; then hit the Step 2 dual-mode routing gate — scaffold the real skeleton and get **one** routed oracle case (simple `fulfill`) green in node mode before the backlog.
 5. Implement packages against failing cases until backend mode is green (HAR record/replay included).
 6. Add library-only suite; remove `historical/` when finished.
 
