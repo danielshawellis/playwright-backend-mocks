@@ -9,7 +9,7 @@ Plan for a clean VitePress documentation site for the rewritten library. Histori
 | [`PHILOSOPHY.md`](../PHILOSOPHY.md) | Product intention, architecture, parity rules |
 | [`rewrite-specification.md`](./rewrite-specification.md) | In-scope APIs, divergences, WS caveats |
 | [`tests/parity/`](../tests/parity/) | Executable DX contract |
-| Playwright docs map (§8 below) | Structure to mirror for parity APIs |
+| Playwright docs map (§9 below) | Structure to mirror for parity APIs |
 
 ---
 
