@@ -47,4 +47,8 @@ export {
   type ConnectionRole,
   type ClientToProxyMessage,
   type ProxyToClientMessage,
+  type RouteKind,
+  type WsData,
+  routeKindSchema,
+  wsDataSchema,
 } from "./schemas.js";

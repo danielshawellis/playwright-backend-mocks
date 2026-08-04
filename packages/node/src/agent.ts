@@ -15,6 +15,7 @@ import {
   type SerializedResponse,
 } from "@playwright-backend-mocks/protocol";
 import { serializeRequest } from "./serialize-request.js";
+import { installWebSocketBridge } from "./websocket-bridge.js";
 import { connectToProxy, type ProxyConnection } from "./ws-client.js";
 
 export interface StartBackendMocksOptions {
@@ -79,6 +80,11 @@ export async function startBackendMocks(
   const pending = new Map<string, PendingController>();
   let stopped = false;
 
+  // DIVERGENCE: App WebSockets only via globalThis.WebSocket (MSW WebSocketInterceptor).
+  // Control-plane `ws` package sockets are not patched.
+  // DIVERGENCE END
+  const wsBridge = installWebSocketBridge(connection);
+
   const failPending = (message: string) => {
     for (const [id, item] of pending) {
       item.controller.errorWith(new Error(message));
@@ -92,6 +98,9 @@ export async function startBackendMocks(
   });
 
   connection.onMessage((message) => {
+    if (wsBridge.handleProxyMessage(message)) {
+      return;
+    }
     handleProxyMessage(connection, pending, message);
   });
 
@@ -147,6 +156,7 @@ export async function startBackendMocks(
     clientId: connection.clientId,
     async stop() {
       stopped = true;
+      wsBridge.dispose();
       interceptor.dispose();
       failPending("Backend mocks agent stopped while a request was pending");
       await connection.close();

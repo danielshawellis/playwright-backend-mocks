@@ -32,6 +32,29 @@ interface RouteRegistration {
   readonly testId: string;
   readonly matcher: SerializedMatcher;
   readonly connectionId: string;
+  /** HTTP routes are cleared by unrouteAll; websocket routes are not. */
+  readonly kind: "http" | "websocket";
+}
+
+interface PendingSocket {
+  readonly socketId: string;
+  readonly connectionId: string;
+  readonly clientId: string;
+  readonly url: string;
+  readonly protocols: string[];
+  routeId?: string;
+  testId?: string;
+  /** Playwright worker connection that owns this socket after claim. */
+  workerConnectionId?: string;
+}
+
+interface PendingWsClaim {
+  readonly expectedTestIds: Set<string>;
+  readonly respondedTestIds: Set<string>;
+  readonly matches: Array<{ routeId: string; testId: string }>;
+  readonly timer: NodeJS.Timeout;
+  resolve(matches: Array<{ routeId: string; testId: string }>): void;
+  reject(error: Error): void;
 }
 
 interface TestRegistration {
@@ -84,6 +107,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
   const tests = new Map<string, TestRegistration>();
   const pending = new Map<string, PendingRequest>();
   const pendingClaims = new Map<string, PendingClaim>();
+  const pendingSockets = new Map<string, PendingSocket>();
+  const pendingWsClaims = new Map<string, PendingWsClaim>();
 
   const httpServer = createServer((req, res) => {
     void handleHttp(req, res);
@@ -195,6 +220,106 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       case "history:query":
         handleHistoryQuery(bound, message);
         return;
+      case "ws:connection":
+        void handleWsConnection(bound, message);
+        return;
+      case "ws:claim-result":
+        handleWsClaimResult(message);
+        return;
+      case "ws:messageFromPage":
+        if (bound.role === "node") {
+          relayWsToOwner(message.socketId, {
+            type: "ws:messageFromPage",
+            socketId: message.socketId,
+            data: message.data,
+            isBase64: message.isBase64,
+          });
+        }
+        return;
+      case "ws:messageFromServer":
+        if (bound.role === "node") {
+          relayWsToOwner(message.socketId, {
+            type: "ws:messageFromServer",
+            socketId: message.socketId,
+            data: message.data,
+            isBase64: message.isBase64,
+          });
+        }
+        return;
+      case "ws:closePage":
+        if (bound.role === "node") {
+          relayWsToOwner(message.socketId, {
+            type: "ws:closePage",
+            socketId: message.socketId,
+            ...(message.code !== undefined ? { code: message.code } : {}),
+            ...(message.reason !== undefined ? { reason: message.reason } : {}),
+            wasClean: message.wasClean,
+          });
+        } else if (bound.role === "playwright") {
+          relayWsToNode(message.socketId, {
+            type: "ws:closePage",
+            socketId: message.socketId,
+            ...(message.code !== undefined ? { code: message.code } : {}),
+            ...(message.reason !== undefined ? { reason: message.reason } : {}),
+            wasClean: message.wasClean,
+          });
+        }
+        return;
+      case "ws:closeServer":
+        if (bound.role === "node") {
+          relayWsToOwner(message.socketId, {
+            type: "ws:closeServer",
+            socketId: message.socketId,
+            ...(message.code !== undefined ? { code: message.code } : {}),
+            ...(message.reason !== undefined ? { reason: message.reason } : {}),
+            wasClean: message.wasClean,
+          });
+        } else if (bound.role === "playwright") {
+          relayWsToNode(message.socketId, {
+            type: "ws:closeServer",
+            socketId: message.socketId,
+            ...(message.code !== undefined ? { code: message.code } : {}),
+            ...(message.reason !== undefined ? { reason: message.reason } : {}),
+            wasClean: message.wasClean,
+          });
+        }
+        return;
+      case "ws:connect":
+        if (bound.role === "playwright") {
+          relayWsToNode(message.socketId, {
+            type: "ws:connect",
+            socketId: message.socketId,
+          });
+        }
+        return;
+      case "ws:ensureOpened":
+        if (bound.role === "playwright") {
+          relayWsToNode(message.socketId, {
+            type: "ws:ensureOpened",
+            socketId: message.socketId,
+          });
+        }
+        return;
+      case "ws:sendToPage":
+        if (bound.role === "playwright") {
+          relayWsToNode(message.socketId, {
+            type: "ws:sendToPage",
+            socketId: message.socketId,
+            data: message.data,
+            isBase64: message.isBase64,
+          });
+        }
+        return;
+      case "ws:sendToServer":
+        if (bound.role === "playwright") {
+          relayWsToNode(message.socketId, {
+            type: "ws:sendToServer",
+            socketId: message.socketId,
+            data: message.data,
+            isBase64: message.isBase64,
+          });
+        }
+        return;
       default: {
         const _exhaustive: never = message;
         return _exhaustive;
@@ -297,6 +422,10 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     const expectedTestIds = new Set<string>();
     const claimConnections = new Set<string>();
     for (const route of routes.values()) {
+      // WebSocket routes do not participate in HTTP claim broadcast.
+      if (route.kind === "websocket") {
+        continue;
+      }
       const test = tests.get(route.testId);
       if (test === undefined) {
         continue;
@@ -625,6 +754,18 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     });
   }
 
+  function completeWsClaimForTest(testId: string): void {
+    for (const claim of pendingWsClaims.values()) {
+      if (!claim.expectedTestIds.has(testId) || claim.respondedTestIds.has(testId)) {
+        continue;
+      }
+      claim.respondedTestIds.add(testId);
+      if ([...claim.expectedTestIds].every((id) => claim.respondedTestIds.has(id))) {
+        claim.resolve([...claim.matches]);
+      }
+    }
+  }
+
   function handleTestUnregister(testId: string): void {
     tests.delete(testId);
     for (const [routeId, route] of routes) {
@@ -633,6 +774,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       }
     }
     completeClaimForTest(testId);
+    completeWsClaimForTest(testId);
     for (const [requestId, item] of pending) {
       if (item.testId === testId) {
         const node = connections.get(item.connectionId);
@@ -662,7 +804,277 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       testId: message.testId,
       matcher: message.matcher,
       connectionId: bound.connectionId,
+      kind: message.kind ?? "http",
     });
+  }
+
+  async function handleWsConnection(
+    bound: BoundSocket,
+    message: Extract<ClientToProxyMessage, { type: "ws:connection" }>,
+  ): Promise<void> {
+    const pendingSocket: PendingSocket = {
+      socketId: message.socketId,
+      connectionId: bound.connectionId,
+      clientId: message.clientId,
+      url: message.url,
+      protocols: message.protocols,
+    };
+    pendingSockets.set(message.socketId, pendingSocket);
+
+    const activeRoutes: RouteRegistration[] = [];
+    const expectedTestIds = new Set<string>();
+    const claimConnections = new Set<string>();
+    for (const route of routes.values()) {
+      if (route.kind !== "websocket") {
+        continue;
+      }
+      const test = tests.get(route.testId);
+      if (test === undefined) {
+        continue;
+      }
+      activeRoutes.push(route);
+      expectedTestIds.add(route.testId);
+      claimConnections.add(route.connectionId);
+    }
+
+    if (expectedTestIds.size === 0) {
+      pendingSockets.delete(message.socketId);
+      send(bound, { type: "ws:passthrough", socketId: message.socketId });
+      return;
+    }
+
+    let claimed: Array<{ routeId: string; testId: string }>;
+    try {
+      claimed = await collectWsClaims(message, expectedTestIds, claimConnections);
+    } catch (error) {
+      if (!pendingSockets.has(message.socketId)) {
+        return;
+      }
+      const errorMessage = error instanceof Error ? error.message : "WebSocket claim failed";
+      const code =
+        error instanceof Error && error.name === "ClaimTimeoutError"
+          ? "claim_timeout"
+          : "internal";
+      pendingSockets.delete(message.socketId);
+      send(bound, {
+        type: "ws:error",
+        socketId: message.socketId,
+        code,
+        message: errorMessage,
+      });
+      return;
+    }
+
+    if (!pendingSockets.has(message.socketId)) {
+      return;
+    }
+
+    const matches: Array<RouteRegistration & { test: TestRegistration }> = [];
+    for (const claim of claimed) {
+      const route = activeRoutes.find((item) => item.routeId === claim.routeId);
+      const test = tests.get(claim.testId);
+      if (route === undefined || test === undefined) {
+        continue;
+      }
+      if (route.testId !== claim.testId) {
+        continue;
+      }
+      matches.push({ ...route, test });
+    }
+
+    if (matches.length === 0) {
+      pendingSockets.delete(message.socketId);
+      send(bound, { type: "ws:passthrough", socketId: message.socketId });
+      return;
+    }
+
+    // DIVERGENCE: cross-test multi-claim → ambiguous_route; same-test → newest handler in fixture.
+    // DIVERGENCE END
+    const matchesByTestId = new Map<string, typeof matches>();
+    for (const match of matches) {
+      const existing = matchesByTestId.get(match.testId);
+      if (existing === undefined) {
+        matchesByTestId.set(match.testId, [match]);
+      } else {
+        existing.push(match);
+      }
+    }
+
+    if (matchesByTestId.size > 1) {
+      const diagnostics: RouteMatchDiagnostic[] = matches.map((match) => ({
+        routeId: match.routeId,
+        testId: match.testId,
+        title: match.test.title,
+        file: match.test.file,
+        workerId: match.test.workerId,
+        matcher: match.matcher,
+      }));
+      const errorMessage = `Ambiguous backend mock routing: ${matchesByTestId.size} tests claimed WebSocket ${message.url}`;
+
+      pendingSockets.delete(message.socketId);
+      send(bound, {
+        type: "ws:error",
+        socketId: message.socketId,
+        code: "ambiguous_route",
+        message: errorMessage,
+        matches: diagnostics,
+      });
+
+      for (const [testId, testMatches] of matchesByTestId) {
+        const first = testMatches[0];
+        if (first === undefined) {
+          continue;
+        }
+        const worker = connections.get(first.connectionId);
+        if (worker) {
+          send(worker, {
+            type: "proxy:error",
+            testId,
+            code: "ambiguous_route",
+            message: errorMessage,
+            detail: diagnostics,
+          });
+        }
+      }
+      return;
+    }
+
+    const match = matches[0];
+    if (match === undefined) {
+      return;
+    }
+
+    pendingSocket.routeId = match.routeId;
+    pendingSocket.testId = match.testId;
+    pendingSocket.workerConnectionId = match.connectionId;
+
+    const worker = connections.get(match.connectionId);
+    if (worker === undefined || worker.socket.readyState !== WebSocket.OPEN) {
+      pendingSockets.delete(message.socketId);
+      send(bound, {
+        type: "ws:error",
+        socketId: message.socketId,
+        code: "disconnected",
+        message: "Matched Playwright worker disconnected before handling the WebSocket",
+      });
+      return;
+    }
+
+    // Keep pendingSockets entry for lifecycle relay until both sides finish.
+    send(worker, {
+      type: "ws:matched",
+      socketId: message.socketId,
+      routeId: match.routeId,
+      testId: match.testId,
+      url: message.url,
+      protocols: message.protocols,
+      clientId: message.clientId,
+    });
+  }
+
+  function collectWsClaims(
+    message: Extract<ClientToProxyMessage, { type: "ws:connection" }>,
+    expectedTestIds: Set<string>,
+    claimConnections: Set<string>,
+  ): Promise<Array<{ routeId: string; testId: string }>> {
+    return new Promise((resolve, reject) => {
+      const respondedTestIds = new Set<string>();
+      const matches: Array<{ routeId: string; testId: string }> = [];
+
+      const timer = setTimeout(() => {
+        pendingWsClaims.delete(message.socketId);
+        const missing = [...expectedTestIds].filter((id) => !respondedTestIds.has(id));
+        const error = new Error(
+          `Timed out waiting for WebSocket route claims from Playwright tests: ${missing.join(", ")}`,
+        );
+        error.name = "ClaimTimeoutError";
+        reject(error);
+      }, config.claimTimeoutMs);
+
+      const settle = () => {
+        clearTimeout(timer);
+        pendingWsClaims.delete(message.socketId);
+        resolve([...matches]);
+      };
+
+      pendingWsClaims.set(message.socketId, {
+        expectedTestIds,
+        respondedTestIds,
+        matches,
+        timer,
+        resolve: settle,
+        reject,
+      });
+
+      for (const connectionId of claimConnections) {
+        const worker = connections.get(connectionId);
+        if (worker === undefined || worker.socket.readyState !== WebSocket.OPEN) {
+          continue;
+        }
+        send(worker, {
+          type: "ws:claim",
+          socketId: message.socketId,
+          url: message.url,
+          protocols: message.protocols,
+          clientId: message.clientId,
+        });
+      }
+
+      if ([...expectedTestIds].every((id) => respondedTestIds.has(id))) {
+        settle();
+      }
+    });
+  }
+
+  function handleWsClaimResult(
+    message: Extract<ClientToProxyMessage, { type: "ws:claim-result" }>,
+  ): void {
+    const claim = pendingWsClaims.get(message.socketId);
+    if (claim === undefined) {
+      return;
+    }
+    if (!claim.expectedTestIds.has(message.testId)) {
+      return;
+    }
+    if (claim.respondedTestIds.has(message.testId)) {
+      return;
+    }
+    claim.respondedTestIds.add(message.testId);
+    for (const match of message.matches) {
+      claim.matches.push({
+        routeId: match.routeId,
+        testId: message.testId,
+      });
+    }
+    if (
+      [...claim.expectedTestIds].every((testId) => claim.respondedTestIds.has(testId))
+    ) {
+      claim.resolve([...claim.matches]);
+    }
+  }
+
+  function relayWsToOwner(socketId: string, message: ProxyToClientMessage): void {
+    const socket = pendingSockets.get(socketId);
+    if (socket?.workerConnectionId === undefined) {
+      return;
+    }
+    const worker = connections.get(socket.workerConnectionId);
+    if (worker === undefined) {
+      return;
+    }
+    send(worker, message);
+  }
+
+  function relayWsToNode(socketId: string, message: ProxyToClientMessage): void {
+    const socket = pendingSockets.get(socketId);
+    if (socket === undefined) {
+      return;
+    }
+    const node = connections.get(socket.connectionId);
+    if (node === undefined) {
+      return;
+    }
+    send(node, message);
   }
 
   function handleRouteUnregister(
@@ -853,6 +1265,28 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
             message: "Node agent disconnected",
           });
           pending.delete(requestId);
+        }
+      }
+      for (const [socketId, item] of pendingSockets) {
+        if (item.connectionId === bound.connectionId) {
+          pendingSockets.delete(socketId);
+        }
+      }
+    }
+
+    if (bound.role === "playwright") {
+      for (const [socketId, item] of pendingSockets) {
+        if (item.workerConnectionId === bound.connectionId) {
+          const node = connections.get(item.connectionId);
+          if (node) {
+            send(node, {
+              type: "ws:error",
+              socketId,
+              code: "disconnected",
+              message: "Playwright worker disconnected while WebSocket was active",
+            });
+          }
+          pendingSockets.delete(socketId);
         }
       }
     }

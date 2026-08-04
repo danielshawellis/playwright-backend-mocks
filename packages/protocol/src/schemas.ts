@@ -76,6 +76,25 @@ export const routeMatchDiagnosticSchema = z.object({
 
 export type RouteMatchDiagnostic = z.infer<typeof routeMatchDiagnosticSchema>;
 
+/** Route registration kind — WebSocket routes must survive HTTP `unrouteAll`. */
+export const routeKindSchema = z.enum(["http", "websocket"]);
+
+export type RouteKind = z.infer<typeof routeKindSchema>;
+
+export const wsDataSchema = z.object({
+  data: z.string(),
+  isBase64: z.boolean(),
+});
+
+export type WsData = z.infer<typeof wsDataSchema>;
+
+export const wsCloseFieldsSchema = z.object({
+  socketId: z.string().min(1),
+  code: z.number().int().optional(),
+  reason: z.string().optional(),
+  wasClean: z.boolean(),
+});
+
 export const historyOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("mocked"),
@@ -201,11 +220,77 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
     routeId: z.string(),
     testId: z.string(),
     matcher: serializedMatcherSchema,
+    /** Omit / `http` = HTTP route; `websocket` survives HTTP `unrouteAll`. */
+    kind: routeKindSchema.optional(),
   }),
   z.object({
     type: z.literal("route:unregister"),
     routeId: z.string().optional(),
     testId: z.string().optional(),
+  }),
+  // --- Application WebSocket lifecycle (Node / Playwright → proxy) ---
+  // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/injected/src/webSocketMock.ts
+  // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/dispatchers/webSocketRouteDispatcher.ts
+  z.object({
+    type: z.literal("ws:connection"),
+    socketId: z.string().min(1),
+    url: z.string().min(1),
+    protocols: z.array(z.string()),
+    clientId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:messageFromPage"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:messageFromServer"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:closePage"),
+    socketId: z.string().min(1),
+    code: z.number().int().optional(),
+    reason: z.string().optional(),
+    wasClean: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:closeServer"),
+    socketId: z.string().min(1),
+    code: z.number().int().optional(),
+    reason: z.string().optional(),
+    wasClean: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:claim-result"),
+    socketId: z.string().min(1),
+    testId: z.string(),
+    matches: z.array(z.object({ routeId: z.string() })),
+  }),
+  /** Playwright → proxy → Node: open real upstream (`connectToServer`). */
+  z.object({
+    type: z.literal("ws:connect"),
+    socketId: z.string().min(1),
+  }),
+  /** Playwright → proxy → Node: mock-open after handler (`ensureOpened`). */
+  z.object({
+    type: z.literal("ws:ensureOpened"),
+    socketId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:sendToPage"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:sendToServer"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
   }),
   z.object({
     type: z.literal("handler:result"),
@@ -374,6 +459,86 @@ export const proxyToClientMessageSchema = z.discriminatedUnion("type", [
     code: z.string(),
     message: z.string(),
     detail: z.unknown().optional(),
+  }),
+  // --- Application WebSocket (proxy → Node / Playwright) ---
+  z.object({
+    type: z.literal("ws:claim"),
+    socketId: z.string().min(1),
+    url: z.string().min(1),
+    protocols: z.array(z.string()),
+    clientId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:matched"),
+    socketId: z.string().min(1),
+    routeId: z.string(),
+    testId: z.string(),
+    url: z.string().min(1),
+    protocols: z.array(z.string()),
+    clientId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:passthrough"),
+    socketId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:connect"),
+    socketId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:ensureOpened"),
+    socketId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("ws:sendToPage"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:sendToServer"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:closePage"),
+    socketId: z.string().min(1),
+    code: z.number().int().optional(),
+    reason: z.string().optional(),
+    wasClean: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:closeServer"),
+    socketId: z.string().min(1),
+    code: z.number().int().optional(),
+    reason: z.string().optional(),
+    wasClean: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:messageFromPage"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:messageFromServer"),
+    socketId: z.string().min(1),
+    data: z.string(),
+    isBase64: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("ws:error"),
+    socketId: z.string().min(1),
+    code: z.enum([
+      "ambiguous_route",
+      "handler_failed",
+      "disconnected",
+      "internal",
+      "claim_timeout",
+    ]),
+    message: z.string(),
+    matches: z.array(routeMatchDiagnosticSchema).optional(),
   }),
 ]);
 

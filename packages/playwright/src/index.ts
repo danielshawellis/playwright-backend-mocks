@@ -6,6 +6,7 @@ export type {
   BackendRequest,
   BackendResponse,
   BackendRoute,
+  BackendWebSocketRoute,
   RouteHandler,
   RouteMatcherInput,
   RouteMatcherObject,
@@ -27,6 +28,7 @@ export type {
   WaitForResponseMatcher,
   WaitForResponsePredicate,
   WaitForNetworkOptions,
+  WebSocketRouteHandler,
 } from "./types.js";
 export {
   toSerializedMatcher,

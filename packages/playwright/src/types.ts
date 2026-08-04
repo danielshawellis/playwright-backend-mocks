@@ -232,6 +232,24 @@ export interface RouteFromHAROptions {
   readonly updateMode?: "minimal" | "full";
 }
 
+/**
+ * Playwright-shaped WebSocketRoute (backendMocks.routeWebSocket).
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
+ */
+export interface BackendWebSocketRoute {
+  url(): string;
+  protocols(): string[];
+  onMessage(handler: (message: string | Buffer) => unknown): void;
+  onClose(handler: (code: number | undefined, reason: string | undefined) => unknown): void;
+  send(message: string | Buffer): void;
+  close(options?: { code?: number; reason?: string }): Promise<void>;
+  connectToServer(): BackendWebSocketRoute;
+}
+
+export type WebSocketRouteHandler = (
+  ws: BackendWebSocketRoute,
+) => Promise<void> | void;
+
 export interface BackendMocks {
   route(
     url: RouteMatcherInput,
@@ -252,6 +270,17 @@ export interface BackendMocks {
    * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/harRouter.ts
    */
   routeFromHAR(file: string, options?: RouteFromHAROptions): Promise<void>;
+  /**
+   * Playwright-shaped `routeWebSocket`.
+   * Newest matching handler only; survives `unrouteAll`.
+   * DIVERGENCE: intercepts `globalThis.WebSocket` only (not npm `ws`).
+   * DIVERGENCE END
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
+   */
+  routeWebSocket(
+    url: RouteUrl,
+    handler: WebSocketRouteHandler,
+  ): Promise<void>;
   waitForRequest(
     urlOrPredicate: WaitForRequestMatcher,
     options?: WaitForNetworkOptions,

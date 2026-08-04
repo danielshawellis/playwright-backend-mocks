@@ -191,9 +191,10 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
     routeFromHAR: async (file, options) => {
       await mocks.routeFromHAR(file, options);
     },
-    routeWebSocket: async () => {
-      throw new Error(
-        "routeWebSocket is not wired for PARITY_MODE=node yet (Step 2 WebSocket backlog)",
+    routeWebSocket: async (url, handler) => {
+      await mocks.routeWebSocket(
+        url as Parameters<BackendMocksController["routeWebSocket"]>[0],
+        handler as Parameters<BackendMocksController["routeWebSocket"]>[1],
       );
     },
     trigger: async (path, init = {}) => {

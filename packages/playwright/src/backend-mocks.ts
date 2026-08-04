@@ -49,7 +49,13 @@ import {
   type WaitForNetworkOptions,
   type WaitForRequestMatcher,
   type WaitForResponseMatcher,
+  type WebSocketRouteHandler,
 } from "./types.js";
+import {
+  WebSocketRouteImpl,
+  WebSocketRouteHandlerRecord,
+  toWebSocketSerializedMatcher,
+} from "./websocket-route.js";
 
 interface FallbackOverrides {
   url?: string;
@@ -737,6 +743,9 @@ export function createBackendMocks(options: {
 }): BackendMocksController {
   const { connection, testId, baseURL } = options;
   const routes: RouteHandlerRecord[] = [];
+  /** WebSocket routes — not cleared by unrouteAll (Playwright quirk). */
+  const wsRoutes: WebSocketRouteHandlerRecord[] = [];
+  const activeSockets = new Map<string, WebSocketRouteImpl>();
   const pendingFetches = new Map<string, PendingFetch>();
   const observed: BackendRequest[] = [];
   const requestsById = new Map<string, BackendRequestImpl>();
@@ -924,8 +933,81 @@ export function createBackendMocks(options: {
         errors.push(new Error(message.message));
         return;
       }
+      case "ws:claim": {
+        const matches: Array<{ routeId: string }> = [];
+        for (const route of wsRoutes) {
+          if (route.matches(message.url)) {
+            matches.push({ routeId: route.routeId });
+          }
+        }
+        connection.send({
+          type: "ws:claim-result",
+          socketId: message.socketId,
+          testId,
+          matches,
+        });
+        return;
+      }
+      case "ws:matched": {
+        if (message.testId !== testId) {
+          return;
+        }
+        await handleMatchedWebSocket(message);
+        return;
+      }
+      case "ws:messageFromPage": {
+        const route = activeSockets.get(message.socketId);
+        route?._handleMessageFromPage(message.data, message.isBase64);
+        return;
+      }
+      case "ws:messageFromServer": {
+        const route = activeSockets.get(message.socketId);
+        route?._handleMessageFromServer(message.data, message.isBase64);
+        return;
+      }
+      case "ws:closePage": {
+        const route = activeSockets.get(message.socketId);
+        route?._handleClosePage(message.code, message.reason, message.wasClean);
+        return;
+      }
+      case "ws:closeServer": {
+        const route = activeSockets.get(message.socketId);
+        route?._handleCloseServer(message.code, message.reason, message.wasClean);
+        return;
+      }
       default:
         return;
+    }
+  }
+
+  /**
+   * Playwright `Page._onWebSocketRoute` analogue — newest matching handler only.
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts
+   */
+  async function handleMatchedWebSocket(
+    message: Extract<ProxyToClientMessage, { type: "ws:matched" }>,
+  ): Promise<void> {
+    const route = new WebSocketRouteImpl(
+      message.socketId,
+      message.url,
+      message.protocols,
+      connection,
+    );
+    activeSockets.set(message.socketId, route);
+
+    // Newest match only (`handlers.find` after unshift) — no fallback chain.
+    const handler = wsRoutes.find((item) => item.matches(message.url));
+    if (handler === undefined) {
+      // Should not happen after claim; open mock to avoid stalling.
+      await route._afterHandle();
+      return;
+    }
+    try {
+      await handler.handle(route);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      errors.push(err);
+      await route._afterHandle().catch(() => {});
     }
   }
 
@@ -1032,6 +1114,7 @@ export function createBackendMocks(options: {
 
     async unrouteAll(options: UnrouteAllOptions = {}) {
       // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts (_unrouteInternal)
+      // NOTE: HTTP routes only — WebSocket routes intentionally survive unrouteAll.
       const removed = [...routes];
       routes.length = 0;
       for (const route of removed) {
@@ -1048,6 +1131,24 @@ export function createBackendMocks(options: {
           route.forceContinueActive();
         }
       }
+    },
+
+    async routeWebSocket(url, handler: WebSocketRouteHandler) {
+      // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts (routeWebSocket)
+      // DIVERGENCE: globalThis.WebSocket only (see research/playwright-network-parity.md §3b).
+      // DIVERGENCE END
+      const routeId = randomUUID();
+      // LIFO registration; selection is newest-match only (find), not a fallback chain.
+      wsRoutes.unshift(
+        new WebSocketRouteHandlerRecord(routeId, baseURL, url, handler),
+      );
+      connection.send({
+        type: "route:register",
+        routeId,
+        testId,
+        matcher: toWebSocketSerializedMatcher(url),
+        kind: "websocket",
+      });
     },
 
     async routeFromJSON(filePath, options: RouteFromJSONOptions = {}) {
