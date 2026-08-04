@@ -219,12 +219,18 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
       return control.openSocket(openInit) as Promise<DownstreamSocket>;
     },
     waitForRequest: async (urlOrPredicate, options) => {
-      // Pass string | RegExp | request-predicate through unchanged (Playwright-shaped).
-      const backend = await mocks.waitForRequest(urlOrPredicate, options);
+      // BackendRequest is Playwright-shaped at runtime; cast matcher across the seam.
+      const backend = await mocks.waitForRequest(
+        urlOrPredicate as Parameters<BackendMocksController["waitForRequest"]>[0],
+        options,
+      );
       return backend as unknown as Request;
     },
     waitForResponse: async (urlOrPredicate, options) => {
-      const backend = await mocks.waitForResponse(urlOrPredicate, options);
+      const backend = await mocks.waitForResponse(
+        urlOrPredicate as Parameters<BackendMocksController["waitForResponse"]>[0],
+        options,
+      );
       return backend as unknown as Response;
     },
   };
