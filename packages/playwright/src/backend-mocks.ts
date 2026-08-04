@@ -15,6 +15,11 @@ import {
 import type { PlaywrightProxyConnection } from "./connection.js";
 import { matchRouteMatcher } from "./match.js";
 import {
+  createRouteFromHARSession,
+  flushRouteFromHARSession,
+  type RouteFromHARSession,
+} from "./route-from-har.js";
+import {
   createRouteFromJSONSession,
   flushRouteFromJSONSession,
   type RouteFromJSONSession,
@@ -674,6 +679,7 @@ export function createBackendMocks(options: {
   const responseWaiters = new Set<NetworkWaiter<BackendResponse>>();
   const errors: Error[] = [];
   const jsonSessions: RouteFromJSONSession[] = [];
+  const harSessions: RouteFromHARSession[] = [];
 
   const unsubscribe = connection.onMessage((message) => {
     void handleMessage(message);
@@ -921,14 +927,22 @@ export function createBackendMocks(options: {
     },
 
     async routeFromJSON(filePath, options: RouteFromJSONOptions = {}) {
-      // TODO(Step 2): migrate callers to routeFromHAR once HAR support lands.
+      // Legacy JSON cassette helper — prefer routeFromHAR for new callers.
       const session = createRouteFromJSONSession(filePath, options);
       jsonSessions.push(session);
       await api.route(session.matcher, session.handler);
     },
 
-    async routeFromHAR(_file: string, _options?: RouteFromHAROptions) {
-      throw new Error("routeFromHAR is not implemented");
+    async routeFromHAR(file: string, options: RouteFromHAROptions = {}) {
+      // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/harRouter.ts
+      // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts (routeFromHAR)
+      // Registers as a normal route so LIFO / unrouteAll match Playwright replay.
+      // DIVERGENCE: Playwright `update: true` records via tracing without a route;
+      // Node records by fetch → write entry → fulfill/abort inside the handler.
+      // DIVERGENCE END
+      const session = createRouteFromHARSession(file, options);
+      harSessions.push(session);
+      await api.route(session.matcher, session.handler);
     },
 
     /**
@@ -990,6 +1004,11 @@ export function createBackendMocks(options: {
         flushRouteFromJSONSession(session);
       }
       jsonSessions.length = 0;
+
+      for (const session of harSessions) {
+        flushRouteFromHARSession(session);
+      }
+      harSessions.length = 0;
 
       unsubscribe();
       connection.send({

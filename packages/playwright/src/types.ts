@@ -215,11 +215,12 @@ export interface RouteFromJSONOptions {
 }
 
 /**
- * Step 2 target is Playwright's `routeFromHAR`.
- * TODO: implement HAR record/replay parity; stub throws until wired.
+ * Playwright-shaped `routeFromHAR` options.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts
+ * Docs allow a URL predicate; published Playwright typings list string|RegExp only.
  */
 export interface RouteFromHAROptions {
-  readonly url?: string | RegExp;
+  readonly url?: string | RegExp | RouteUrlPredicate;
   readonly notFound?: "abort" | "fallback";
   readonly update?: boolean;
   readonly updateContent?: "attach" | "embed";
@@ -243,7 +244,7 @@ export interface BackendMocks {
   routeFromJSON(path: string, options?: RouteFromJSONOptions): Promise<void>;
   /**
    * Playwright-shaped HAR record/replay.
-   * Stub until Step 2 HAR support is implemented.
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/harRouter.ts
    */
   routeFromHAR(file: string, options?: RouteFromHAROptions): Promise<void>;
   waitForRequest(
