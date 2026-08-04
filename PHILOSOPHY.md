@@ -2,13 +2,13 @@
 
 **This is the high-level source of truth** for how this repository is developed and how the system should work.
 
-| Kind | Role |
-| ---- | ---- |
-| [`research/rewrite-specification.md`](./research/rewrite-specification.md) | Step 1 → Step 2 rewrite plan |
-| [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md) | Oracle / dual-mode TDD strategy |
-| [`research/playwright-network-parity.md`](./research/playwright-network-parity.md) | Playwright module map and deep dive |
-| [`tests/parity/`](./tests/parity/) | Living oracle suite (executable contract) |
-| [`historical/`](./historical/) | Archived prototype code + old VitePress site (reference only) |
+| Kind                                                                               | Role                                                          |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [`research/rewrite-specification.md`](./research/rewrite-specification.md)         | Step 1 → Step 2 rewrite plan                                  |
+| [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md)         | Oracle / dual-mode TDD strategy                               |
+| [`research/playwright-network-parity.md`](./research/playwright-network-parity.md) | Playwright module map and deep dive                           |
+| [`tests/parity/`](./tests/parity/)                                                 | Living oracle suite (executable contract)                     |
+| [`historical/`](./historical/)                                                     | Archived prototype code + old VitePress site (reference only) |
 
 Further assertions will be added over time. Start here.
 
@@ -109,7 +109,7 @@ Every module that mirrors Playwright must make the mapping obvious in source:
    // Playwright: https://github.com/microsoft/playwright/blob/<pinned-sha>/packages/playwright-core/src/client/network.ts
    ```
 
-2. **Mark divergences in a searchable way.** Where we intentionally differ, use an all-caps `DIVERGENCE` comment (and close the span with `DIVERGENCE END` when it covers a block). State *what* differs and *why* in one or two lines:
+2. **Mark divergences in a searchable way.** Where we intentionally differ, use an all-caps `DIVERGENCE` comment (and close the span with `DIVERGENCE END` when it covers a block). State _what_ differs and _why_ in one or two lines:
 
    ```ts
    // DIVERGENCE: Playwright scopes routes to a page; we scope to Node + testId.

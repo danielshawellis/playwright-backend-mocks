@@ -117,13 +117,13 @@ Optional dashboard (separate process) will consume the proxy REST API (`/api/his
 
 ## Design docs
 
-| Doc | Role |
-| --- | ---- |
-| [`PHILOSOPHY.md`](./PHILOSOPHY.md) | High-level source of truth |
-| [`AGENTS.md`](./AGENTS.md) | Agent entrypoint |
-| [`research/`](./research) | Rewrite + parity research |
-| [`tests/parity/`](./tests/parity/) | Living oracle suite |
-| [`historical/`](./historical/) | Archived prototype + old VitePress site |
+| Doc                                | Role                                    |
+| ---------------------------------- | --------------------------------------- |
+| [`PHILOSOPHY.md`](./PHILOSOPHY.md) | High-level source of truth              |
+| [`AGENTS.md`](./AGENTS.md)         | Agent entrypoint                        |
+| [`research/`](./research)          | Rewrite + parity research               |
+| [`tests/parity/`](./tests/parity/) | Living oracle suite                     |
+| [`historical/`](./historical/)     | Archived prototype + old VitePress site |
 
 ## License
 

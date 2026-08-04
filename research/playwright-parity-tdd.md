@@ -162,11 +162,11 @@ When backend mode cannot match Playwright, either:
 
 ## Relationship to other suites
 
-| Layer                         | Role                                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------------- |
-| **Parity / oracle suite**     | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity |
-| Library-only suite (Step 2)   | `clientId`, cross-test `ambiguous_route`, disconnects, dashboard — outside Playwright DX |
-| Unit / contract (as needed)   | Pure helpers and wire protocol                                                          |
+| Layer                       | Role                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| **Parity / oracle suite**   | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity  |
+| Library-only suite (Step 2) | `clientId`, cross-test `ambiguous_route`, disconnects, dashboard — outside Playwright DX |
+| Unit / contract (as needed) | Pure helpers and wire protocol                                                           |
 
 The parity suite makes the DX contract strict: **Playwright itself is the reference for what the user experience should be.**
 
