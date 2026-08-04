@@ -10,8 +10,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "node -e \"console.log('No packages to build yet (rewrite Step 1: oracle suite only)')\"",
-    "typecheck": "tsc -p tests/parity/tsconfig.json --noEmit",
+    "build": "pnpm -r --filter './packages/*' run build",
+    "typecheck": "pnpm -r --filter './packages/*' run typecheck && tsc -p tests/parity/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -19,7 +19,9 @@
     "test:parity": "pnpm --filter @playwright-backend-mocks/parity test",
     "test:parity:browser": "pnpm --filter @playwright-backend-mocks/parity test:browser",
     "test:parity:node": "pnpm --filter @playwright-backend-mocks/parity test:node",
-    "clean": "rm -rf test-results playwright-report"
+    "test:parity:node:full": "pnpm --filter @playwright-backend-mocks/parity test:node:full",
+    "test:parity:node:fulfill": "pnpm --filter @playwright-backend-mocks/parity exec env PARITY_MODE=node PARITY_NODE_FULL=1 playwright test specs/fulfill.spec.ts -g \"mocks a GET JSON response\"",
+    "clean": "rm -rf test-results playwright-report packages/*/dist"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

@@ -39,10 +39,19 @@ const port = Number(process.env.PORT ?? 3001);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 if (process.env.ENABLE_BACKEND_MOCKS === "1") {
-  // Step 2: dynamic import so Step 1 does not require the library package.
-  const mod = await import(
-    pathToFileURL(join(__dirname, "../../../packages/node/src/index.js")).href
-  ).catch(() => null);
+  // Prefer the built workspace package; fall back to source path for local hacks.
+  let mod = null;
+  try {
+    mod = await import("@playwright-backend-mocks/node");
+  } catch {
+    try {
+      mod = await import(
+        pathToFileURL(join(__dirname, "../../../packages/node/dist/index.js")).href
+      );
+    } catch {
+      mod = null;
+    }
+  }
   if (!mod?.startBackendMocks) {
     console.error(
       "[node-downstream] ENABLE_BACKEND_MOCKS=1 but startBackendMocks is unavailable",
@@ -51,6 +60,7 @@ if (process.env.ENABLE_BACKEND_MOCKS === "1") {
   }
   await mod.startBackendMocks({
     clientId: process.env.CLIENT_ID ?? "parity-node",
+    proxyUrl: process.env.PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL,
   });
   console.log("[node-downstream] backend mocks started");
 }

@@ -21,12 +21,18 @@ import {
   type Response,
   type Route,
 } from "@playwright/test";
+import type { BackendMocksController } from "@playwright-backend-mocks/playwright";
 import { HARNESS, UPSTREAM, sleep, type TriggerResult } from "./helpers.js";
 import {
   getNodeControl,
   resetNodeControl,
   type DownstreamSocket,
 } from "./node-control.js";
+import {
+  createNodeMocksForTest,
+  createNodeRouting,
+  disposeNodeMocks,
+} from "./node-routing.js";
 
 export type ParityMode = "browser" | "node";
 
@@ -101,15 +107,19 @@ export type ParityRouting = {
 type ParityFixtures = {
   /** Browser mode: ensures harness page is loaded. Node mode: no-op page. */
   harnessPage: Page;
-  /** Browser-only routing handle; null in node mode until Step 2. */
+  /** Browser-only routing handle; null in node mode. */
   browserRouting: ParityRouting | null;
+  /** Node-mode backendMocks controller; null in browser mode. */
+  nodeMocks: BackendMocksController | null;
+  /** Node-mode routing handle; null in browser mode. */
+  nodeRouting: ParityRouting | null;
   route: ParityRouting["route"];
   unroute: ParityRouting["unroute"];
   unrouteAll: ParityRouting["unrouteAll"];
   routeFromHAR: ParityRouting["routeFromHAR"];
   /**
    * Register a WebSocket route handler.
-   * Browser → `page.routeWebSocket`. Node/Step 2 → `backendMocks.routeWebSocket`.
+   * Browser → `page.routeWebSocket`. Node → `backendMocks.routeWebSocket` (Step 2).
    *
    * Register *before* opening sockets. `openDownstreamSocket` navigates/loads
    * the downstream host after registration so Playwright's WS init script applies.
@@ -124,7 +134,7 @@ type ParityFixtures = {
    * Run against a fresh downstream host.
    * Browser: new context (optional baseURL) + harness page; context.close()
    * flushes Playwright HAR update recordings.
-   * Node: resets the control-plane connection (Step 2: same backendMocks scope).
+   * Node: fresh backendMocks scope + control-plane reset.
    */
   withIsolatedDownstream: <T>(
     options: { baseURL?: string },
@@ -652,59 +662,83 @@ export const test = base.extend<ParityFixtures>({
     await use(createBrowserRouting(page));
   },
 
-  route: async ({ browserRouting }, use) => {
-    if (!browserRouting) {
+  nodeMocks: async ({ page }, use, testInfo) => {
+    void page;
+    if (parityMode !== "node") {
+      await use(null);
+      return;
+    }
+    const mocks = await createNodeMocksForTest({
+      title: testInfo.title,
+      file: testInfo.file,
+    });
+    await use(mocks);
+    disposeNodeMocks(mocks);
+  },
+
+  nodeRouting: async ({ nodeMocks }, use) => {
+    if (!nodeMocks) {
+      await use(null);
+      return;
+    }
+    await use(createNodeRouting(nodeMocks) as ParityRouting);
+  },
+
+  route: async ({ browserRouting, nodeRouting }, use) => {
+    const routing = browserRouting ?? nodeRouting;
+    if (!routing) {
       await use(async () => notWired("route"));
       return;
     }
-    await use(browserRouting.route);
+    await use(routing.route);
   },
 
-  unroute: async ({ browserRouting }, use) => {
-    if (!browserRouting) {
+  unroute: async ({ browserRouting, nodeRouting }, use) => {
+    const routing = browserRouting ?? nodeRouting;
+    if (!routing) {
       await use(async () => notWired("unroute"));
       return;
     }
-    await use(browserRouting.unroute);
+    await use(routing.unroute);
   },
 
-  unrouteAll: async ({ browserRouting }, use) => {
-    if (!browserRouting) {
+  unrouteAll: async ({ browserRouting, nodeRouting }, use) => {
+    const routing = browserRouting ?? nodeRouting;
+    if (!routing) {
       await use(async () => notWired("unrouteAll"));
       return;
     }
-    await use(browserRouting.unrouteAll);
+    await use(routing.unrouteAll);
   },
 
-  routeFromHAR: async ({ browserRouting }, use) => {
-    if (!browserRouting) {
+  routeFromHAR: async ({ browserRouting, nodeRouting }, use) => {
+    const routing = browserRouting ?? nodeRouting;
+    if (!routing) {
       await use(async () => notWired("routeFromHAR"));
       return;
     }
-    await use(browserRouting.routeFromHAR);
+    await use(routing.routeFromHAR);
   },
 
   // Must not depend on harnessPage / browserRouting — WS init scripts need to
   // be registered before the page that opens sockets is navigated.
-  routeWebSocket: async ({ page }, use) => {
-    if (parityMode !== "browser") {
-      await use(async () => notWired("routeWebSocket"));
+  routeWebSocket: async ({ page, nodeRouting }, use) => {
+    if (parityMode === "node") {
+      if (!nodeRouting) {
+        await use(async () => notWired("routeWebSocket"));
+        return;
+      }
+      await use(nodeRouting.routeWebSocket);
       return;
     }
     await use(createBrowserRouting(page).routeWebSocket);
   },
 
-  trigger: async ({ browserRouting, page }, use) => {
+  trigger: async ({ browserRouting, nodeRouting, page }, use) => {
     await use(async (path, init = {}) => {
-      const url = path.startsWith("http") ? path : `${UPSTREAM}${path}`;
-      const payload = triggerPayload(init);
-
       if (parityMode === "node") {
-        const control = await getNodeControl();
-        return control.httpRequest({
-          url,
-          ...payload,
-        });
+        if (!nodeRouting) return notWired("trigger");
+        return nodeRouting.trigger(path, init);
       }
 
       return (browserRouting ?? createBrowserRouting(page)).trigger(path, init);
@@ -712,40 +746,33 @@ export const test = base.extend<ParityFixtures>({
   },
 
   // Must not depend on harnessPage — pairs with routeWebSocket registration order.
-  openDownstreamSocket: async ({ page }, use) => {
+  openDownstreamSocket: async ({ page, nodeRouting }, use) => {
     await use(async (url, options) => {
       if (parityMode === "node") {
-        const control = await getNodeControl();
-        const openInit: {
-          url: string;
-          protocols?: string | string[];
-          binaryType?: BinaryType;
-          waitUntil?: "open" | "connecting";
-        } = { url };
-        if (options?.protocols !== undefined) openInit.protocols = options.protocols;
-        if (options?.binaryType !== undefined) openInit.binaryType = options.binaryType;
-        if (options?.waitUntil !== undefined) openInit.waitUntil = options.waitUntil;
-        return control.openSocket(openInit);
+        if (!nodeRouting) return notWired("openDownstreamSocket");
+        return nodeRouting.openDownstreamSocket(url, options);
       }
 
       return createBrowserRouting(page).openDownstreamSocket(url, options);
     });
   },
 
-  waitForRequest: async ({ browserRouting }, use) => {
-    if (!browserRouting) {
+  waitForRequest: async ({ browserRouting, nodeRouting }, use) => {
+    const routing = browserRouting ?? nodeRouting;
+    if (!routing) {
       await use(async () => notWired("waitForRequest"));
       return;
     }
-    await use(browserRouting.waitForRequest);
+    await use(routing.waitForRequest);
   },
 
-  waitForResponse: async ({ browserRouting }, use) => {
-    if (!browserRouting) {
+  waitForResponse: async ({ browserRouting, nodeRouting }, use) => {
+    const routing = browserRouting ?? nodeRouting;
+    if (!routing) {
       await use(async () => notWired("waitForResponse"));
       return;
     }
-    await use(browserRouting.waitForResponse);
+    await use(routing.waitForResponse);
   },
 
   upstream: async ({ page }, use) => {
@@ -756,41 +783,19 @@ export const test = base.extend<ParityFixtures>({
     });
   },
 
-  withIsolatedDownstream: async ({ browser }, use) => {
+  withIsolatedDownstream: async ({ browser }, use, testInfo) => {
     await use(async (options, fn) => {
       if (parityMode === "node") {
-        // Step 2: isolated scope via backendMocks; for now reset control plane only.
         await resetNodeControl();
-        const control = await getNodeControl();
-        const api: ParityRouting = {
-          route: async () => notWired("route"),
-          unroute: async () => notWired("unroute"),
-          unrouteAll: async () => notWired("unrouteAll"),
-          routeFromHAR: async () => notWired("routeFromHAR"),
-          routeWebSocket: async () => notWired("routeWebSocket"),
-          trigger: async (path, init = {}) => {
-            const url = path.startsWith("http") ? path : `${UPSTREAM}${path}`;
-            return control.httpRequest({ url, ...triggerPayload(init) });
-          },
-          openDownstreamSocket: async (url, options) => {
-            const openInit: {
-              url: string;
-              protocols?: string | string[];
-              binaryType?: BinaryType;
-              waitUntil?: "open" | "connecting";
-            } = { url };
-            if (options?.protocols !== undefined) openInit.protocols = options.protocols;
-            if (options?.binaryType !== undefined)
-              openInit.binaryType = options.binaryType;
-            if (options?.waitUntil !== undefined) openInit.waitUntil = options.waitUntil;
-            return control.openSocket(openInit);
-          },
-          waitForRequest: async () => notWired("waitForRequest"),
-          waitForResponse: async () => notWired("waitForResponse"),
-        };
+        const mocks = await createNodeMocksForTest({
+          title: `${testInfo.title} (isolated)`,
+          file: testInfo.file,
+        });
+        const api = createNodeRouting(mocks) as ParityRouting;
         try {
           return await fn(api);
         } finally {
+          disposeNodeMocks(mocks);
           await resetNodeControl();
         }
       }
