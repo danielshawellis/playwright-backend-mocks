@@ -516,7 +516,7 @@ From `packages/playwright` + Node agent (rewrite):
 ## 12. Success criteria
 
 - Homepage content is mostly Markdown-editable; special UI is isolated components.
-- Mermaid works in guides from fenced blocks.
+- Mermaid works site-wide from ordinary ` ```mermaid ` fences (homepage + guides), with dark/light re-render.
 - Code groups work on homepage and in guides without a one-off highlighter stack.
 - Getting started runs against the rewritten packages.
 - Philosophy/intention is a primary nav page, consistent with `PHILOSOPHY.md`.
