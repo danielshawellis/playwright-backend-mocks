@@ -8,6 +8,7 @@
 | [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md)         | Oracle / dual-mode TDD strategy                               |
 | [`research/playwright-network-parity.md`](./research/playwright-network-parity.md) | Playwright module map and deep dive                           |
 | [`research/documentation-site-plan.md`](./research/documentation-site-plan.md)     | VitePress docs site rewrite plan + Playwright docs map        |
+| [`documentation/`](./documentation/)                                               | Living user-facing VitePress site (deploys via GitHub Pages)  |
 | [`tests/parity/`](./tests/parity/)                                                 | Living oracle suite (executable contract)                     |
 | [`historical/`](./historical/)                                                     | Archived prototype code + old VitePress site (reference only) |
 

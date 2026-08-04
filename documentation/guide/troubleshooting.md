@@ -10,10 +10,9 @@ Check the proxy history:
 curl -s http://127.0.0.1:4310/api/history | jq '.entries[-10:]'
 ```
 
-Look at:
+Look at each history entry’s fields:
 
-- `request.url`
-- `request.method`
+- `request.url` / `request.method` (serialized request on the history record)
 - `clientId`
 - `outcome.kind`
 

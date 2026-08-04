@@ -1,6 +1,6 @@
 # Getting started
 
-Get from a Playwright project to a working backend mock in four steps: install the packages, start the proxy, enable the Node agent, compose the fixture, then write a route.
+Get from a Playwright project to a working backend mock: install the packages, start the proxy, enable the Node agent, compose the fixture, then write a route.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ Get from a Playwright project to a working backend mock in four steps: install t
 | Packages | `@playwright-backend-mocks/playwright`, `node`, `proxy` |
 
 ::: tip
-Keep `@playwright-backend-mocks/playwright`, `@playwright-backend-mocks/node`, `@playwright-backend-mocks/proxy`, and `@playwright-backend-mocks/protocol` on the same version.
+Keep `@playwright-backend-mocks/playwright`, `@playwright-backend-mocks/node`, `@playwright-backend-mocks/proxy`, and `@playwright-backend-mocks/protocol` on the same version. Until packages are published to npm, develop against this monorepo’s `packages/` workspace.
 :::
 
 ## 1. Install

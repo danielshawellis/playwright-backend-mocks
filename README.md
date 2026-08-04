@@ -4,9 +4,10 @@
 
 Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application processes in Playwright tests — with a DX that matches Playwright’s browser interception APIs as closely as practical.
 
-> **Rewrite in progress.** Living work is the Playwright oracle suite and rewrite plan. The old prototype (packages + VitePress site) is under [`historical/`](./historical/) and is **not** wired into the workspace.
-
+**Docs:** [`documentation/`](./documentation/) (VitePress) · deploy on `main` via GitHub Pages  
 **How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) · agent notes: [`AGENTS.md`](./AGENTS.md) · plan: [`research/rewrite-specification.md`](./research/rewrite-specification.md)
+
+> The archived prototype (including the old docs site) lives under [`historical/`](./historical/) and is **not** wired into the workspace.
 
 ## Current status (Step 2 — oracle green in both modes)
 
@@ -31,6 +32,8 @@ pnpm test:parity:node:full      # full oracle in node mode
 pnpm test:library               # clientId / ambiguity / disconnect
 pnpm typecheck
 pnpm lint
+pnpm docs:dev             # VitePress docs locally
+pnpm docs:build           # static site → documentation/.vitepress/dist
 ```
 
 ## Packages
@@ -122,15 +125,16 @@ export default defineConfig({
 });
 ```
 
-Optional dashboard (separate process) will consume the proxy REST API (`/api/history`, `/api/connections`).
+Inspect traffic while debugging via the proxy REST API (`/health`, `/api/history`, `/api/connections`). See the [docs site](./documentation/).
 
 ## Design docs
 
 | Doc                                | Role                                    |
 | ---------------------------------- | --------------------------------------- |
+| [`documentation/`](./documentation/) | User-facing VitePress site            |
 | [`PHILOSOPHY.md`](./PHILOSOPHY.md) | High-level source of truth              |
 | [`AGENTS.md`](./AGENTS.md)         | Agent entrypoint                        |
-| [`research/`](./research)          | Rewrite + parity research               |
+| [`research/`](./research)          | Rewrite + parity + docs-site research   |
 | [`tests/parity/`](./tests/parity/) | Living dual-mode oracle suite           |
 | [`tests/library/`](./tests/library/) | Library-only (clientId / ambiguity / disconnect) |
 | [`packages/MODULE_MAP.md`](./packages/MODULE_MAP.md) | Living package → Playwright file map |

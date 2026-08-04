@@ -29,6 +29,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/backend-mocks" },
       { text: "Recipes", link: "/recipes/compose-fixtures" },
+      { text: "Ops", link: "/ops/proxy" },
       {
         text: "GitHub",
         link: "https://github.com/danielshawellis/playwright-backend-mocks-msw",
@@ -61,9 +62,7 @@ export default defineConfig({
         },
         {
           text: "WebSockets",
-          items: [
-            { text: "Mocking WebSockets", link: "/guide/websockets" },
-          ],
+          items: [{ text: "Mocking WebSockets", link: "/guide/websockets" }],
         },
         {
           text: "Product setup",
