@@ -291,11 +291,67 @@ Must cover:
 
 ---
 
-## 6. Theme & authoring conventions
+## 6. Mermaid (site-wide, Markdown-native)
+
+### Does VitePress include Mermaid?
+
+**No.** VitePress has no built-in Mermaid renderer. An [official-support request](https://github.com/vuejs/vitepress/issues/5222) is still open (as of mid-2026); maintainers have pushed back mainly because `mermaid` is a large dependency. Expect to bring our own integration for the foreseeable future.
+
+### Community option
+
+The most common third-party path is [`vitepress-plugin-mermaid`](https://github.com/emersonbottero/vitepress-plugin-mermaid) (`withMermaid(...)` wrapper + fenced ` ```mermaid ` blocks). It is popular enough, but has had pnpm / Vite `optimizeDeps` friction in the wild, and it is another moving dependency on top of VitePress + Mermaid.
+
+### Recommended approach: small first-party fence → Vue component
+
+We already solved the authoring UX we want in the historical site, and it is **already reusable on every Markdown page**:
+
+1. **Markdown-it fence override** in `.vitepress/config.ts` — when `token.info === "mermaid"`, emit `<MermaidDiagram code="..." />` instead of a code block.
+2. **`MermaidDiagram.vue`** — client-side `mermaid.render`, listens to VitePress `isDark`, shows a readable error if a diagram fails.
+3. **Authors write ordinary fences anywhere:**
+
+   ````md
+   ```mermaid
+   sequenceDiagram
+     participant App
+     participant Proxy
+     App->>Proxy: claim
+   ```
+   ````
+
+Historical proof points: `guide/concepts.md`, `guide/why.md`, plus the homepage (which also passed diagram source into the same component). No per-page imports required once the component is registered in `enhanceApp`.
+
+**Why prefer first-party over the plugin for this repo**
+
+| | First-party (port historical) | `vitepress-plugin-mermaid` |
+| - | ----------------------------- | -------------------------- |
+| Authoring | Same ` ```mermaid ` fences | Same |
+| Dark/light | Full control (we already tune themeVariables) | Auto “dark in name” heuristic |
+| Dependencies | Just `mermaid` | Plugin + `mermaid` (+ occasional Vite alias workarounds) |
+| Proven here | Yes | Not yet |
+| Size / ownership | Tiny (~config hook + one Vue SFC) | External maintenance |
+
+**Decision:** Phase A ports the historical Mermaid integration into the new `documentation/` theme as the **standard site capability**. Do not use ad-hoc `<MermaidDiagram>` only on the homepage; the fence path is the product.
+
+Optional later: if VitePress ships official/peer Mermaid support, delete our fence hook and keep the Markdown unchanged.
+
+### Implementation checklist (Mermaid)
+
+1. Depend on `mermaid` in the docs package (dynamic `import()` so it stays out of the critical path where possible).
+2. Port `MermaidDiagram.vue` + fence override from `historical/documentation/.vitepress/`.
+3. Register the component globally in the theme.
+4. Port/adapt CSS for diagram centering and error state.
+5. Smoke-test: at least one diagram on the homepage and one on a guide page; toggle dark mode; break a diagram deliberately and confirm the page still renders with an error message.
+6. Document the authoring rule once in a short internal note (or docs README): “use ` ```mermaid ` fences; do not paste SVG.”
+
+Homepage may still pass a string prop into `<MermaidDiagram>` if a Vue-only section needs it, but Markdown fences are the default everywhere else.
+
+---
+
+## 7. Theme & authoring conventions
 
 ### Keep from historical
 
-1. **Mermaid fence plugin** — markdown-it override rendering `mermaid` fences to `<MermaidDiagram />`; dark/light theme sync.
+1. **Mermaid** — see §6 (site-wide fence → `MermaidDiagram`).
 2. **Local search**, `cleanUrls`, `lastUpdated`, edit links (point at `documentation/:path`).
 3. **Outline** levels 2–3.
 
@@ -314,7 +370,7 @@ Port and simplify `custom.css` for homepage sections. Avoid rebuilding the whole
 
 | Component | Why |
 | --------- | --- |
-| `MermaidDiagram.vue` | Proven; guides + home architecture |
+| `MermaidDiagram.vue` | Site-wide Mermaid via Markdown fences (§6) |
 | `LogoCloud.vue` | Homepage compatibility strip |
 | `DashboardDemo.vue` | Optional media; skip if dashboard not shipping yet |
 
@@ -322,12 +378,12 @@ No `HomePage.vue` mega-component.
 
 ---
 
-## 7. Implementation phases
+## 8. Implementation phases
 
 ### Phase A — Scaffold (no full content rewrite)
 
 1. Add `documentation/` VitePress package + root scripts.
-2. Port theme: mermaid plugin, minimal CSS, logo.
+2. Port theme: site-wide Mermaid fence integration (§6), minimal CSS, logo.
 3. Homepage: frontmatter hero + Markdown port of historical sections (code-group native).
 4. Stub sidebar pages with titles + “TODO” one-liners so IA is reviewable.
 5. CI job or script for `vitepress build`.
@@ -359,11 +415,11 @@ No `HomePage.vue` mega-component.
 
 ---
 
-## 8. Playwright documentation map (research)
+## 9. Playwright documentation map (research)
 
 Verified against `https://playwright.dev/docs/` (stable docs). Playwright’s surface is larger than ours; we mirror only pages relevant to interception parity.
 
-### 8.1 Guide pages
+### 9.1 Guide pages
 
 | URL | Description | Key APIs / concepts |
 | --- | ----------- | ------------------- |
@@ -376,7 +432,7 @@ Verified against `https://playwright.dev/docs/` (stable docs). Playwright’s su
 | https://playwright.dev/docs/test-use-options | Test config for headers, auth, proxy, offline, SW | `extraHTTPHeaders`, `offline`, `proxy`, … |
 | https://playwright.dev/docs/test-assertions | Polling / API response assertions | `expect.poll`, `toBeOK()` |
 
-### 8.2 API reference pages
+### 9.2 API reference pages
 
 | URL | Description | Key APIs / concepts |
 | --- | ----------- | ------------------- |
@@ -396,7 +452,7 @@ Verified against `https://playwright.dev/docs/` (stable docs). Playwright’s su
 | https://playwright.dev/docs/api/class-testoptions | Config knobs for network-ish behavior | offline, proxy, headers, SW |
 | https://playwright.dev/docs/api/class-apiresponseassertions | `expect(response).toBeOK()` | assertions |
 
-### 8.3 Adjacent pages
+### 9.3 Adjacent pages
 
 | URL | Notes |
 | --- | ----- |
@@ -404,7 +460,7 @@ Verified against `https://playwright.dev/docs/` (stable docs). Playwright’s su
 | https://playwright.dev/docs/test-components | Mentions `page.route` + blocking SWs |
 | https://playwright.dev/docs/release-notes | Version history only |
 
-### 8.4 Mapping Playwright IA → our site
+### 9.4 Mapping Playwright IA → our site
 
 Playwright splits **Network** (broad guide) vs **Mock APIs** (tutorial + HAR + WS). We should:
 
@@ -417,7 +473,7 @@ Playwright splits **Network** (broad guide) vs **Mock APIs** (tutorial + HAR + W
 
 ---
 
-## 9. Current library surface to document (checklist)
+## 10. Current library surface to document (checklist)
 
 From `packages/playwright` + Node agent (rewrite):
 
@@ -447,7 +503,7 @@ From `packages/playwright` + Node agent (rewrite):
 
 ---
 
-## 10. Open decisions (resolve during Phase A/B)
+## 11. Open decisions (resolve during Phase A/B)
 
 1. **Package / site base path** — GitHub Pages base, custom domain, or docs package path.
 2. **Dashboard** — first-class homepage section vs ops-only vs deferred.
@@ -457,7 +513,7 @@ From `packages/playwright` + Node agent (rewrite):
 
 ---
 
-## 11. Success criteria
+## 12. Success criteria
 
 - Homepage content is mostly Markdown-editable; special UI is isolated components.
 - Mermaid works in guides from fenced blocks.
