@@ -162,6 +162,15 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       case "request:response":
         handleRequestResponse(message);
         return;
+      case "request:observe":
+        // Synthetic redirect-hop observation from the Node agent.
+        broadcastToPlaywright({
+          type: "request:observed",
+          requestId: message.requestId,
+          request: message.request,
+          clientId: message.clientId,
+        });
+        return;
       case "agent:error":
         logger.warn(`agent error from ${bound.clientId}: ${message.message}`);
         return;

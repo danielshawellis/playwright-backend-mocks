@@ -249,13 +249,16 @@ function handleProxyMessage(
 }
 
 /**
- * Continue/passthrough settlement: fetch upstream, respond to the app, and
- * report `request:response` for Playwright waitForResponse waiters.
+ * Continue/passthrough settlement: fetch upstream (following redirects with
+ * Playwright hop rules), respond to the app with the final body, and report
+ * each hop so waitForResponse / redirectedFrom linking still work.
  *
- * Do not auto-follow redirects — the app client follows, producing a separate
- * intercepted request so redirectedFrom/redirectedTo can link the chain
- * (Playwright browser continue semantics).
- * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
+ * DIVERGENCE: Browser continue lets the page follow redirects as separate
+ * intercepted requests. Undici does not preserve continue header overrides on
+ * app-level redirect follows after respondWith(302), so we follow inside the
+ * agent (headers persist; method/body first-hop only) and emit synthetic
+ * request:observe observations for intermediate hops.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts
  */
 function settleWithUpstream(
   connection: ProxyConnection,
@@ -263,45 +266,55 @@ function settleWithUpstream(
   item: PendingController,
   overrides?: RequestOverrides,
 ): void {
-  void performUpstream(item.request, overrides, {
-    maxRedirects: 0,
-    // Header overrides replace the set (Playwright continue); use http/https so
-    // undici does not re-inject Accept: */* and other fetch defaults.
-    exactHeaders: overrides?.headers !== undefined,
-  })
-    .then(async (response) => {
-      const serialized = await serializeResponse(
-        response,
-        overrides?.url ?? item.request.url,
-      );
-      item.controller.respondWith(responseFromSerialized(serialized));
-      item.resolve();
-      try {
-        connection.send({
-          type: "request:response",
-          requestId,
-          ok: true,
-          response: serialized,
-        });
-      } catch {
-        // Connection may have closed after the app already received the response.
-      }
-    })
-    .catch((error: unknown) => {
-      const err = error instanceof Error ? error : new Error(String(error));
-      item.controller.errorWith(err);
-      item.resolve();
-      try {
-        connection.send({
-          type: "request:response",
-          requestId,
-          ok: false,
-          error: serializeError(error),
-        });
-      } catch {
-        // ignore
-      }
-    });
+  void settleContinueWithRedirectHops(connection, requestId, item, overrides);
+}
+
+async function settleContinueWithRedirectHops(
+  connection: ProxyConnection,
+  requestId: string,
+  item: PendingController,
+  overrides?: RequestOverrides,
+): Promise<void> {
+  try {
+    const result = await performUpstreamWithHopReporting(
+      connection,
+      requestId,
+      item.request,
+      overrides,
+      {
+        // Header overrides replace the set (Playwright continue); use http/https so
+        // undici does not re-inject Accept: */* and other fetch defaults.
+        exactHeaders: overrides?.headers !== undefined,
+        clientId: connection.clientId,
+      },
+    );
+    item.controller.respondWith(responseFromSerialized(result.finalResponse));
+    item.resolve();
+    try {
+      connection.send({
+        type: "request:response",
+        requestId: result.finalRequestId,
+        ok: true,
+        response: result.finalResponse,
+      });
+    } catch {
+      // Connection may have closed after the app already received the response.
+    }
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    item.controller.errorWith(err);
+    item.resolve();
+    try {
+      connection.send({
+        type: "request:response",
+        requestId,
+        ok: false,
+        error: serializeError(error),
+      });
+    } catch {
+      // ignore
+    }
+  }
 }
 
 /**
@@ -344,6 +357,122 @@ async function performUpstream(
       }
     }
     throw new Error("Unreachable");
+  });
+}
+
+/**
+ * Continue path: follow redirects while reporting each hop for inspection.
+ * Intermediate 302s get request:response on the prior id; the next hop is
+ * announced via request:observe so redirectedFrom/To can link.
+ */
+async function performUpstreamWithHopReporting(
+  connection: ProxyConnection,
+  initialRequestId: string,
+  original: Request,
+  overrides: RequestOverrides | undefined,
+  options: { exactHeaders?: boolean; clientId: string },
+): Promise<{ finalRequestId: string; finalResponse: SerializedResponse }> {
+  return upstreamBypass.run(true, async () => {
+    let redirectsRemaining = 20;
+    let url = overrides?.url ?? original.url;
+    let method = overrides?.method ?? original.method;
+    const headerRecord = {
+      ...(overrides?.headers ?? normalizeHeaders(original.headers)),
+    };
+
+    let body: Uint8Array | null = null;
+    if (overrides?.bodyBase64 !== undefined) {
+      const decoded = decodeBody(overrides.bodyBase64);
+      body = decoded === null ? null : new Uint8Array(decoded);
+      syncContentLengthRecord(headerRecord, body);
+    } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
+      body = new Uint8Array(await original.clone().arrayBuffer());
+    }
+
+    let currentRequestId = initialRequestId;
+    let currentUrl = url;
+
+    for (;;) {
+      const response = options.exactHeaders
+        ? await httpRequestExact(url, method, headerRecord, body)
+        : await fetchRequest(url, method, headerRecord, body);
+
+      if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining <= 0) {
+        const finalResponse = await serializeResponse(response, currentUrl);
+        return { finalRequestId: currentRequestId, finalResponse };
+      }
+
+      const locationHeader = response.headers.get("location");
+      if (locationHeader === null || locationHeader.length === 0) {
+        const finalResponse = await serializeResponse(response, currentUrl);
+        return { finalRequestId: currentRequestId, finalResponse };
+      }
+
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(locationHeader, url);
+      } catch {
+        throw new Error(
+          `uri requested responds with an invalid redirect URL: ${locationHeader}`,
+        );
+      }
+
+      // Report the redirect response on this hop, then observe the next hop.
+      const redirectSerialized = await serializeResponse(response, currentUrl);
+      try {
+        connection.send({
+          type: "request:response",
+          requestId: currentRequestId,
+          ok: true,
+          response: redirectSerialized,
+        });
+      } catch {
+        // ignore
+      }
+
+      await response.arrayBuffer().catch(() => undefined);
+
+      const status = response.status;
+      const upperMethod = method.toUpperCase();
+      if (
+        ((status === 301 || status === 302) && upperMethod === "POST") ||
+        (status === 303 && upperMethod !== "GET" && upperMethod !== "HEAD")
+      ) {
+        method = "GET";
+        body = null;
+        deleteHeaderRecord(headerRecord, "content-encoding");
+        deleteHeaderRecord(headerRecord, "content-language");
+        deleteHeaderRecord(headerRecord, "content-length");
+        deleteHeaderRecord(headerRecord, "content-location");
+        deleteHeaderRecord(headerRecord, "content-type");
+      }
+
+      if (nextUrl.origin !== new URL(url).origin) {
+        deleteHeaderRecord(headerRecord, "authorization");
+      }
+      headerRecord.host = nextUrl.host;
+
+      url = nextUrl.href;
+      currentUrl = url;
+      currentRequestId = randomUUID();
+      try {
+        connection.send({
+          type: "request:observe",
+          requestId: currentRequestId,
+          clientId: options.clientId,
+          request: {
+            url,
+            method,
+            headers: { ...headerRecord },
+            bodyBase64: encodeBody(body === null ? null : Buffer.from(body)),
+          },
+        });
+      } catch {
+        // ignore
+      }
+
+      redirectsRemaining -= 1;
+    }
   });
 }
 

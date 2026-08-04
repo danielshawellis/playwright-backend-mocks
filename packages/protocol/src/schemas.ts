@@ -169,6 +169,17 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
     response: serializedResponseSchema.optional(),
     error: serializedErrorSchema.optional(),
   }),
+  /**
+   * Node → proxy: synthetic request observation for redirect hops followed
+   * inside continue/fetch (so Playwright can link redirectedFrom/To without
+   * the app issuing a second intercepted fetch).
+   */
+  z.object({
+    type: z.literal("request:observe"),
+    requestId: z.string(),
+    clientId: z.string(),
+    request: serializedRequestSchema,
+  }),
   z.object({
     type: z.literal("agent:error"),
     message: z.string(),
