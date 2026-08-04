@@ -108,6 +108,8 @@ async function getWorkerConnection(): Promise<PlaywrightProxyConnection> {
 export async function createNodeMocksForTest(meta: {
   title: string;
   file: string;
+  /** Playwright-shaped baseURL for relative glob resolution. */
+  baseURL?: string;
 }): Promise<BackendMocksController> {
   const connection = await getWorkerConnection();
   const testId = randomUUID();
@@ -118,7 +120,11 @@ export async function createNodeMocksForTest(meta: {
     file: meta.file,
     workerId: String(process.pid),
   });
-  return createBackendMocks({ connection, testId });
+  return createBackendMocks({
+    connection,
+    testId,
+    ...(meta.baseURL !== undefined ? { baseURL: meta.baseURL } : {}),
+  });
 }
 
 function triggerPayload(init: {

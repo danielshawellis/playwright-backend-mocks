@@ -5,6 +5,7 @@ import {
   decodeBody,
   encodeBody,
   normalizeHeaders,
+  resolveGlobToRegexPattern,
   type HistoryEntry,
   type ProxyToClientMessage,
   type RequestOverrides,
@@ -485,6 +486,7 @@ class RouteHandlerRecord {
   readonly routeId: string;
   readonly matcherInput: RouteMatcherInput;
   readonly handler: RouteHandler;
+  private readonly _baseURL: string | undefined;
   private handledCount = 0;
   private readonly _times: number;
   private _ignoreException = false;
@@ -495,17 +497,26 @@ class RouteHandlerRecord {
     matcherInput: RouteMatcherInput,
     handler: RouteHandler,
     times: number = Number.MAX_SAFE_INTEGER,
+    baseURL?: string,
   ) {
     this.routeId = routeId;
     this.matcherInput = matcherInput;
     this.handler = handler;
     this._times = times;
+    this._baseURL = baseURL;
+    // Playwright RouteHandler: eagerly validate string globs at registration.
+    // https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
+    const glob = extractGlobString(matcherInput);
+    if (glob !== undefined) {
+      resolveGlobToRegexPattern(baseURL, glob);
+    }
   }
 
   matches(request: BackendRequestImpl): boolean {
     return matchRouteMatcher(this.matcherInput, {
       request: request.toMatchRequest(),
       clientId: request.clientId,
+      baseURL: this._baseURL,
     });
   }
 
@@ -572,8 +583,10 @@ export interface BackendMocksController extends BackendMocks {
 export function createBackendMocks(options: {
   connection: PlaywrightProxyConnection;
   testId: string;
+  /** Playwright context/page `baseURL` for relative glob resolution. */
+  baseURL?: string;
 }): BackendMocksController {
-  const { connection, testId } = options;
+  const { connection, testId, baseURL } = options;
   const routes: RouteHandlerRecord[] = [];
   const pendingFetches = new Map<string, PendingFetch>();
   const observed: BackendRequest[] = [];
@@ -595,6 +608,7 @@ export function createBackendMocks(options: {
             matchRouteMatcher(route.matcherInput, {
               request: message.request,
               clientId: message.clientId,
+              baseURL,
             })
           ) {
             matches.push({ routeId: route.routeId });
@@ -715,7 +729,10 @@ export function createBackendMocks(options: {
       const routeId = randomUUID();
       const times = options.times ?? Number.MAX_SAFE_INTEGER;
       // LIFO: newest handler first (Playwright unshift).
-      routes.unshift(new RouteHandlerRecord(routeId, url, handler, times));
+      // RouteHandlerRecord constructor eagerly validates string globs (throws).
+      routes.unshift(
+        new RouteHandlerRecord(routeId, url, handler, times, baseURL),
+      );
       connection.send({
         type: "route:register",
         routeId,
@@ -780,6 +797,7 @@ export function createBackendMocks(options: {
                 bodyBase64: encodeBody(request.postDataBuffer()),
               },
               clientId: request.clientId,
+              baseURL,
             },
             options.method,
           ),
@@ -808,6 +826,7 @@ export function createBackendMocks(options: {
             bodyBase64: encodeBody(request.postDataBuffer()),
           },
           clientId: request.clientId,
+          baseURL,
         }),
       );
     },
@@ -841,6 +860,24 @@ export function createBackendMocks(options: {
   };
 
   return api;
+}
+
+/** String glob from a route matcher, if any (for eager validation). */
+function extractGlobString(input: RouteMatcherInput): string | undefined {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    !(input instanceof RegExp) &&
+    !isURLPattern(input) &&
+    typeof input !== "function" &&
+    typeof input.url === "string"
+  ) {
+    return input.url;
+  }
+  return undefined;
 }
 
 function matcherEquals(a: RouteMatcherInput, b: RouteMatcherInput): boolean {

@@ -2,10 +2,16 @@ export { PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 export { encodeBody, decodeBody, decodeBodyText } from "./body.js";
 export { normalizeHeaders } from "./headers.js";
 export {
+  globToRegexPattern,
+  resolveGlobToRegexPattern,
+  urlMatches,
   matchUrlGlob,
   matchSerializedMatcher,
   serializeRegExp,
+  isURLPatternLike,
   type MatchInput,
+  type URLMatch,
+  type URLPatternLike,
 } from "./match.js";
 export { BackendMocksNetworkError, serializeError, errorFromCode } from "./errors.js";
 export {

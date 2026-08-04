@@ -104,15 +104,20 @@ export interface BackendRequest {
  * Response returned from `route.fetch()` / accepted by `route.fulfill({ response })`.
  * Method-shaped like Playwright's APIResponse where practical; keeps buffered
  * body accessors used by cassette helpers.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (APIResponse)
  */
 export interface BackendResponse {
+  ok(): boolean;
+  url(): string;
   status(): number;
   statusText(): string;
   headers(): Record<string, string>;
+  headersArray(): HeaderArray;
   headerValue(name: string): string | null;
   body(): Promise<Buffer>;
   text(): Promise<string>;
   json(): Promise<unknown>;
+  dispose(): Promise<void>;
   /** Buffered body for cassette / fulfill helpers (sync). */
   readonly bodyBuffer: Buffer;
 }
@@ -142,6 +147,8 @@ export interface FetchOptions extends ContinueOptions {
   readonly timeout?: number;
   readonly maxRedirects?: number;
   readonly maxRetries?: number;
+  /** Cancel the fetch; does not disable the default timeout (pass timeout: 0). */
+  readonly signal?: AbortSignal;
 }
 
 export interface BackendRoute {
@@ -323,13 +330,30 @@ export function getRouteURLPattern(
   return undefined;
 }
 
+/**
+ * Detect URLPattern instances, including urlpattern-polyfill objects.
+ *
+ * Playwright pin uses `instanceof globalThis.URLPattern` only:
+ * https://github.com/microsoft/playwright/blob/26a9e47/packages/isomorphic/urlMatch.ts
+ *
+ * DIVERGENCE: also duck-type `{ test, pathname, hostname }` so polyfill
+ * instances work when the global constructor is missing or differs.
+ * DIVERGENCE END
+ */
 export function isURLPattern(value: unknown): value is URLPattern {
-  return (
-    typeof URLPattern !== "undefined" &&
-    typeof value === "object" &&
-    value !== null &&
-    value instanceof URLPattern
-  );
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  if (typeof (value as { test?: unknown }).test !== "function") {
+    return false;
+  }
+  const URLPatternCtor = (
+    globalThis as { URLPattern?: new (...args: never[]) => unknown }
+  ).URLPattern;
+  if (typeof URLPatternCtor === "function" && value instanceof URLPatternCtor) {
+    return true;
+  }
+  return "pathname" in value && "hostname" in value;
 }
 
 /**

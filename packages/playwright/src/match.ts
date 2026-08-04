@@ -1,6 +1,8 @@
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
+// Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/isomorphic/urlMatch.ts
 import {
   matchSerializedMatcher,
+  urlMatches,
   type SerializedRequest,
 } from "@playwright-backend-mocks/protocol";
 import {
@@ -14,6 +16,7 @@ import {
 export interface LocalMatchInput {
   readonly request: SerializedRequest;
   readonly clientId: string;
+  readonly baseURL?: string;
 }
 
 /**
@@ -33,21 +36,61 @@ export function matchRouteMatcher(
 
   if (predicate !== undefined || urlPattern !== undefined) {
     const filters = toSerializedMatcher(stripUrl(input), methodFilter);
-    if (!matchSerializedMatcher(filters, matchInput)) {
+    if (
+      !matchSerializedMatcher(filters, {
+        request: matchInput.request,
+        clientId: matchInput.clientId,
+        baseURL: matchInput.baseURL,
+      })
+    ) {
       return false;
     }
-    const url = tryParseUrl(matchInput.request.url);
-    if (url === null) {
-      return false;
-    }
-    if (predicate !== undefined) {
-      return predicate(url);
-    }
-    // URLPattern.test accepts a string or URLPatternInit.
-    return urlPattern!.test(matchInput.request.url);
+    return urlMatches(
+      matchInput.baseURL,
+      matchInput.request.url,
+      predicate ?? urlPattern,
+    );
   }
 
-  return matchSerializedMatcher(toSerializedMatcher(input, methodFilter), matchInput);
+  const urlPart = extractUrlMatch(input);
+  if (urlPart !== undefined) {
+    const filters = toSerializedMatcher(stripUrl(input), methodFilter);
+    if (
+      !matchSerializedMatcher(filters, {
+        request: matchInput.request,
+        clientId: matchInput.clientId,
+        baseURL: matchInput.baseURL,
+      })
+    ) {
+      return false;
+    }
+    return urlMatches(matchInput.baseURL, matchInput.request.url, urlPart);
+  }
+
+  return matchSerializedMatcher(toSerializedMatcher(input, methodFilter), {
+    request: matchInput.request,
+    clientId: matchInput.clientId,
+    baseURL: matchInput.baseURL,
+  });
+}
+
+function extractUrlMatch(
+  input: RouteMatcherInput,
+): string | RegExp | undefined {
+  if (typeof input === "string" || input instanceof RegExp) {
+    return input;
+  }
+  if (
+    typeof input === "object" &&
+    !(input instanceof RegExp) &&
+    !isURLPattern(input) &&
+    typeof input !== "function"
+  ) {
+    if (typeof input.url === "string" || input.url instanceof RegExp) {
+      return input.url;
+    }
+  }
+  return undefined;
 }
 
 function stripUrl(input: RouteMatcherInput): RouteMatcherInput {
@@ -61,12 +104,4 @@ function stripUrl(input: RouteMatcherInput): RouteMatcherInput {
     };
   }
   return {};
-}
-
-function tryParseUrl(url: string): URL | null {
-  try {
-    return new URL(url);
-  } catch {
-    return null;
-  }
 }
