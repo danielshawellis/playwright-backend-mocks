@@ -41,5 +41,17 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @playwright-backend-mocks/parity exec playwright install --with-deps chromium
 
-      - name: Test
+      - name: Browser oracle
         run: pnpm test
+
+      - name: Node passthrough smokes
+        run: pnpm test:parity:node
+
+      - name: Dual-mode routing gate (fulfill)
+        run: pnpm test:parity:node:fulfill
+
+      - name: Full node oracle
+        run: pnpm test:parity:node:full
+
+      - name: Library-only suite
+        run: pnpm test:library

@@ -21,10 +21,10 @@ Specs exercise **one** developer-facing routing surface through `harness.ts`. Up
 ```bash
 pnpm test:parity            # PARITY_MODE=browser — stock Playwright + browser downstream
 pnpm test:parity:node       # PARITY_MODE=node — Node downstream control plane (passthrough smokes)
-PARITY_NODE_FULL=1 pnpm test:parity:node   # full suite in node mode (mostly red until Step 2)
+pnpm test:parity:node:full  # full suite in node mode (backendMocks)
 ```
 
-Browser mode imports **only** `@playwright/test` for routing (via the harness). Node mode uses the same specs; routing fixtures throw until Step 2 wires `backendMocks`.
+Browser mode imports **only** `@playwright/test` for routing (via the harness). Node mode uses the same specs via `backendMocks` (`ENABLE_BACKEND_MOCKS=1` on the Node host).
 
 ## Layout
 

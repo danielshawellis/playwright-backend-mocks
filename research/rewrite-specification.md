@@ -261,11 +261,11 @@ Do **not** build a temporary stub that invents parallel mock semantics. The skel
 
 ### Step 2 done when
 
-- Backend mode passes the oracle/parity suite for the in-scope surface (including `routeFromHAR`).
-- Library-only suite covers multi-process / ambiguity / infra concerns.
-- Module map, pinned Playwright blob URL comments, and `DIVERGENCE` / `DIVERGENCE END` notes exist for contributors.
-- TS / ESLint remain aligned enough with the Playwright pin that parity-shaped code is not fighting the toolchain.
-- `historical/` can be deleted when no longer useful.
+- Backend mode passes the oracle/parity suite for the in-scope surface (including `routeFromHAR`). ✅ (`pnpm test:parity:node:full` — 319 passed / 5 skipped, matching browser)
+- Library-only suite covers multi-process / ambiguity / infra concerns. ✅ (`tests/library/`)
+- Module map, pinned Playwright blob URL comments, and `DIVERGENCE` / `DIVERGENCE END` notes exist for contributors. ✅ ([`packages/MODULE_MAP.md`](../packages/MODULE_MAP.md))
+- TS / ESLint remain aligned enough with the Playwright pin that parity-shaped code is not fighting the toolchain. ✅
+- `historical/` can be deleted when no longer useful. (still present as reference; safe to remove once consumers no longer need it)
 
 ---
 

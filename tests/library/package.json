@@ -1,0 +1,16 @@
+{
+  "name": "@playwright-backend-mocks/library-tests",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright-backend-mocks/node": "workspace:*",
+    "@playwright-backend-mocks/playwright": "workspace:*",
+    "@playwright-backend-mocks/protocol": "workspace:*",
+    "@playwright-backend-mocks/proxy": "workspace:*",
+    "@playwright/test": "1.62.1"
+  }
+}

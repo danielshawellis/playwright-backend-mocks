@@ -9,6 +9,9 @@
     "test:node": "PARITY_MODE=node playwright test",
     "test:node:full": "PARITY_MODE=node PARITY_NODE_FULL=1 playwright test"
   },
+  "dependencies": {
+    "@playwright-backend-mocks/playwright": "workspace:*"
+  },
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@types/ws": "^8.18.1",
