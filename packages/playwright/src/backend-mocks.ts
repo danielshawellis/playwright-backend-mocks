@@ -362,24 +362,85 @@ class BackendRouteImpl implements BackendRoute {
   async fetch(options: FetchOptions = {}): Promise<BackendResponse> {
     // fetch is non-terminal — does not settle the route and does not mutate
     // fallback overrides (Playwright passes options into the fetch call only).
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Route.fetch)
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (_innerFetch)
+    if (options.maxRedirects !== undefined && options.maxRedirects < 0) {
+      throw new Error(`'maxRedirects' must be greater than or equal to '0'`);
+    }
+    if (options.maxRetries !== undefined && options.maxRetries < 0) {
+      throw new Error(`'maxRetries' must be greater than or equal to '0'`);
+    }
+    assertFetchUrlProtocol(options.url, this._request.url());
+
     const fetchId = randomUUID();
     const overrides = fetchOverridesForRequest(this._request, options);
+    const timeout = options.timeout ?? 30_000;
+    const signal = options.signal;
+
     const responsePromise = new Promise<BackendResponse>((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const onAbort = () => {
+        cleanup();
+        if (this._pendingFetches.delete(fetchId)) {
+          const reason = signal?.reason;
+          reject(
+            reason instanceof Error
+              ? reason
+              : new Error(
+                  typeof reason === "string" && reason.length > 0
+                    ? reason
+                    : "route.fetch aborted",
+                ),
+          );
+        }
+      };
+      const cleanup = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        signal?.removeEventListener("abort", onAbort);
+      };
+
       this._pendingFetches.set(fetchId, {
         request: this._request,
-        resolve,
-        reject,
+        resolve: (response) => {
+          cleanup();
+          resolve(response);
+        },
+        reject: (error) => {
+          cleanup();
+          reject(error);
+        },
       });
-      const timeout = options.timeout ?? 30_000;
-      // Playwright: timeout 0 disables the deadline.
+
+      // Playwright: timeout 0 disables the deadline (kNoTimeout).
       if (timeout > 0) {
-        setTimeout(() => {
+        timer = setTimeout(() => {
           if (this._pendingFetches.delete(fetchId)) {
-            reject(new Error(`route.fetch timed out after ${timeout}ms`));
+            cleanup();
+            // Playwright TimeoutError message shape.
+            reject(new Error(`Timeout ${timeout}ms exceeded.`));
           }
         }, timeout);
       }
+
+      if (signal !== undefined) {
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
     });
+
+    if (signal?.aborted) {
+      return responsePromise;
+    }
 
     this._connection.send({
       type: "handler:result",
@@ -1217,19 +1278,60 @@ function createResponseWaitPredicate(
   };
 }
 
-/** Merge accumulated request overrides with per-fetch options for the wire. */
+/**
+ * Merge accumulated request overrides with per-fetch options for the wire.
+ * Applies Playwright APIRequestContext postData content-type defaults.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts (serializePostData)
+ */
 function fetchOverridesForRequest(
   request: BackendRequestImpl,
   options: FetchOptions,
 ): RequestOverrides | undefined {
   const base = request._fallbackOverridesForContinue() ?? {};
-  const fromOptions = toOverrides(options);
+  const fromOptions = toFetchOverrides(request, options);
   if (fromOptions === undefined && Object.keys(base).length === 0) {
     return undefined;
   }
   return {
     ...base,
     ...fromOptions,
+  };
+}
+
+function toFetchOverrides(
+  request: BackendRequestImpl,
+  options: FetchOptions,
+): RequestOverrides | undefined {
+  const hasOverrides =
+    options.url !== undefined ||
+    options.method !== undefined ||
+    options.headers !== undefined ||
+    options.postData !== undefined;
+
+  if (!hasOverrides) {
+    return undefined;
+  }
+
+  const postDataBuffer =
+    options.postData !== undefined ? postDataToBuffer(options.postData) : undefined;
+
+  let headers: Record<string, string> | undefined;
+  if (options.headers !== undefined) {
+    headers = normalizeHeaders(headersObjectLossy(options.headers));
+  } else if (options.postData !== undefined) {
+    // Inherit request headers so content-type defaults can layer on top.
+    headers = normalizeHeaders({ ...request.headers() });
+  }
+
+  if (options.postData !== undefined && headers !== undefined) {
+    applyPostDataContentTypeDefault(headers, options.postData);
+  }
+
+  return {
+    ...(options.url !== undefined ? { url: options.url } : {}),
+    ...(options.method !== undefined ? { method: options.method } : {}),
+    ...(headers !== undefined ? { headers } : {}),
+    ...(postDataBuffer !== undefined ? { bodyBase64: encodeBody(postDataBuffer) } : {}),
   };
 }
 
@@ -1257,6 +1359,58 @@ function toOverrides(options: ContinueOptions): RequestOverrides | undefined {
   };
 }
 
+/**
+ * Playwright serializePostData content-type defaults (keepExisting).
+ * Object → application/json; string/Buffer/Uint8Array → application/octet-stream.
+ */
+function applyPostDataContentTypeDefault(
+  headers: Record<string, string>,
+  postData: string | Buffer | Uint8Array | object,
+): void {
+  if (hasHeader(headers, "content-type")) {
+    return;
+  }
+  if (isJsonPostData(postData)) {
+    headers["content-type"] = "application/json";
+  } else {
+    headers["content-type"] = "application/octet-stream";
+  }
+}
+
+function isJsonPostData(postData: string | Buffer | Uint8Array | object): boolean {
+  if (typeof postData === "string" || Buffer.isBuffer(postData) || postData instanceof Uint8Array) {
+    return false;
+  }
+  return typeof postData === "object" && postData !== null;
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
+}
+
+/**
+ * route.fetch URL overrides only support http(s), matching Playwright's
+ * APIRequestContext (Node http/https). file: and other schemes are rejected.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts
+ */
+function assertFetchUrlProtocol(overrideUrl: string | undefined, requestUrl: string): void {
+  if (overrideUrl === undefined) {
+    return;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(overrideUrl, requestUrl);
+  } catch {
+    throw new Error(`Invalid fetch URL: ${overrideUrl}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(
+      `Protocol "${parsed.protocol}" is not supported. Expected "http:" or "https:"`,
+    );
+  }
+}
+
 async function buildFulfillResponse(
   options: FulfillOptions,
   requestUrl?: string,
@@ -1267,10 +1421,11 @@ async function buildFulfillResponse(
   }
 
   if (options.response !== undefined) {
-    const headers = coerceFulfillHeaders({
-      ...options.response.headers(),
-      ...options.headers,
-    });
+    // Playwright: headersOption ??= response.headers() — provided headers replace,
+    // they are not merged with the fetched response headers.
+    const headers = coerceFulfillHeaders(
+      options.headers !== undefined ? options.headers : options.response.headers(),
+    );
     let body = options.response.bodyBuffer;
     if (options.json !== undefined) {
       body = Buffer.from(JSON.stringify(options.json), "utf8");
