@@ -419,24 +419,43 @@ async function performUpstreamOnce(
   }
 }
 
+/**
+ * Whether an upstream failure is a transient connection reset worth retrying.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts (_sendRequestWithRetries)
+ */
 function isConnectionResetError(error: unknown): boolean {
-  // undici/Node may surface ECONNRESET on the error or its cause chain.
   let current: unknown = error;
   for (let depth = 0; depth < 4 && current !== undefined && current !== null; depth++) {
-    if (typeof current === "object" && "code" in current) {
-      const code = (current as { code?: unknown }).code;
-      if (code === "ECONNRESET") {
+    if (typeof current === "object" && current !== null) {
+      const code = "code" in current ? (current as { code?: unknown }).code : undefined;
+      // Playwright retries ECONNRESET (also treats EPIPE/ECONNABORTED as network).
+      if (code === "ECONNRESET" || code === "EPIPE" || code === "ECONNABORTED") {
+        return true;
+      }
+      // DIVERGENCE: undici fetch surfaces socket destroy as UND_ERR_SOCKET /
+      // "other side closed" rather than Node http's ECONNRESET.
+      if (code === "UND_ERR_SOCKET") {
+        return true;
+      }
+      const message =
+        current instanceof Error
+          ? current.message
+          : "message" in current && typeof (current as { message?: unknown }).message === "string"
+            ? (current as { message: string }).message
+            : "";
+      if (/other side closed/i.test(message)) {
+        return true;
+      }
+      // DIVERGENCE END
+      if (/ECONNRESET/i.test(message)) {
         return true;
       }
     }
-    if (typeof current === "object" && "cause" in current) {
+    if (typeof current === "object" && current !== null && "cause" in current) {
       current = (current as { cause?: unknown }).cause;
       continue;
     }
     break;
-  }
-  if (error instanceof Error && /ECONNRESET/i.test(error.message)) {
-    return true;
   }
   return false;
 }
