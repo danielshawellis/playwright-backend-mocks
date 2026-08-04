@@ -129,7 +129,8 @@ export interface ContinueOptions {
 
 export interface FulfillOptions {
   readonly status?: number;
-  readonly headers?: Record<string, string>;
+  /** Header values are coerced to strings (Playwright). */
+  readonly headers?: Record<string, string | number | boolean | undefined>;
   readonly body?: string | Buffer | Uint8Array;
   readonly json?: unknown;
   readonly contentType?: string;

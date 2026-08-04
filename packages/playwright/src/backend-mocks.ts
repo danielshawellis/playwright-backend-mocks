@@ -205,6 +205,7 @@ class BackendRequestImpl implements BackendRequest {
   }
 
   _applyFallbackOverrides(overrides: ContinueOptions): void {
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (_applyFallbackOverrides)
     if (overrides.url !== undefined) {
       this._fallbackOverrides.url = overrides.url;
     }
@@ -222,6 +223,24 @@ class BackendRequestImpl implements BackendRequest {
     }
   }
 
+  /**
+   * Playwright server `Route.continue` protocol check.
+   * Compares against the original request URL (not prior fallback overrides applied
+   * only on the client request view).
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/network.ts (Route.continue)
+   */
+  _checkContinueUrlProtocol(): void {
+    const overrideUrl = this._fallbackOverrides.url;
+    if (overrideUrl === undefined) {
+      return;
+    }
+    const newUrl = new URL(overrideUrl);
+    const oldUrl = new URL(this._url);
+    if (oldUrl.protocol !== newUrl.protocol) {
+      throw new Error("New URL must have same protocol as overridden URL");
+    }
+  }
+
   _fallbackOverridesForContinue(): RequestOverrides | undefined {
     const overrides = this._fallbackOverrides;
     const hasOverrides =
@@ -232,15 +251,34 @@ class BackendRequestImpl implements BackendRequest {
     if (!hasOverrides) {
       return undefined;
     }
+
+    let headers: Record<string, string> | undefined;
+    if (overrides.headers !== undefined) {
+      // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/network.ts (applyHeadersOverrides)
+      headers = applyHeadersOverrides(this._headers, overrides.headers);
+    }
+
+    const bodyBase64 =
+      overrides.postDataBuffer !== undefined
+        ? encodeBody(overrides.postDataBuffer)
+        : undefined;
+
+    if (bodyBase64 !== undefined) {
+      // Chromium Fetch.continueRequest recalculates Content-Length from postData.
+      headers = { ...(headers ?? this._headers) };
+      const body = decodeBody(bodyBase64);
+      if (body === null || body.length === 0) {
+        delete headers["content-length"];
+      } else {
+        headers["content-length"] = String(body.length);
+      }
+    }
+
     return {
       ...(overrides.url !== undefined ? { url: overrides.url } : {}),
       ...(overrides.method !== undefined ? { method: overrides.method } : {}),
-      ...(overrides.headers !== undefined
-        ? { headers: normalizeHeaders(overrides.headers) }
-        : {}),
-      ...(overrides.postDataBuffer !== undefined
-        ? { bodyBase64: encodeBody(overrides.postDataBuffer) }
-        : {}),
+      ...(headers !== undefined ? { headers: normalizeHeaders(headers) } : {}),
+      ...(bodyBase64 !== undefined ? { bodyBase64 } : {}),
     };
   }
 
@@ -356,6 +394,8 @@ class BackendRouteImpl implements BackendRoute {
   async continue(options: ContinueOptions = {}): Promise<void> {
     await this._handleRoute(async () => {
       this._request._applyFallbackOverrides(options);
+      // Throws on protocol mismatch — handler is marked thrown, network not sent.
+      this._request._checkContinueUrlProtocol();
       const overrides = this._request._fallbackOverridesForContinue();
       this._terminalSettled = true;
       this._connection.send({
@@ -372,6 +412,14 @@ class BackendRouteImpl implements BackendRoute {
   /** Final network continue after the handler chain falls through. */
   sendFinalContinue(): void {
     if (this._terminalSettled) {
+      return;
+    }
+    // Playwright: continue({ isFallback: true }).catch(() => {}) — protocol
+    // mismatch from fallback({ url }) stalls instead of throwing to the test.
+    try {
+      this._request._checkContinueUrlProtocol();
+    } catch {
+      this._terminalSettled = true;
       return;
     }
     this._terminalSettled = true;
@@ -922,20 +970,28 @@ function toOverrides(options: ContinueOptions): RequestOverrides | undefined {
 async function buildFulfillResponse(
   options: FulfillOptions,
 ): Promise<SerializedResponse> {
+  // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (_innerFulfill)
+  if (options.json !== undefined && options.body !== undefined) {
+    throw new Error("Can specify either body or json parameters");
+  }
+
   if (options.response !== undefined) {
-    const headers = stripBodyLengthHeaders({
+    const headers = coerceFulfillHeaders({
       ...options.response.headers(),
       ...options.headers,
     });
     let body = options.response.bodyBuffer;
     if (options.json !== undefined) {
       body = Buffer.from(JSON.stringify(options.json), "utf8");
-      headers["content-type"] = headers["content-type"] ?? "application/json";
+      if (!("content-type" in headers)) headers["content-type"] = "application/json";
     } else if (options.body !== undefined) {
       body = toBuffer(options.body);
     }
     if (options.contentType !== undefined) {
-      headers["content-type"] = options.contentType;
+      headers["content-type"] = String(options.contentType);
+    }
+    if (body.length > 0 && !("content-length" in headers)) {
+      headers["content-length"] = String(body.length);
     }
     return {
       // Playwright: statusOption || 200 (status 0 → 200)
@@ -946,20 +1002,29 @@ async function buildFulfillResponse(
     };
   }
 
-  const headers = stripBodyLengthHeaders({ ...options.headers });
+  const headers = coerceFulfillHeaders({ ...options.headers });
   let body: Buffer | null = null;
 
   if (options.json !== undefined) {
     body = Buffer.from(JSON.stringify(options.json), "utf8");
-    headers["content-type"] = headers["content-type"] ?? "application/json";
+    if (!("content-type" in headers)) headers["content-type"] = "application/json";
   } else if (options.path !== undefined) {
     body = await readFile(options.path);
+    if (!("content-type" in headers)) {
+      headers["content-type"] =
+        getMimeTypeForPath(options.path) || "application/octet-stream";
+    }
   } else if (options.body !== undefined) {
     body = toBuffer(options.body);
   }
 
   if (options.contentType !== undefined) {
-    headers["content-type"] = options.contentType;
+    headers["content-type"] = String(options.contentType);
+  }
+
+  const length = body?.length ?? 0;
+  if (length > 0 && !("content-length" in headers)) {
+    headers["content-length"] = String(length);
   }
 
   return {
@@ -971,21 +1036,51 @@ async function buildFulfillResponse(
   };
 }
 
-function stripBodyLengthHeaders(
-  headers: Record<string, string | undefined>,
+/**
+ * Coerce fulfill header values to strings and lowercase keys (Playwright).
+ * Drops transfer-encoding; keeps content-length when caller set it.
+ */
+function coerceFulfillHeaders(
+  headers: Record<string, string | number | boolean | undefined> | undefined,
 ): Record<string, string> {
   const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    if (value === undefined) {
-      continue;
-    }
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (value === undefined) continue;
     const lower = key.toLowerCase();
-    if (lower === "content-length" || lower === "transfer-encoding") {
-      continue;
-    }
-    result[key] = value;
+    if (lower === "transfer-encoding") continue;
+    result[lower] = String(value);
   }
   return result;
+}
+
+/**
+ * Minimal mime map for fulfill({ path }) — mirrors Playwright getMimeTypeForPath
+ * for the extensions the oracle exercises; unknown → application/octet-stream at call site.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/isomorphic/mimeType.ts
+ */
+function getMimeTypeForPath(filePath: string): string | null {
+  const dot = filePath.lastIndexOf(".");
+  if (dot === -1) return null;
+  const ext = filePath.slice(dot + 1).toLowerCase();
+  const types: Record<string, string> = {
+    json: "application/json",
+    txt: "text/plain",
+    html: "text/html",
+    htm: "text/html",
+    css: "text/css",
+    js: "application/javascript",
+    mjs: "application/javascript",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+    webp: "image/webp",
+    pdf: "application/pdf",
+    xml: "application/xml",
+    bin: "application/octet-stream",
+  };
+  return types[ext] ?? null;
 }
 
 function headersObjectLossy(
@@ -997,6 +1092,74 @@ function headersObjectLossy(
       continue;
     }
     result[key.toLowerCase()] = String(value);
+  }
+  return result;
+}
+
+/**
+ * Forbidden request headers — cannot be overridden via continue/fallback.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/network.ts
+ */
+const FORBIDDEN_HEADER_NAMES = new Set([
+  "accept-charset",
+  "accept-encoding",
+  "access-control-request-headers",
+  "access-control-request-method",
+  "connection",
+  "content-length",
+  "cookie",
+  "date",
+  "dnt",
+  "expect",
+  "host",
+  "keep-alive",
+  "origin",
+  "referer",
+  "set-cookie",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "via",
+]);
+
+const FORBIDDEN_METHODS = new Set(["CONNECT", "TRACE", "TRACK"]);
+
+function isForbiddenHeader(name: string, value?: string): boolean {
+  const lowerName = name.toLowerCase();
+  if (FORBIDDEN_HEADER_NAMES.has(lowerName)) {
+    return true;
+  }
+  if (lowerName.startsWith("proxy-") || lowerName.startsWith("sec-")) {
+    return true;
+  }
+  if (
+    lowerName === "x-http-method" ||
+    lowerName === "x-http-method-override" ||
+    lowerName === "x-method-override"
+  ) {
+    if (value && FORBIDDEN_METHODS.has(value.toUpperCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Keep allowed override headers; restore forbidden names from the original request. */
+function applyHeadersOverrides(
+  original: Record<string, string>,
+  overrides: Record<string, string>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [name, value] of Object.entries(overrides)) {
+    if (!isForbiddenHeader(name, value)) {
+      result[name.toLowerCase()] = value;
+    }
+  }
+  for (const [name, value] of Object.entries(original)) {
+    if (isForbiddenHeader(name, value)) {
+      result[name.toLowerCase()] = value;
+    }
   }
   return result;
 }

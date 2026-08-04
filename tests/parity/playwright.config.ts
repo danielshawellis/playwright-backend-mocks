@@ -23,26 +23,28 @@ const upstreamUrl = "http://127.0.0.1:4001";
 const wsUpstreamUrl = "http://127.0.0.1:4002";
 const proxyUrl = "http://127.0.0.1:4310";
 
+function webServerEnv(extra: Record<string, string> = {}): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[key] = value;
+  }
+  return { ...env, ...extra };
+}
+
 const sharedServers = [
   {
     command: "pnpm --filter @playwright-backend-mocks/fixture-upstream start",
     url: `${upstreamUrl}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-    env: {
-      ...process.env,
-      PORT: "4001",
-    },
+    env: webServerEnv({ PORT: "4001" }),
   },
   {
     command: "pnpm --filter @playwright-backend-mocks/fixture-ws-upstream start",
     url: `${wsUpstreamUrl}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-    env: {
-      ...process.env,
-      PORT: "4002",
-    },
+    env: webServerEnv({ PORT: "4002" }),
   },
 ];
 
@@ -52,9 +54,7 @@ const proxyServer = {
   url: `${proxyUrl}/health`,
   reuseExistingServer: !process.env.CI,
   timeout: 60_000,
-  env: {
-    ...process.env,
-  },
+  env: webServerEnv(),
 };
 
 const downstreamServer =
@@ -64,23 +64,19 @@ const downstreamServer =
         url: `${nodeDownstreamUrl}/health`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
-        env: {
-          ...process.env,
+        env: webServerEnv({
           PORT: "3001",
           ENABLE_BACKEND_MOCKS: "1",
           PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL: proxyUrl,
           CLIENT_ID: "parity-node",
-        },
+        }),
       }
     : {
         command: "pnpm --filter @playwright-backend-mocks/fixture-browser-harness start",
         url: `${browserHarnessUrl}/health`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
-        env: {
-          ...process.env,
-          PORT: "3000",
-        },
+        env: webServerEnv({ PORT: "3000" }),
       };
 
 export default defineConfig({

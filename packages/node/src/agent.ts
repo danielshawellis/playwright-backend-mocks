@@ -263,6 +263,14 @@ async function performUpstream(
     if (overrides?.bodyBase64 !== undefined) {
       const decoded = decodeBody(overrides.bodyBase64);
       body = decoded === null ? null : new Uint8Array(decoded);
+      // Chromium Fetch.continueRequest recalculates Content-Length from postData.
+      // Stale Content-Length from the original request (or a forbidden override)
+      // must not truncate/reject the amended body.
+      if (body === null || body.byteLength === 0) {
+        headers.delete("content-length");
+      } else {
+        headers.set("content-length", String(body.byteLength));
+      }
     } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
       body = new Uint8Array(await original.clone().arrayBuffer());
     }

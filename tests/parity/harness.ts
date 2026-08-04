@@ -23,11 +23,7 @@ import {
 } from "@playwright/test";
 import type { BackendMocksController } from "@playwright-backend-mocks/playwright";
 import { HARNESS, UPSTREAM, sleep, type TriggerResult } from "./helpers.js";
-import {
-  getNodeControl,
-  resetNodeControl,
-  type DownstreamSocket,
-} from "./node-control.js";
+import { resetNodeControl, type DownstreamSocket } from "./node-control.js";
 import {
   createNodeMocksForTest,
   createNodeRouting,

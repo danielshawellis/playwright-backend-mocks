@@ -22,9 +22,16 @@ export async function triggerHttp(url, init = {}) {
   try {
     response = await fetch(url, { method, headers, body, redirect });
   } catch (error) {
+    // Prefer nested cause text when present (Node fetch often wraps as "fetch failed").
+    const message =
+      error && typeof error === "object"
+        ? [error.message, error.cause && error.cause.message]
+            .filter(Boolean)
+            .join(": ") || String(error)
+        : String(error);
     return {
       ok: false,
-      error: String(error && error.message ? error.message : error),
+      error: message,
     };
   }
 

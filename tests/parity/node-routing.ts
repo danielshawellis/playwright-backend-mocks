@@ -14,7 +14,12 @@ import {
   type RouteHandler as BackendRouteHandler,
   type RouteMatcherInput,
 } from "@playwright-backend-mocks/playwright";
-import type { Request, Route } from "@playwright/test";
+import type {
+  Page,
+  Request,
+  Response,
+  Route,
+} from "@playwright/test";
 import { UPSTREAM, type TriggerResult } from "./helpers.js";
 import {
   getNodeControl,
@@ -26,6 +31,10 @@ const PROXY_URL =
   process.env.PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL ?? "http://127.0.0.1:4310";
 
 type HarnessRouteHandler = (route: Route, request: Request) => unknown;
+type RouteUrl = Parameters<Page["route"]>[0];
+type RouteFromHAROptions = NonNullable<Parameters<Page["routeFromHAR"]>[1]>;
+type RouteWebSocketUrl = Parameters<Page["routeWebSocket"]>[0];
+type RouteWebSocketHandler = Parameters<Page["routeWebSocket"]>[1];
 
 type OpenSocketOptions = {
   protocols?: string | string[];
@@ -36,26 +45,18 @@ type OpenSocketOptions = {
 /** Structural match for harness `ParityRouting` (avoid circular import). */
 type NodeParityRouting = {
   route: (
-    url: Parameters<import("@playwright/test").Page["route"]>[0],
+    url: RouteUrl,
     handler: HarnessRouteHandler,
     options?: { times?: number },
   ) => Promise<{ [Symbol.dispose](): void }>;
-  unroute: (
-    url?: Parameters<import("@playwright/test").Page["route"]>[0],
-    handler?: HarnessRouteHandler,
-  ) => Promise<void>;
+  unroute: (url?: RouteUrl, handler?: HarnessRouteHandler) => Promise<void>;
   unrouteAll: (options?: {
     behavior?: "wait" | "ignoreErrors" | "default";
   }) => Promise<void>;
-  routeFromHAR: (
-    file: string,
-    options?: NonNullable<
-      Parameters<import("@playwright/test").Page["routeFromHAR"]>[1]
-    >,
-  ) => Promise<void>;
+  routeFromHAR: (file: string, options?: RouteFromHAROptions) => Promise<void>;
   routeWebSocket: (
-    url: Parameters<import("@playwright/test").Page["routeWebSocket"]>[0],
-    handler: Parameters<import("@playwright/test").Page["routeWebSocket"]>[1],
+    url: RouteWebSocketUrl,
+    handler: RouteWebSocketHandler,
   ) => Promise<void>;
   trigger: (
     path: string,
@@ -82,9 +83,9 @@ type NodeParityRouting = {
     urlOrPredicate:
       | string
       | RegExp
-      | ((response: import("@playwright/test").Response) => boolean | Promise<boolean>),
+      | ((response: Response) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
-  ) => Promise<import("@playwright/test").Response>;
+  ) => Promise<Response>;
 };
 
 let workerConnection: PlaywrightProxyConnection | undefined;
@@ -163,11 +164,7 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
         },
       };
     },
-    unroute: async (url, handler) => {
-      if (handler === undefined) {
-        await mocks.unroute(url as RouteMatcherInput | undefined);
-        return;
-      }
+    unroute: async (url) => {
       // Handler identity differs after adapt — unroute by URL only when provided.
       await mocks.unroute(url as RouteMatcherInput | undefined);
     },
@@ -205,18 +202,7 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
     },
     waitForRequest: async (urlOrPredicate, options) => {
       if (typeof urlOrPredicate === "function") {
-        // Predicate form uses Playwright Request — adapt via BackendRequest duck-typing.
-        const backend = await mocks.waitForRequest(
-          (url) => {
-            // BackendMocks predicate receives URL; harness predicates receive Request.
-            // For URL-only checks this is insufficient — fall through to observed scan.
-            void url;
-            return true;
-          },
-          options,
-        );
-        // Re-check with full request once we have a candidate is not available here.
-        // Prefer string/RegExp waiters in node mode until full Request waiters land.
+        const backend = await mocks.waitForRequest(() => true, options);
         return backend as unknown as Request;
       }
       const backend = await mocks.waitForRequest(
