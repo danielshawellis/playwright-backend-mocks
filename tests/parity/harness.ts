@@ -10,7 +10,7 @@
  *     PARITY_MODE=node    → Node process + control-plane WebSocket
  * - Specs call harness fixtures (`route`, `routeWebSocket`, `trigger`,
  *   `openDownstreamSocket`, …) — never `page.route` / `page.evaluate` for the
- *   contract under test. Step 2 wires the node path to `backendMocks.*`.
+ *   contract under test. Node mode wires those fixtures to `backendMocks.*`.
  */
 import {
   test as base,
@@ -201,7 +201,7 @@ function triggerPayload(init: TriggerInit): {
 
 function notWired(api: string): never {
   throw new Error(
-    `${api} is not wired for PARITY_MODE=node yet (rewrite Step 2: backendMocks). ` +
+    `${api} is unavailable: node-mode backendMocks fixture was not initialized. ` +
       `Passthrough smoke tests should not call this.`,
   );
 }

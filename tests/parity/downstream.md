@@ -32,7 +32,7 @@ Test author
 
 Parity WebSocket tests need a long-lived app socket: open, send/receive over time, inspect `readyState`, close with codes, concurrency. One-shot HTTP helpers cannot express that.
 
-The control plane is a JSON command channel from the Playwright worker → Node host. App sockets are real `globalThis.WebSocket` instances **inside** the Node process (where Step 2 will run `startBackendMocks`).
+The control plane is a JSON command channel from the Playwright worker → Node host. App sockets are real `globalThis.WebSocket` instances **inside** the Node process (where `startBackendMocks` runs when `ENABLE_BACKEND_MOCKS=1`).
 
 Protocol sketch (see `fixtures/node-downstream/src/server.js`):
 
@@ -41,23 +41,23 @@ Protocol sketch (see `fixtures/node-downstream/src/server.js`):
 
 ## Harness API
 
-| Fixture / helper                     | Browser                                             | Node (Step 2)                              |
-| ------------------------------------ | --------------------------------------------------- | ------------------------------------------ |
-| `route` / `unroute` / `unrouteAll`   | `page.route*`                                       | `backendMocks.route*` (throws until wired) |
-| `routeFromHAR`                       | `page.routeFromHAR`                                 | `backendMocks.routeFromHAR`                |
-| `routeWebSocket`                     | `page.routeWebSocket`                               | `backendMocks.routeWebSocket`              |
-| `trigger`                            | shared `triggerHttp` in page                        | control-plane → shared `triggerHttp`       |
-| `openDownstreamSocket`               | shared `connectWebSocket` in page                   | control-plane → shared `connectWebSocket`  |
-| `waitForRequest` / `waitForResponse` | Playwright waiters                                  | `backendMocks.waitFor*`                    |
-| `withIsolatedDownstream`             | fresh context (HAR update flush / custom `baseURL`) | control-plane reset / Step 2 scope         |
-| `sleep`                              | timer                                               | timer                                      |
+| Fixture / helper                     | Browser                                             | Node                                           |
+| ------------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
+| `route` / `unroute` / `unrouteAll`   | `page.route*`                                       | `backendMocks.route*`                          |
+| `routeFromHAR`                       | `page.routeFromHAR`                                 | `backendMocks.routeFromHAR`                    |
+| `routeWebSocket`                     | `page.routeWebSocket`                               | `backendMocks.routeWebSocket`                  |
+| `trigger`                            | shared `triggerHttp` in page                        | control-plane → shared `triggerHttp`           |
+| `openDownstreamSocket`               | shared `connectWebSocket` in page                   | control-plane → shared `connectWebSocket`      |
+| `waitForRequest` / `waitForResponse` | Playwright waiters                                  | `backendMocks.waitFor*`                        |
+| `withIsolatedDownstream`             | fresh context (HAR update flush / custom `baseURL`) | fresh `backendMocks` scope + control-plane reset |
+| `sleep`                              | timer                                               | timer                                          |
 
 Register `routeWebSocket` **before** opening sockets. The harness reloads the browser host when needed so Playwright’s WS init script applies.
 
 ## Commands
 
 ```bash
-pnpm test:parity          # browser oracle (full suite)
-pnpm test:parity:node     # node downstream smokes (passthrough HTTP + WS)
-PARITY_NODE_FULL=1 pnpm test:parity:node   # full suite in node mode (mostly red until Step 2)
+pnpm test:parity            # browser oracle (full suite)
+pnpm test:parity:node       # node downstream smokes (passthrough HTTP + WS)
+pnpm test:parity:node:full  # full suite in node mode (backendMocks)
 ```

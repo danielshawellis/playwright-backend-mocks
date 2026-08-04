@@ -636,6 +636,7 @@ export function loadHarContent(
   const file = content._file;
   if (file) {
     // DIVERGENCE: zip `_file` attach via ZipFile is out of scope; only sibling files.
+    // DIVERGENCE END
     const resolved = path.resolve(baseDir, file);
     if (!isPathInside(baseDir, resolved)) {
       throw new Error(`HAR entry _file escapes base directory: ${file}`);

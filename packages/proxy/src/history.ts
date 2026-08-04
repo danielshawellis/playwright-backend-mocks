@@ -32,8 +32,4 @@ export class HistoryStore {
   list(): readonly HistoryEntry[] {
     return this.entries;
   }
-
-  clear(): void {
-    this.entries.length = 0;
-  }
 }

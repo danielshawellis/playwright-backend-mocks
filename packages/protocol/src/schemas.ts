@@ -551,11 +551,3 @@ export function parseClientToProxyMessage(data: unknown): ClientToProxyMessage {
 export function parseProxyToClientMessage(data: unknown): ProxyToClientMessage {
   return proxyToClientMessageSchema.parse(data);
 }
-
-export function safeParseClientToProxyMessage(data: unknown) {
-  return clientToProxyMessageSchema.safeParse(data);
-}
-
-export function safeParseProxyToClientMessage(data: unknown) {
-  return proxyToClientMessageSchema.safeParse(data);
-}

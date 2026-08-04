@@ -7,33 +7,17 @@ import {
 } from "@playwright-backend-mocks/protocol";
 import type { PlaywrightProxyConnection } from "./connection.js";
 import {
-  getRouteUrlPredicate,
-  getRouteURLPattern,
   isURLPattern,
   toSerializedMatcher,
+  type BackendWebSocketRoute,
   type RouteUrl,
   type RouteUrlPredicate,
+  type WebSocketRouteHandler,
 } from "./types.js";
 
-export type WebSocketRouteHandlerCallback = (ws: WebSocketRoute) => Promise<void> | void;
-
 export type WebSocketRouteUrl = RouteUrl;
-
-/**
- * Playwright-shaped WebSocketRoute for backendMocks.routeWebSocket.
- * Newest-matching handler only (no fallback chain).
- */
-export interface WebSocketRoute {
-  url(): string;
-  protocols(): string[];
-  onMessage(handler: (message: string | Buffer) => unknown): void;
-  onClose(
-    handler: (code: number | undefined, reason: string | undefined) => unknown,
-  ): void;
-  send(message: string | Buffer): void;
-  close(options?: { code?: number; reason?: string }): Promise<void>;
-  connectToServer(): WebSocketRoute;
-}
+/** Alias of the public BackendWebSocketRoute shape (Playwright WebSocketRoute). */
+export type WebSocketRoute = BackendWebSocketRoute;
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
@@ -237,14 +221,14 @@ export class WebSocketRouteImpl implements WebSocketRoute {
 export class WebSocketRouteHandlerRecord {
   readonly routeId: string;
   readonly url: WebSocketRouteUrl;
-  readonly handler: WebSocketRouteHandlerCallback;
+  readonly handler: WebSocketRouteHandler;
   private readonly _baseURL: string | undefined;
 
   constructor(
     routeId: string,
     baseURL: string | undefined,
     url: WebSocketRouteUrl,
-    handler: WebSocketRouteHandlerCallback,
+    handler: WebSocketRouteHandler,
   ) {
     this.routeId = routeId;
     this._baseURL = baseURL;
@@ -275,18 +259,4 @@ export class WebSocketRouteHandlerRecord {
 export function toWebSocketSerializedMatcher(url: WebSocketRouteUrl) {
   // Reuse HTTP matcher serialization (predicate / glob / regex / URLPattern).
   return toSerializedMatcher(url);
-}
-
-export function extractWebSocketUrl(url: WebSocketRouteUrl): RouteUrl {
-  return url;
-}
-
-export function getWebSocketUrlPredicate(
-  url: WebSocketRouteUrl,
-): RouteUrlPredicate | undefined {
-  return getRouteUrlPredicate(url);
-}
-
-export function getWebSocketURLPattern(url: WebSocketRouteUrl): URLPattern | undefined {
-  return getRouteURLPattern(url);
 }

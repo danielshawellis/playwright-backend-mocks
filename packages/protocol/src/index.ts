@@ -1,13 +1,11 @@
 export { PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
-export { encodeBody, decodeBody, decodeBodyText } from "./body.js";
+export { encodeBody, decodeBody } from "./body.js";
 export { normalizeHeaders } from "./headers.js";
 export {
   globToRegexPattern,
   resolveGlobToRegexPattern,
   urlMatches,
-  matchUrlGlob,
   matchSerializedMatcher,
-  serializeRegExp,
   isURLPatternLike,
   type MatchInput,
   type URLMatch,
@@ -34,8 +32,6 @@ export {
   proxyToClientMessageSchema,
   parseClientToProxyMessage,
   parseProxyToClientMessage,
-  safeParseClientToProxyMessage,
-  safeParseProxyToClientMessage,
   type BackendErrorCode,
   type SerializedRequest,
   type SerializedResponse,

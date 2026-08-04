@@ -274,6 +274,7 @@ function handleProxyMessage(
  * app-level redirect follows after respondWith(302), so we follow inside the
  * agent (headers persist; method/body first-hop only) and emit synthetic
  * request:observe observations for intermediate hops.
+ * DIVERGENCE END
  * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts
  */
 function settleWithUpstream(

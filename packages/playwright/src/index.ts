@@ -14,7 +14,6 @@ export type {
   RouteUrlPredicate,
   RouteOptions,
   UnrouteAllOptions,
-  RouteFromJSONOptions,
   RouteFromHAROptions,
   RouteAbortErrorCode,
   HeaderArray,
@@ -30,14 +29,6 @@ export type {
   WaitForNetworkOptions,
   WebSocketRouteHandler,
 } from "./types.js";
-export {
-  toSerializedMatcher,
-  getRouteUrlPredicate,
-  getRouteURLPattern,
-  isURLPattern,
-  toProtocolAbortCode,
-} from "./types.js";
-export { matchRouteMatcher } from "./match.js";
 export { createBackendMocks } from "./backend-mocks.js";
 export type { BackendMocksController } from "./backend-mocks.js";
 export {
@@ -45,23 +36,3 @@ export {
   type PlaywrightProxyConnection,
   type ProxyMessageHandler,
 } from "./connection.js";
-export {
-  ROUTE_FROM_JSON_VERSION,
-  findRouteFromJSONResponse,
-  loadRouteFromJSONFile,
-  parseRouteFromJSONFile,
-  writeRouteFromJSONFile,
-  type RouteFromJSONEntry,
-  type RouteFromJSONFile,
-} from "./route-from-json.js";
-export {
-  createRouteFromHARSession,
-  flushRouteFromHARSession,
-  harFindResponse,
-  loadHarContent,
-  lookupHarResponse,
-  writeHarFile,
-  type HarEntry,
-  type HarFile,
-  type RouteFromHARSession,
-} from "./route-from-har.js";

@@ -30,8 +30,3 @@ export function decodeBody(bodyBase64: string | null | undefined): Buffer | null
   }
   return Buffer.from(bodyBase64, "base64");
 }
-
-export function decodeBodyText(bodyBase64: string | null | undefined): string | null {
-  const buffer = decodeBody(bodyBase64);
-  return buffer === null ? null : buffer.toString("utf8");
-}

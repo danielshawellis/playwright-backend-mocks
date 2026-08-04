@@ -136,6 +136,7 @@ function isString(value: unknown): value is string {
  * DIVERGENCE: Playwright uses only `instanceof globalThis.URLPattern`.
  * We also accept objects with `.test` and pathname/hostname so polyfill
  * instances work when the global constructor differs or is absent.
+ * DIVERGENCE END
  */
 export function isURLPatternLike(v: unknown): v is URLPatternLike {
   if (typeof v !== "object" || v === null) {
@@ -300,13 +301,6 @@ export function urlMatches(
   return match(url);
 }
 
-/**
- * Playwright-shaped URL glob matching (convenience wrapper around `urlMatches`).
- */
-export function matchUrlGlob(glob: string, url: string, baseURL?: string): boolean {
-  return urlMatches(baseURL, url, glob);
-}
-
 export function matchSerializedMatcher(
   matcher: SerializedMatcher,
   input: MatchInput,
@@ -353,8 +347,4 @@ export function matchSerializedMatcher(
 
   // A matcher with no URL constraint still matches (method/client filters only).
   return true;
-}
-
-export function serializeRegExp(regex: RegExp): { source: string; flags: string } {
-  return { source: regex.source, flags: regex.flags };
 }

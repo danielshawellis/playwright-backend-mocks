@@ -105,7 +105,12 @@ export async function connectPlaywrightProxy(options: {
     ...(options.token !== undefined ? { token: options.token } : {}),
   });
 
-  await helloPromise;
+  try {
+    await helloPromise;
+  } catch (error) {
+    socket.close();
+    throw error;
+  }
 
   return {
     get clientId() {

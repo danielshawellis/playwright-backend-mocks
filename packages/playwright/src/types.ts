@@ -101,6 +101,7 @@ export interface BackendRequest {
   /**
    * DIVERGENCE: product addition for multi-app Node targeting.
    * Not present on Playwright's Request.
+   * DIVERGENCE END
    */
   readonly clientId: string;
 }
@@ -201,24 +202,6 @@ export type RouteHandler = (
   request: BackendRequest,
 ) => Promise<void> | void;
 
-export interface RouteFromJSONOptions {
-  /**
-   * Only record or replay requests whose URL matches this glob or RegExp.
-   * When omitted, every request is included.
-   */
-  readonly url?: string | RegExp;
-  /**
-   * When `true`, record live upstream traffic into the JSON file instead of
-   * serving from it. The file is rewritten when the test fixture disposes.
-   */
-  readonly update?: boolean;
-  /**
-   * What to do when a request has no matching entry during replay.
-   * Defaults to `"abort"`.
-   */
-  readonly notFound?: "abort" | "fallback";
-}
-
 /**
  * Playwright-shaped `routeFromHAR` options.
  * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts
@@ -258,13 +241,6 @@ export interface BackendMocks {
   ): Promise<void>;
   unroute(url?: RouteMatcherInput, handler?: RouteHandler): Promise<void>;
   unrouteAll(options?: UnrouteAllOptions): Promise<void>;
-  /**
-   * Record or replay outbound backend requests from a JSON cassette file.
-   * Legacy helper retained for compatibility.
-   *
-   * TODO(Step 2): prefer `routeFromHAR` (Playwright oracle). Keep this until HAR lands.
-   */
-  routeFromJSON(path: string, options?: RouteFromJSONOptions): Promise<void>;
   /**
    * Playwright-shaped HAR record/replay.
    * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/harRouter.ts
@@ -420,6 +396,8 @@ export function isURLPattern(value: unknown): value is URLPattern {
 /**
  * Map Playwright abort strings onto the protocol's narrower enum.
  * DIVERGENCE: protocol currently accepts a subset of Playwright codes.
+ * Unsupported Playwright codes collapse to `failed` on the wire.
+ * DIVERGENCE END
  */
 export function toProtocolAbortCode(errorCode: string | undefined): BackendErrorCode {
   const code = errorCode ?? "failed";
@@ -432,7 +410,6 @@ export function toProtocolAbortCode(errorCode: string | undefined): BackendError
     case "namenotresolved":
       return code;
     default:
-      // DIVERGENCE: unsupported Playwright codes collapse to failed on the wire.
       return "failed";
   }
 }

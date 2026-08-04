@@ -6,7 +6,6 @@ import {
   encodeBody,
   normalizeHeaders,
   resolveGlobToRegexPattern,
-  type HistoryEntry,
   type ProxyToClientMessage,
   type RequestOverrides,
   type SerializedRequest,
@@ -19,11 +18,6 @@ import {
   flushRouteFromHARSession,
   type RouteFromHARSession,
 } from "./route-from-har.js";
-import {
-  createRouteFromJSONSession,
-  flushRouteFromJSONSession,
-  type RouteFromJSONSession,
-} from "./route-from-json.js";
 import {
   getRouteUrlPredicate,
   getRouteURLPattern,
@@ -41,7 +35,6 @@ import {
   type RequestSizes,
   type ResourceTiming,
   type RouteFromHAROptions,
-  type RouteFromJSONOptions,
   type RouteHandler,
   type RouteMatcherInput,
   type RouteOptions,
@@ -191,6 +184,7 @@ class BackendRequestImpl implements BackendRequest {
 
   resourceType(): "fetch" | "other" {
     // DIVERGENCE: Node outbound traffic is not browser-typed; expose a stable stub.
+    // DIVERGENCE END
     return "other";
   }
 
@@ -763,7 +757,6 @@ export function createBackendMocks(options: {
   /** Bumps when a request is first observed; waitForResponse snapshots this. */
   let requestObserveGeneration = 0;
   const errors: Error[] = [];
-  const jsonSessions: RouteFromJSONSession[] = [];
   const harSessions: RouteFromHARSession[] = [];
 
   const unsubscribe = connection.onMessage((message) => {
@@ -1078,6 +1071,7 @@ export function createBackendMocks(options: {
       } catch (error) {
         // DIVERGENCE: Playwright stalls + fails the test; we abort the paused
         // Node request so the app is not left hanging, and still record the error.
+        // DIVERGENCE END
         const err = error instanceof Error ? error : new Error(String(error));
         errors.push(err);
         if (!routeApi.isTerminalSettled()) {
@@ -1167,13 +1161,6 @@ export function createBackendMocks(options: {
       });
     },
 
-    async routeFromJSON(filePath, options: RouteFromJSONOptions = {}) {
-      // Legacy JSON cassette helper — prefer routeFromHAR for new callers.
-      const session = createRouteFromJSONSession(filePath, options);
-      jsonSessions.push(session);
-      await api.route(session.matcher, session.handler);
-    },
-
     async routeFromHAR(file: string, options: RouteFromHAROptions = {}) {
       // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/harRouter.ts
       // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts (routeFromHAR)
@@ -1244,11 +1231,6 @@ export function createBackendMocks(options: {
     },
 
     dispose() {
-      for (const session of jsonSessions) {
-        flushRouteFromJSONSession(session);
-      }
-      jsonSessions.length = 0;
-
       for (const session of harSessions) {
         flushRouteFromHARSession(session);
       }
@@ -1952,5 +1934,3 @@ function toBuffer(value: string | Buffer | Uint8Array): Buffer {
   }
   return Buffer.from(value);
 }
-
-export type { HistoryEntry };
