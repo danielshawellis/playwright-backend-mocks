@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "pnpm -r --filter './packages/*' run build",
-    "typecheck": "pnpm -r --filter './packages/*' run typecheck && tsc -p tests/parity/tsconfig.json --noEmit",
+    "typecheck": "pnpm -r --filter './packages/*' run typecheck && tsc -p tests/parity/tsconfig.json --noEmit && tsc -p tests/library/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -21,6 +21,7 @@
     "test:parity:node": "pnpm --filter @playwright-backend-mocks/parity test:node",
     "test:parity:node:full": "pnpm --filter @playwright-backend-mocks/parity test:node:full",
     "test:parity:node:fulfill": "pnpm --filter @playwright-backend-mocks/parity exec env PARITY_MODE=node PARITY_NODE_FULL=1 playwright test specs/fulfill.spec.ts -g \"mocks a GET JSON response\"",
+    "test:library": "pnpm --filter @playwright-backend-mocks/library-tests test",
     "clean": "rm -rf test-results playwright-report packages/*/dist"
   },
   "devDependencies": {

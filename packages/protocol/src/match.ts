@@ -26,11 +26,7 @@ export type URLPatternLike = {
   username: string;
 };
 
-export type URLMatch =
-  | string
-  | RegExp
-  | ((url: URL) => boolean)
-  | URLPatternLike;
+export type URLMatch = string | RegExp | ((url: URL) => boolean) | URLPatternLike;
 
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions#escaping
 const escapedChars = new Set([
@@ -102,9 +98,7 @@ export function globToRegexPattern(glob: string): string {
         break;
       case "}":
         if (!inGroup) {
-          throw new Error(
-            `Invalid glob pattern ${JSON.stringify(glob)}: unmatched '}'`,
-          );
+          throw new Error(`Invalid glob pattern ${JSON.stringify(glob)}: unmatched '}'`);
         }
         inGroup = false;
         tokens.push(")");
@@ -121,9 +115,7 @@ export function globToRegexPattern(glob: string): string {
     }
   }
   if (inGroup) {
-    throw new Error(
-      `Invalid glob pattern ${JSON.stringify(glob)}: unmatched '{'`,
-    );
+    throw new Error(`Invalid glob pattern ${JSON.stringify(glob)}: unmatched '{'`);
   }
   tokens.push("$");
   return tokens.join("");
@@ -131,8 +123,7 @@ export function globToRegexPattern(glob: string): string {
 
 function isRegExp(obj: unknown): obj is RegExp {
   return (
-    obj instanceof RegExp ||
-    Object.prototype.toString.call(obj) === "[object RegExp]"
+    obj instanceof RegExp || Object.prototype.toString.call(obj) === "[object RegExp]"
   );
 }
 
@@ -235,14 +226,8 @@ function resolveGlobBase(baseURL: string | undefined, match: string): string {
         if (questionIndex === -1) {
           return mapToken(token, `$_${index}_$`);
         }
-        const newPrefix = mapToken(
-          token.substring(0, questionIndex),
-          `$_${index}_$`,
-        );
-        const newSuffix = mapToken(
-          token.substring(questionIndex),
-          `?$_${index}_$`,
-        );
+        const newPrefix = mapToken(token.substring(0, questionIndex), `$_${index}_$`);
+        const newSuffix = mapToken(token.substring(questionIndex), `?$_${index}_$`);
         return newPrefix + newSuffix;
       })
       .join("/");
@@ -310,9 +295,7 @@ export function urlMatches(
     return match.test(url.href);
   }
   if (typeof match !== "function") {
-    throw new Error(
-      "url parameter should be string, RegExp, URLPattern or function",
-    );
+    throw new Error("url parameter should be string, RegExp, URLPattern or function");
   }
   return match(url);
 }
@@ -320,11 +303,7 @@ export function urlMatches(
 /**
  * Playwright-shaped URL glob matching (convenience wrapper around `urlMatches`).
  */
-export function matchUrlGlob(
-  glob: string,
-  url: string,
-  baseURL?: string,
-): boolean {
+export function matchUrlGlob(glob: string, url: string, baseURL?: string): boolean {
   return urlMatches(baseURL, url, glob);
 }
 

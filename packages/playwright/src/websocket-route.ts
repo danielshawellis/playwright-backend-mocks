@@ -1,7 +1,10 @@
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
 //   (WebSocketRoute, WebSocketRouteHandler @ pin 26a9e47)
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/isomorphic/urlMatch.ts
-import { resolveGlobToRegexPattern, urlMatches } from "@playwright-backend-mocks/protocol";
+import {
+  resolveGlobToRegexPattern,
+  urlMatches,
+} from "@playwright-backend-mocks/protocol";
 import type { PlaywrightProxyConnection } from "./connection.js";
 import {
   getRouteUrlPredicate,
@@ -24,7 +27,9 @@ export interface WebSocketRoute {
   url(): string;
   protocols(): string[];
   onMessage(handler: (message: string | Buffer) => unknown): void;
-  onClose(handler: (code: number | undefined, reason: string | undefined) => unknown): void;
+  onClose(
+    handler: (code: number | undefined, reason: string | undefined) => unknown,
+  ): void;
   send(message: string | Buffer): void;
   close(options?: { code?: number; reason?: string }): Promise<void>;
   connectToServer(): WebSocketRoute;
@@ -36,9 +41,15 @@ function isString(value: unknown): value is string {
 
 export class WebSocketRouteImpl implements WebSocketRoute {
   private _onPageMessage?: (message: string | Buffer) => unknown;
-  private _onPageClose?: (code: number | undefined, reason: string | undefined) => unknown;
+  private _onPageClose?: (
+    code: number | undefined,
+    reason: string | undefined,
+  ) => unknown;
   private _onServerMessage?: (message: string | Buffer) => unknown;
-  private _onServerClose?: (code: number | undefined, reason: string | undefined) => unknown;
+  private _onServerClose?: (
+    code: number | undefined,
+    reason: string | undefined,
+  ) => unknown;
   private readonly _server: WebSocketRoute;
   private _connected = false;
 
@@ -141,7 +152,9 @@ export class WebSocketRouteImpl implements WebSocketRoute {
     this._onPageMessage = handler;
   }
 
-  onClose(handler: (code: number | undefined, reason: string | undefined) => unknown): void {
+  onClose(
+    handler: (code: number | undefined, reason: string | undefined) => unknown,
+  ): void {
     this._onPageClose = handler;
   }
 
@@ -184,7 +197,11 @@ export class WebSocketRouteImpl implements WebSocketRoute {
     }
   }
 
-  _handleClosePage(code: number | undefined, reason: string | undefined, wasClean: boolean): void {
+  _handleClosePage(
+    code: number | undefined,
+    reason: string | undefined,
+    wasClean: boolean,
+  ): void {
     if (this._onPageClose) {
       void this._onPageClose(code, reason);
     } else {
@@ -198,7 +215,11 @@ export class WebSocketRouteImpl implements WebSocketRoute {
     }
   }
 
-  _handleCloseServer(code: number | undefined, reason: string | undefined, wasClean: boolean): void {
+  _handleCloseServer(
+    code: number | undefined,
+    reason: string | undefined,
+    wasClean: boolean,
+  ): void {
     if (this._onServerClose) {
       void this._onServerClose(code, reason);
     } else {
@@ -236,7 +257,8 @@ export class WebSocketRouteHandlerRecord {
   }
 
   matches(wsURL: string): boolean {
-    const predicate = typeof this.url === "function" ? (this.url as RouteUrlPredicate) : undefined;
+    const predicate =
+      typeof this.url === "function" ? (this.url as RouteUrlPredicate) : undefined;
     const pattern = isURLPattern(this.url) ? this.url : undefined;
     if (predicate !== undefined || pattern !== undefined) {
       return urlMatches(this._baseURL, wsURL, predicate ?? pattern, true);
@@ -259,7 +281,9 @@ export function extractWebSocketUrl(url: WebSocketRouteUrl): RouteUrl {
   return url;
 }
 
-export function getWebSocketUrlPredicate(url: WebSocketRouteUrl): RouteUrlPredicate | undefined {
+export function getWebSocketUrlPredicate(
+  url: WebSocketRouteUrl,
+): RouteUrlPredicate | undefined {
   return getRouteUrlPredicate(url);
 }
 

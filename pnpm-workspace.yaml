@@ -2,3 +2,4 @@ packages:
   - "packages/*"
   - "fixtures/*"
   - "tests/parity"
+  - "tests/library"

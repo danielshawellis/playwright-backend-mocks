@@ -850,7 +850,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       if (!pendingSockets.has(message.socketId)) {
         return;
       }
-      const errorMessage = error instanceof Error ? error.message : "WebSocket claim failed";
+      const errorMessage =
+        error instanceof Error ? error.message : "WebSocket claim failed";
       const code =
         error instanceof Error && error.name === "ClaimTimeoutError"
           ? "claim_timeout"

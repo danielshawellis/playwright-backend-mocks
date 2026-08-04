@@ -2,12 +2,7 @@
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/harBackend.ts
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/har/harTracer.ts
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
   BackendRequest,
@@ -120,7 +115,9 @@ export function createRouteFromHARSession(
 ): RouteFromHARSession {
   const resolvedPath = resolveRouteFromHARPath(filePath);
   const resolved: ResolvedRouteFromHAROptions = {
-    ...(options.url !== undefined ? { url: options.url as ResolvedRouteFromHAROptions["url"] } : {}),
+    ...(options.url !== undefined
+      ? { url: options.url as ResolvedRouteFromHAROptions["url"] }
+      : {}),
     update: options.update === true,
     notFound: options.notFound ?? "abort",
     // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/tracing.ts (_recordIntoHAR)
@@ -440,8 +437,7 @@ function createRecordHandler(
       await route.fulfill({ response });
     } catch (error) {
       // Playwright records aborted/reset traffic with status -1 + _failureText.
-      const failureText =
-        error instanceof Error ? error.message : String(error);
+      const failureText = error instanceof Error ? error.message : String(error);
       entries.push(buildHarFailureEntry(request, failureText, options));
       await route.abort();
     }
@@ -466,9 +462,19 @@ function buildHarEntryFromExchange(
   const content = storeContent(body, contentType, options.updateContent, pendingBlobs);
   const postData =
     postBuffer !== null && postBuffer.length > 0
-      ? storePostData(postBuffer, request.headers()["content-type"], options.updateContent, pendingBlobs)
+      ? storePostData(
+          postBuffer,
+          request.headers()["content-type"],
+          options.updateContent,
+          pendingBlobs,
+        )
       : postBuffer !== null
-        ? storePostData(postBuffer, request.headers()["content-type"], options.updateContent, pendingBlobs)
+        ? storePostData(
+            postBuffer,
+            request.headers()["content-type"],
+            options.updateContent,
+            pendingBlobs,
+          )
         : undefined;
 
   return {
@@ -587,10 +593,7 @@ function storePostData(
   if (updateContent === "embed") {
     return {
       mimeType,
-      text:
-        mimeType === "application/octet-stream"
-          ? ""
-          : buffer.toString("utf8"),
+      text: mimeType === "application/octet-stream" ? "" : buffer.toString("utf8"),
     };
   }
   const ext = extensionForMime(mimeType);
@@ -645,10 +648,7 @@ export function loadHarContent(
   );
 }
 
-function countMatchingHeaders(
-  harHeaders: HarHeader[],
-  headers: HarHeader[],
-): number {
+function countMatchingHeaders(harHeaders: HarHeader[], headers: HarHeader[]): number {
   const set = new Set(headers.map((h) => `${h.name.toLowerCase()}:${h.value}`));
   let matches = 0;
   for (const h of harHeaders) {

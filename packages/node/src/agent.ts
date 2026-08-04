@@ -615,9 +615,7 @@ function httpRequestExact(
   }
 
   const canHaveBody =
-    body !== null &&
-    method.toUpperCase() !== "GET" &&
-    method.toUpperCase() !== "HEAD";
+    body !== null && method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD";
 
   return new Promise<Response>((resolve, reject) => {
     const req = transport.request(
@@ -710,7 +708,8 @@ function isConnectionResetError(error: unknown): boolean {
       const message =
         current instanceof Error
           ? current.message
-          : "message" in current && typeof (current as { message?: unknown }).message === "string"
+          : "message" in current &&
+              typeof (current as { message?: unknown }).message === "string"
             ? (current as { message: string }).message
             : "";
       if (/other side closed/i.test(message)) {

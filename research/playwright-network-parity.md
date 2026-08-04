@@ -15,7 +15,7 @@ Bump the oracle pin and this document together when refreshing against a newer P
 
 **Companion oracle suite:** [`tests/parity/`](../tests/parity/) (Step 1 — green against stock Playwright; includes `route-websocket.spec.ts`).
 
-**Prototype status:** living packages were archived to `historical/` after Step 1. Status notes below describe the **rewrite target** and what the prototype already proved, not a currently built tree.
+**Living status:** Step 2 packages under [`packages/`](../packages/) implement the oracle in library mode. Module map: [`../packages/MODULE_MAP.md`](../packages/MODULE_MAP.md). `historical/` remains reference-only.
 
 ---
 

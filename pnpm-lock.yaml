@@ -130,6 +130,24 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  tests/library:
+    devDependencies:
+      '@playwright-backend-mocks/node':
+        specifier: workspace:*
+        version: link:../../packages/node
+      '@playwright-backend-mocks/playwright':
+        specifier: workspace:*
+        version: link:../../packages/playwright
+      '@playwright-backend-mocks/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@playwright-backend-mocks/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
+      '@playwright/test':
+        specifier: 1.62.1
+        version: 1.62.1
+
   tests/parity:
     dependencies:
       '@playwright-backend-mocks/playwright':

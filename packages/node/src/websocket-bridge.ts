@@ -73,9 +73,7 @@ function dataToWire(
   }
   if (ArrayBuffer.isView(data)) {
     cb({
-      data: bufferToBase64(
-        new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-      ),
+      data: bufferToBase64(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)),
       isBase64: true,
     });
     return;
@@ -215,10 +213,8 @@ export function installWebSocketBridge(connection: ProxyConnection): {
         closeEvent.preventDefault();
       }
       const code = "code" in closeEvent ? closeEvent.code : undefined;
-      const reason =
-        "reason" in closeEvent ? String(closeEvent.reason ?? "") : undefined;
-      const wasClean =
-        "wasClean" in closeEvent ? Boolean(closeEvent.wasClean) : true;
+      const reason = "reason" in closeEvent ? String(closeEvent.reason ?? "") : undefined;
+      const wasClean = "wasClean" in closeEvent ? Boolean(closeEvent.wasClean) : true;
       try {
         connection.send({
           type: "ws:closeServer",
@@ -288,9 +284,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           type: "ws:closePage",
           socketId,
           ...(closeEvent.code !== undefined ? { code: closeEvent.code } : {}),
-          ...(closeEvent.reason !== undefined
-            ? { reason: closeEvent.reason }
-            : {}),
+          ...(closeEvent.reason !== undefined ? { reason: closeEvent.reason } : {}),
           wasClean: closeEvent.wasClean,
         });
       } catch {
@@ -329,11 +323,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           item.server.addEventListener("open", () => {
             try {
               const real = item.server.socket;
-              setMockSocketHandshake(
-                item.client.socket,
-                real.protocol,
-                real.extensions,
-              );
+              setMockSocketHandshake(item.client.socket, real.protocol, real.extensions);
             } catch {
               /* ignore */
             }
@@ -369,11 +359,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           item.server.addEventListener("open", () => {
             try {
               const real = item.server.socket;
-              setMockSocketHandshake(
-                item.client.socket,
-                real.protocol,
-                real.extensions,
-              );
+              setMockSocketHandshake(item.client.socket, real.protocol, real.extensions);
             } catch {
               /* ignore */
             }
@@ -407,9 +393,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
                 ...(closeEvent.code !== undefined
                   ? { code: closeEvent.code }
                   : { code: 1006 }),
-                ...(closeEvent.reason !== undefined
-                  ? { reason: closeEvent.reason }
-                  : {}),
+                ...(closeEvent.reason !== undefined ? { reason: closeEvent.reason } : {}),
                 wasClean: closeEvent.wasClean ?? false,
               });
             } catch {
@@ -423,11 +407,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           if (!item) return true;
           // Mock path: first requested subprotocol (Playwright webSocketMock).
           if (!item.connected && item.client.socket.readyState === 0) {
-            setMockSocketHandshake(
-              item.client.socket,
-              item.protocols[0] ?? "",
-              "",
-            );
+            setMockSocketHandshake(item.client.socket, item.protocols[0] ?? "", "");
           }
           releaseOpen(item);
           return true;
@@ -437,11 +417,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           if (!item) return true;
           // Force mock open if still CONNECTING (Playwright sendToPage → _ensureOpened).
           if (!item.connected && item.client.socket.readyState === 0) {
-            setMockSocketHandshake(
-              item.client.socket,
-              item.protocols[0] ?? "",
-              "",
-            );
+            setMockSocketHandshake(item.client.socket, item.protocols[0] ?? "", "");
           }
           releaseOpen(item);
           const payload = wireToData(
@@ -485,9 +461,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
                 type: "ws:closeServer",
                 socketId: message.socketId,
                 ...(message.code !== undefined ? { code: message.code } : {}),
-                ...(message.reason !== undefined
-                  ? { reason: message.reason }
-                  : {}),
+                ...(message.reason !== undefined ? { reason: message.reason } : {}),
                 wasClean: message.wasClean,
               });
             } catch {
@@ -515,9 +489,7 @@ export function installWebSocketBridge(connection: ProxyConnection): {
               type: "ws:closeServer",
               socketId: message.socketId,
               ...(message.code !== undefined ? { code: message.code } : {}),
-              ...(message.reason !== undefined
-                ? { reason: message.reason }
-                : {}),
+              ...(message.reason !== undefined ? { reason: message.reason } : {}),
               wasClean: message.wasClean,
             });
           } catch {

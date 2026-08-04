@@ -240,15 +240,15 @@ export interface BackendWebSocketRoute {
   url(): string;
   protocols(): string[];
   onMessage(handler: (message: string | Buffer) => unknown): void;
-  onClose(handler: (code: number | undefined, reason: string | undefined) => unknown): void;
+  onClose(
+    handler: (code: number | undefined, reason: string | undefined) => unknown,
+  ): void;
   send(message: string | Buffer): void;
   close(options?: { code?: number; reason?: string }): Promise<void>;
   connectToServer(): BackendWebSocketRoute;
 }
 
-export type WebSocketRouteHandler = (
-  ws: BackendWebSocketRoute,
-) => Promise<void> | void;
+export type WebSocketRouteHandler = (ws: BackendWebSocketRoute) => Promise<void> | void;
 
 export interface BackendMocks {
   route(
@@ -277,10 +277,7 @@ export interface BackendMocks {
    * DIVERGENCE END
    * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
    */
-  routeWebSocket(
-    url: RouteUrl,
-    handler: WebSocketRouteHandler,
-  ): Promise<void>;
+  routeWebSocket(url: RouteUrl, handler: WebSocketRouteHandler): Promise<void>;
   waitForRequest(
     urlOrPredicate: WaitForRequestMatcher,
     options?: WaitForNetworkOptions,
@@ -379,9 +376,7 @@ export function getRouteUrlPredicate(
   return undefined;
 }
 
-export function getRouteURLPattern(
-  input: RouteMatcherInput,
-): URLPattern | undefined {
+export function getRouteURLPattern(input: RouteMatcherInput): URLPattern | undefined {
   if (isURLPattern(input)) {
     return input;
   }
@@ -426,9 +421,7 @@ export function isURLPattern(value: unknown): value is URLPattern {
  * Map Playwright abort strings onto the protocol's narrower enum.
  * DIVERGENCE: protocol currently accepts a subset of Playwright codes.
  */
-export function toProtocolAbortCode(
-  errorCode: string | undefined,
-): BackendErrorCode {
+export function toProtocolAbortCode(errorCode: string | undefined): BackendErrorCode {
   const code = errorCode ?? "failed";
   switch (code) {
     case "failed":

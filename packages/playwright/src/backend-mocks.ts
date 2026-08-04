@@ -804,8 +804,7 @@ export function createBackendMocks(options: {
     if (!REDIRECT_STATUS.has(response.status)) {
       return;
     }
-    const location =
-      response.headers["location"] ?? response.headers["Location"];
+    const location = response.headers["location"] ?? response.headers["Location"];
     if (location === undefined || location.length === 0) {
       return;
     }
@@ -1045,11 +1044,7 @@ export function createBackendMocks(options: {
   async function handleMatchedRequest(
     message: Extract<ProxyToClientMessage, { type: "request:matched" }>,
   ): Promise<void> {
-    const request = observeRequest(
-      message.requestId,
-      message.request,
-      message.clientId,
-    );
+    const request = observeRequest(message.requestId, message.request, message.clientId);
     const routeApi = new BackendRouteImpl(
       request,
       message.requestId,
@@ -1111,9 +1106,7 @@ export function createBackendMocks(options: {
       const times = options.times ?? Number.MAX_SAFE_INTEGER;
       // LIFO: newest handler first (Playwright unshift).
       // RouteHandlerRecord constructor eagerly validates string globs (throws).
-      routes.unshift(
-        new RouteHandlerRecord(routeId, url, handler, times, baseURL),
-      );
+      routes.unshift(new RouteHandlerRecord(routeId, url, handler, times, baseURL));
       connection.send({
         type: "route:register",
         routeId,
@@ -1125,8 +1118,7 @@ export function createBackendMocks(options: {
     async unroute(url, handler) {
       const remaining: RouteHandlerRecord[] = [];
       for (const route of routes) {
-        const urlMatches =
-          url === undefined || matcherEquals(route.matcherInput, url);
+        const urlMatches = url === undefined || matcherEquals(route.matcherInput, url);
         const handlerMatches = handler === undefined || route.handler === handler;
         if (urlMatches && handlerMatches) {
           unregisterRoute(route.routeId);
@@ -1165,9 +1157,7 @@ export function createBackendMocks(options: {
       // DIVERGENCE END
       const routeId = randomUUID();
       // LIFO registration; selection is newest-match only (find), not a fallback chain.
-      wsRoutes.unshift(
-        new WebSocketRouteHandlerRecord(routeId, baseURL, url, handler),
-      );
+      wsRoutes.unshift(new WebSocketRouteHandlerRecord(routeId, baseURL, url, handler));
       connection.send({
         type: "route:register",
         routeId,
@@ -1620,9 +1610,7 @@ function serializeFetchPostData(
   return postDataToBuffer(postData);
 }
 
-function isExactJsonContentType(
-  headers: Record<string, string> | undefined,
-): boolean {
+function isExactJsonContentType(headers: Record<string, string> | undefined): boolean {
   if (headers === undefined) {
     return false;
   }
@@ -1665,7 +1653,11 @@ function applyPostDataContentTypeDefault(
 }
 
 function isJsonPostData(postData: string | Buffer | Uint8Array | object): boolean {
-  if (typeof postData === "string" || Buffer.isBuffer(postData) || postData instanceof Uint8Array) {
+  if (
+    typeof postData === "string" ||
+    Buffer.isBuffer(postData) ||
+    postData instanceof Uint8Array
+  ) {
     return false;
   }
   return typeof postData === "object" && postData !== null;
@@ -1681,7 +1673,10 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
  * APIRequestContext (Node http/https). file: and other schemes are rejected.
  * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts
  */
-function assertFetchUrlProtocol(overrideUrl: string | undefined, requestUrl: string): void {
+function assertFetchUrlProtocol(
+  overrideUrl: string | undefined,
+  requestUrl: string,
+): void {
   if (overrideUrl === undefined) {
     return;
   }
@@ -1757,7 +1752,11 @@ async function buildFulfillResponse(
   }
 
   const bodyBuffer =
-    body === null ? null : typeof body === "string" ? Buffer.from(body, "utf8") : toBuffer(body);
+    body === null
+      ? null
+      : typeof body === "string"
+        ? Buffer.from(body, "utf8")
+        : toBuffer(body);
   const length = bodyBuffer?.length ?? 0;
   if (length > 0 && !("content-length" in headers)) {
     headers["content-length"] = String(length);
@@ -1838,9 +1837,7 @@ function headersObjectLossy(
  * channel validation) rather than coercing via String().
  * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (_applyFallbackOverrides)
  */
-function headersObjectStrict(
-  headers: Record<string, unknown>,
-): Record<string, string> {
+function headersObjectStrict(headers: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) {

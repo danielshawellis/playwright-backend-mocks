@@ -49,3 +49,9 @@ jobs:
 
       - name: Dual-mode routing gate (fulfill)
         run: pnpm test:parity:node:fulfill
+
+      - name: Full node oracle
+        run: pnpm test:parity:node:full
+
+      - name: Library-only suite
+        run: pnpm test:library

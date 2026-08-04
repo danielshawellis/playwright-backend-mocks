@@ -74,9 +74,7 @@ export function matchRouteMatcher(
   });
 }
 
-function extractUrlMatch(
-  input: RouteMatcherInput,
-): string | RegExp | undefined {
+function extractUrlMatch(input: RouteMatcherInput): string | RegExp | undefined {
   if (typeof input === "string" || input instanceof RegExp) {
     return input;
   }

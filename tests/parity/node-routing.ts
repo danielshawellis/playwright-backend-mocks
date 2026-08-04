@@ -14,12 +14,7 @@ import {
   type RouteHandler as BackendRouteHandler,
   type RouteMatcherInput,
 } from "@playwright-backend-mocks/playwright";
-import type {
-  Page,
-  Request,
-  Response,
-  Route,
-} from "@playwright/test";
+import type { Page, Request, Response, Route } from "@playwright/test";
 import { UPSTREAM, type TriggerResult } from "./helpers.js";
 import {
   getNodeControl,
@@ -73,17 +68,12 @@ type NodeParityRouting = {
     options?: OpenSocketOptions,
   ) => Promise<DownstreamSocket>;
   waitForRequest: (
-    urlOrPredicate:
-      | string
-      | RegExp
-      | ((request: Request) => boolean | Promise<boolean>),
+    urlOrPredicate: string | RegExp | ((request: Request) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Request>;
   waitForResponse: (
     urlOrPredicate:
-      | string
-      | RegExp
-      | ((response: Response) => boolean | Promise<boolean>),
+      string | RegExp | ((response: Response) => boolean | Promise<boolean>),
     options?: { timeout?: number; signal?: AbortSignal },
   ) => Promise<Response>;
 };

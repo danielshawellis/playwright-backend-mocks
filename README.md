@@ -8,11 +8,17 @@ Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application p
 
 **How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) · agent notes: [`AGENTS.md`](./AGENTS.md) · plan: [`research/rewrite-specification.md`](./research/rewrite-specification.md)
 
-## Current status (Step 2 in progress)
+## Current status (Step 2 — oracle green in both modes)
 
-The executable contract is the dual-mode parity suite in [`tests/parity/`](./tests/parity/). Living packages under [`packages/`](./packages/) are being reimplemented against that suite.
+The executable contract is the dual-mode parity suite in [`tests/parity/`](./tests/parity/). Living packages under [`packages/`](./packages/) implement that contract in library mode (`PARITY_MODE=node`).
 
-**Dual-mode routing gate is green** (`route.fulfill` in `PARITY_MODE=node`). Core HTTP settle paths (`fulfill` / `continue` / `fallback` / `abort` / `times` / lifecycle) are largely passing; remaining backlog is mainly `routeFromHAR`, `routeWebSocket`, `waitForResponse`, and source-edge sharpening.
+| Suite | Result |
+| --- | --- |
+| Browser oracle (`pnpm test`) | **319 passed**, 5 skipped |
+| Full node oracle (`pnpm test:parity:node:full`) | **319 passed**, 5 skipped |
+| Library-only (`pnpm test:library`) | `clientId`, cross-test `ambiguous_route`, disconnect / auth |
+
+Module map: [`packages/MODULE_MAP.md`](./packages/MODULE_MAP.md). `historical/` remains reference-only until deleted.
 
 ```bash
 pnpm install
@@ -21,7 +27,8 @@ pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
 pnpm test                 # browser oracle (Playwright-against-Playwright)
 pnpm test:parity:node     # Node passthrough smokes (+ library agent)
 pnpm test:parity:node:fulfill   # dual-mode routing gate (one fulfill case)
-pnpm test:parity:node:full      # full oracle in node mode (parity backlog)
+pnpm test:parity:node:full      # full oracle in node mode
+pnpm test:library               # clientId / ambiguity / disconnect
 pnpm typecheck
 pnpm lint
 ```
@@ -33,12 +40,11 @@ pnpm lint
 | `@playwright-backend-mocks/playwright` | Playwright fixtures (`backendMocks.route`, …) |
 | `@playwright-backend-mocks/node`       | Node agent that installs interceptors         |
 | `@playwright-backend-mocks/proxy`      | Standalone coordinator + REST API CLI         |
-| `@playwright-backend-mocks/dashboard`  | Optional Vue dashboard (separate process)     |
 | `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
 
-These are **not published from this tree yet**. Target DX below is what Step 2 is building toward (also reflected in the archived prototype under `historical/`).
+Optional dashboard remains archived under `historical/` for now. Packages are **not published from this tree yet**.
 
-## Target DX (after Step 2)
+## Target DX
 
 ### 1. Start the proxy (usually via Playwright `webServer`)
 
@@ -125,7 +131,9 @@ Optional dashboard (separate process) will consume the proxy REST API (`/api/his
 | [`PHILOSOPHY.md`](./PHILOSOPHY.md) | High-level source of truth              |
 | [`AGENTS.md`](./AGENTS.md)         | Agent entrypoint                        |
 | [`research/`](./research)          | Rewrite + parity research               |
-| [`tests/parity/`](./tests/parity/) | Living oracle suite                     |
+| [`tests/parity/`](./tests/parity/) | Living dual-mode oracle suite           |
+| [`tests/library/`](./tests/library/) | Library-only (clientId / ambiguity / disconnect) |
+| [`packages/MODULE_MAP.md`](./packages/MODULE_MAP.md) | Living package → Playwright file map |
 | [`historical/`](./historical/)     | Archived prototype + old VitePress site |
 
 ## License

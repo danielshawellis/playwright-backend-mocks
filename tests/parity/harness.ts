@@ -786,9 +786,7 @@ export const test = base.extend<ParityFixtures>({
         const mocks = await createNodeMocksForTest({
           title: `${testInfo.title} (isolated)`,
           file: testInfo.file,
-          ...(options.baseURL !== undefined
-            ? { baseURL: options.baseURL }
-            : {}),
+          ...(options.baseURL !== undefined ? { baseURL: options.baseURL } : {}),
         });
         const api = createNodeRouting(mocks) as ParityRouting;
         try {
