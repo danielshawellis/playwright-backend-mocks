@@ -12,6 +12,8 @@ Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application p
 
 The executable contract is the dual-mode parity suite in [`tests/parity/`](./tests/parity/). Living packages under [`packages/`](./packages/) are being reimplemented against that suite.
 
+**Dual-mode routing gate is green** (`route.fulfill` in `PARITY_MODE=node`). Core HTTP settle paths (`fulfill` / `continue` / `fallback` / `abort` / `times` / lifecycle) are largely passing; remaining backlog is mainly `routeFromHAR`, `routeWebSocket`, `waitForResponse`, and source-edge sharpening.
+
 ```bash
 pnpm install
 pnpm build

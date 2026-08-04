@@ -151,9 +151,13 @@ function adaptHandler(handler: HarnessRouteHandler): BackendRouteHandler {
 }
 
 export function createNodeRouting(mocks: BackendMocksController): NodeParityRouting {
+  /** Map harness handler identity → adapted BackendMocks handler for precise unroute. */
+  const adaptedByHarness = new WeakMap<HarnessRouteHandler, BackendRouteHandler>();
+
   return {
     route: async (url, handler, options) => {
       const backendHandler = adaptHandler(handler);
+      adaptedByHarness.set(handler, backendHandler);
       await mocks.route(url as RouteMatcherInput, backendHandler, options);
       let disposed = false;
       return {
@@ -164,9 +168,16 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
         },
       };
     },
-    unroute: async (url) => {
-      // Handler identity differs after adapt — unroute by URL only when provided.
-      await mocks.unroute(url as RouteMatcherInput | undefined);
+    unroute: async (url, handler) => {
+      if (handler === undefined) {
+        await mocks.unroute(url as RouteMatcherInput | undefined);
+        return;
+      }
+      const backendHandler = adaptedByHarness.get(handler);
+      await mocks.unroute(
+        url as RouteMatcherInput | undefined,
+        backendHandler ?? adaptHandler(handler),
+      );
     },
     unrouteAll: async (options) => {
       await mocks.unrouteAll(options);
