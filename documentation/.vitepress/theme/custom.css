@@ -1,0 +1,146 @@
+/* VitePress home hero polish */
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    var(--vp-c-brand-1) 30%,
+    #38bdf8
+  );
+}
+
+/* Let the intentional <br> in the hero headline define the line breaks */
+@media (min-width: 640px) {
+  .VPHomeHero .name,
+  .VPHomeHero .text {
+    max-width: none;
+  }
+}
+
+.VPHomeHero .name {
+  margin-bottom: 8px;
+}
+
+.VPHomeHero .text {
+  margin-bottom: 16px;
+  font-size: 28px;
+  line-height: 36px;
+}
+
+.VPHomeHero .tagline {
+  padding-top: 0;
+}
+
+@media (min-width: 640px) {
+  .VPHomeHero .tagline {
+    padding-top: 0;
+  }
+
+  .VPHomeHero .text {
+    font-size: 32px;
+    line-height: 40px;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHomeHero .text {
+    font-size: 48px;
+    line-height: 56px;
+  }
+}
+
+/* Home markdown body */
+.VPHome .vp-doc {
+  padding-top: 24px;
+}
+
+.VPHome .vp-doc h2 {
+  border-top: 1px solid var(--vp-c-divider);
+  margin-top: 56px;
+  padding-top: 40px;
+}
+
+.VPHome .vp-doc h2:first-child {
+  border-top: none;
+  margin-top: 16px;
+  padding-top: 0;
+}
+
+/* Compatibility logo cloud */
+.logo-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logo-cloud__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.logo-cloud__item:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg);
+  transform: translateY(-1px);
+}
+
+.logo-cloud__icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.logo-cloud__name {
+  white-space: nowrap;
+}
+
+.dark .logo-cloud__item--invert-dark .logo-cloud__icon {
+  filter: invert(1);
+}
+
+/* Mermaid diagrams */
+.mermaid-diagram {
+  width: 100%;
+  margin: 16px 0 24px;
+  padding: 24px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse at top, var(--vp-c-brand-soft), transparent 60%),
+    var(--vp-c-bg-soft);
+}
+
+.mermaid-diagram__host {
+  min-height: 120px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.mermaid-diagram__host :deep(svg) {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-diagram__error {
+  margin: 12px 0 0;
+  color: var(--vp-c-danger-1);
+  font-size: 13px;
+}

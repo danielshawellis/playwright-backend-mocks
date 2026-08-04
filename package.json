@@ -22,17 +22,23 @@
     "test:parity:node:full": "pnpm --filter @playwright-backend-mocks/parity test:node:full",
     "test:parity:node:fulfill": "pnpm --filter @playwright-backend-mocks/parity exec env PARITY_MODE=node PARITY_NODE_FULL=1 playwright test specs/fulfill.spec.ts -g \"mocks a GET JSON response\"",
     "test:library": "pnpm --filter @playwright-backend-mocks/library-tests test",
-    "clean": "rm -rf test-results playwright-report packages/*/dist"
+    "docs:dev": "vitepress dev documentation",
+    "docs:build": "vitepress build documentation",
+    "docs:preview": "vitepress preview documentation",
+    "clean": "rm -rf test-results playwright-report packages/*/dist documentation/.vitepress/dist documentation/.vitepress/cache"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@iconify/vue": "^5.0.1",
     "@playwright/test": "1.62.1",
     "@types/node": "^22.16.5",
     "eslint": "^9.32.0",
     "globals": "^17.8.0",
+    "mermaid": "^11.16.0",
     "prettier": "^3.6.2",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.38.0"
+    "typescript-eslint": "^8.38.0",
+    "vitepress": "^1.6.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
