@@ -1005,9 +1005,9 @@ export function createBackendMocks(options: {
     try {
       await handler.handle(route);
     } catch (error) {
+      // Playwright: thrown handler skips _afterHandle — socket stays CONNECTING.
       const err = error instanceof Error ? error : new Error(String(error));
       errors.push(err);
-      await route._afterHandle().catch(() => {});
     }
   }
 

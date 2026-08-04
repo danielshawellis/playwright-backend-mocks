@@ -4,7 +4,10 @@
 // DIVERGENCE: Only `globalThis.WebSocket` is intercepted (MSW WebSocketInterceptor).
 // Control-plane sockets use the `ws` npm package and are not patched.
 // DIVERGENCE END
-import { WebSocketInterceptor } from "@mswjs/interceptors/WebSocket";
+import {
+  CloseEvent as MswCloseEvent,
+  WebSocketInterceptor,
+} from "@mswjs/interceptors/WebSocket";
 import type { ProxyToClientMessage } from "@playwright-backend-mocks/protocol";
 import type { ProxyConnection } from "./ws-client.js";
 
@@ -97,6 +100,34 @@ function wireToData(
 }
 
 /**
+ * Close the mock page socket with an explicit wasClean flag.
+ * MSW's public `close()` always uses wasClean=true.
+ */
+function closeClientWithClean(
+  client: WsClient,
+  code: number | undefined,
+  reason: string | undefined,
+  wasClean: boolean,
+): void {
+  const socket = client.socket as WebSocket & { readyState: number };
+  if (socket.readyState === 2 || socket.readyState === 3) {
+    return;
+  }
+  socket.readyState = 2; // CLOSING
+  queueMicrotask(() => {
+    socket.readyState = 3; // CLOSED
+    // Node may lack a global CloseEvent; use MSW's implementation.
+    socket.dispatchEvent(
+      new MswCloseEvent("close", {
+        code: code ?? 1000,
+        reason: reason ?? "",
+        wasClean,
+      }),
+    );
+  });
+}
+
+/**
  * Install MSW WebSocketInterceptor and bridge open/message/close to the proxy,
  * mirroring Playwright's injected webSocketMock + dispatcher API requests.
  */
@@ -122,26 +153,29 @@ export function installWebSocketBridge(connection: ProxyConnection): {
     item.serverCloseBound = true;
 
     // Disable MSW page→server auto-close; Playwright owns close forwarding.
-    const mockCloseController = (item.server as unknown as {
-      mockCloseController?: AbortController;
-    }).mockCloseController;
+    const mockCloseController = (
+      item.server as unknown as { mockCloseController?: AbortController }
+    ).mockCloseController;
     mockCloseController?.abort();
 
     item.server.addEventListener("message", (event) => {
       const messageEvent = event as MessageEvent & { preventDefault(): void };
       messageEvent.preventDefault();
-      dataToWire(messageEvent.data as string | ArrayBuffer | Blob | ArrayBufferView, (wire) => {
-        try {
-          connection.send({
-            type: "ws:messageFromServer",
-            socketId,
-            data: wire.data,
-            isBase64: wire.isBase64,
-          });
-        } catch {
-          /* proxy gone */
-        }
-      });
+      dataToWire(
+        messageEvent.data as string | ArrayBuffer | Blob | ArrayBufferView,
+        (wire) => {
+          try {
+            connection.send({
+              type: "ws:messageFromServer",
+              socketId,
+              data: wire.data,
+              isBase64: wire.isBase64,
+            });
+          } catch {
+            /* proxy gone */
+          }
+        },
+      );
     });
 
     item.server.addEventListener("close", (event) => {
@@ -150,7 +184,8 @@ export function installWebSocketBridge(connection: ProxyConnection): {
         closeEvent.preventDefault();
       }
       const code = "code" in closeEvent ? closeEvent.code : undefined;
-      const reason = "reason" in closeEvent ? String(closeEvent.reason ?? "") : undefined;
+      const reason =
+        "reason" in closeEvent ? String(closeEvent.reason ?? "") : undefined;
       const wasClean =
         "wasClean" in closeEvent ? Boolean(closeEvent.wasClean) : true;
       try {
@@ -194,18 +229,21 @@ export function installWebSocketBridge(connection: ProxyConnection): {
         return;
       }
       messageEvent.preventDefault();
-      dataToWire(messageEvent.data as string | ArrayBuffer | Blob | ArrayBufferView, (wire) => {
-        try {
-          connection.send({
-            type: "ws:messageFromPage",
-            socketId,
-            data: wire.data,
-            isBase64: wire.isBase64,
-          });
-        } catch {
-          /* proxy gone */
-        }
-      });
+      dataToWire(
+        messageEvent.data as string | ArrayBuffer | Blob | ArrayBufferView,
+        (wire) => {
+          try {
+            connection.send({
+              type: "ws:messageFromPage",
+              socketId,
+              data: wire.data,
+              isBase64: wire.isBase64,
+            });
+          } catch {
+            /* proxy gone */
+          }
+        },
+      );
     });
 
     client.addEventListener("close", (event) => {
@@ -219,7 +257,9 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           type: "ws:closePage",
           socketId,
           ...(closeEvent.code !== undefined ? { code: closeEvent.code } : {}),
-          ...(closeEvent.reason !== undefined ? { reason: closeEvent.reason } : {}),
+          ...(closeEvent.reason !== undefined
+            ? { reason: closeEvent.reason }
+            : {}),
           wasClean: closeEvent.wasClean,
         });
       } catch {
@@ -275,8 +315,23 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           if (!item) return true;
           if (item.connected) return true;
           item.connected = true;
-          item.server.connect();
-          bindServerEvents(message.socketId, item);
+          try {
+            item.server.connect();
+          } catch (error) {
+            try {
+              connection.send({
+                type: "ws:closeServer",
+                socketId: message.socketId,
+                code: 1006,
+                reason: error instanceof Error ? error.message : String(error),
+                wasClean: false,
+              });
+            } catch {
+              /* proxy gone */
+            }
+            return true;
+          }
+          // Bind message/close after open so handshake is not disturbed.
           item.server.addEventListener("open", () => {
             try {
               const real = item.server.socket;
@@ -285,7 +340,44 @@ export function installWebSocketBridge(connection: ProxyConnection): {
             } catch {
               /* ignore */
             }
+            bindServerEvents(message.socketId, item);
             releaseOpen(item);
+          });
+          item.server.addEventListener("error", () => {
+            // Handshake failure: do not mock-open; report server close to Playwright.
+            // MSW also forwards error to the page socket.
+            try {
+              connection.send({
+                type: "ws:closeServer",
+                socketId: message.socketId,
+                code: 1006,
+                reason: "",
+                wasClean: false,
+              });
+            } catch {
+              /* proxy gone */
+            }
+          });
+          item.server.addEventListener("close", (event) => {
+            if (item.serverCloseBound) {
+              return; // handled by bindServerEvents after open
+            }
+            const closeEvent = event as CloseEvent;
+            try {
+              connection.send({
+                type: "ws:closeServer",
+                socketId: message.socketId,
+                ...(closeEvent.code !== undefined
+                  ? { code: closeEvent.code }
+                  : { code: 1006 }),
+                ...(closeEvent.reason !== undefined
+                  ? { reason: closeEvent.reason }
+                  : {}),
+                wasClean: closeEvent.wasClean ?? false,
+              });
+            } catch {
+              /* proxy gone */
+            }
           });
           return true;
         }
@@ -332,7 +424,12 @@ export function installWebSocketBridge(connection: ProxyConnection): {
           const item = pending.get(message.socketId);
           if (!item) return true;
           releaseOpen(item);
-          item.client.close(message.code, message.reason);
+          closeClientWithClean(
+            item.client,
+            message.code,
+            message.reason,
+            message.wasClean,
+          );
           return true;
         }
         case "ws:closeServer": {
@@ -345,7 +442,9 @@ export function installWebSocketBridge(connection: ProxyConnection): {
                 type: "ws:closeServer",
                 socketId: message.socketId,
                 ...(message.code !== undefined ? { code: message.code } : {}),
-                ...(message.reason !== undefined ? { reason: message.reason } : {}),
+                ...(message.reason !== undefined
+                  ? { reason: message.reason }
+                  : {}),
                 wasClean: message.wasClean,
               });
             } catch {
@@ -354,9 +453,9 @@ export function installWebSocketBridge(connection: ProxyConnection): {
             return true;
           }
           // Close real upstream with requested code/reason.
-          const realCloseController = (item.server as unknown as {
-            realCloseController?: AbortController;
-          }).realCloseController;
+          const realCloseController = (
+            item.server as unknown as { realCloseController?: AbortController }
+          ).realCloseController;
           realCloseController?.abort();
           try {
             item.server.socket.close(message.code, message.reason);
@@ -367,13 +466,15 @@ export function installWebSocketBridge(connection: ProxyConnection): {
               /* ignore */
             }
           }
-          // Report closeServer to Playwright (real close listener was aborted).
+          // Report closeServer (real close listener was aborted).
           try {
             connection.send({
               type: "ws:closeServer",
               socketId: message.socketId,
               ...(message.code !== undefined ? { code: message.code } : {}),
-              ...(message.reason !== undefined ? { reason: message.reason } : {}),
+              ...(message.reason !== undefined
+                ? { reason: message.reason }
+                : {}),
               wasClean: message.wasClean,
             });
           } catch {
@@ -384,13 +485,17 @@ export function installWebSocketBridge(connection: ProxyConnection): {
         case "ws:error": {
           const item = pending.get(message.socketId);
           if (!item) return true;
-          releaseOpen(item);
+          // Do not mock-open on error — fail the handshake.
           try {
             item.client.socket.dispatchEvent(new Event("error"));
           } catch {
             /* ignore */
           }
-          item.client.close(1011, message.message);
+          // Skip MSW auto-open by leaving CONNECTING before resolving the hold.
+          (item.client.socket as WebSocket & { readyState: number }).readyState = 3;
+          item.openReleased = true;
+          item.releaseOpen();
+          closeClientWithClean(item.client, 1011, message.message, false);
           pending.delete(message.socketId);
           return true;
         }

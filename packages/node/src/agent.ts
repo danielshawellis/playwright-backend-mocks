@@ -109,6 +109,12 @@ export async function startBackendMocks(
       return;
     }
 
+    // WebSocket handshakes must not enter the HTTP claim pipeline.
+    const upgrade = request.headers.get("upgrade");
+    if (upgrade !== null && upgrade.toLowerCase() === "websocket") {
+      return;
+    }
+
     // Avoid intercepting traffic to the proxy itself.
     if (isProxyUrl(request.url, proxyUrl)) {
       return;

@@ -67,6 +67,9 @@ if (process.env.ENABLE_BACKEND_MOCKS === "1") {
 
 /** @type {Map<string, WebSocket>} */
 const sockets = new Map();
+/** Closed sockets kept so readyState()/info() still work after close. */
+/** @type {Map<string, { readyState: number, protocol: string, extensions: string }>} */
+const closedSockets = new Map();
 let nextSocketId = 1;
 
 const httpServer = createServer(async (req, res) => {
@@ -219,6 +222,7 @@ async function handleControl(control, msg) {
           sendEvent("message", {
             data: Buffer.from(data).toString("base64"),
             encoding: "base64",
+            binaryType: "arraybuffer",
           });
           return;
         }
@@ -228,6 +232,7 @@ async function handleControl(control, msg) {
               "base64",
             ),
             encoding: "base64",
+            binaryType: ws.binaryType === "arraybuffer" ? "arraybuffer" : "blob",
           });
           return;
         }
@@ -244,6 +249,11 @@ async function handleControl(control, msg) {
         sendEvent("message", { data: String(data), encoding: "utf8" });
       });
       ws.addEventListener("close", (event) => {
+        closedSockets.set(socketId, {
+          readyState: 3,
+          protocol: ws.protocol,
+          extensions: ws.extensions,
+        });
         sockets.delete(socketId);
         if (!settled && waitUntil === "open") {
           // Handshake never completed — fail the open RPC instead of hanging.
@@ -263,7 +273,13 @@ async function handleControl(control, msg) {
     }
     case "ws.send": {
       const ws = sockets.get(msg.socketId);
-      if (!ws) throw new Error(`unknown_socket:${msg.socketId}`);
+      if (!ws) {
+        if (closedSockets.has(msg.socketId)) {
+          // Mirror WHATWG: send after close throws CLOSING/CLOSED.
+          throw new Error("WebSocket is already in CLOSING or CLOSED state.");
+        }
+        throw new Error(`unknown_socket:${msg.socketId}`);
+      }
       try {
         if (msg.encoding === "base64") {
           ws.send(Buffer.from(msg.data, "base64"));
@@ -271,25 +287,64 @@ async function handleControl(control, msg) {
           ws.send(msg.data);
         }
       } catch (error) {
-        throw new Error(error instanceof Error ? error.message : String(error));
+        // Normalize MSW WebSocketOverride messages toward Playwright/WHATWG text
+        // so the dual-mode oracle assertions match.
+        const raw = error instanceof Error ? error.message : String(error);
+        // MSW closes then throws bare "InvalidStateError" for send-while-CONNECTING.
+        if (/InvalidStateError/i.test(raw) && !/CLOSING or CLOSED/i.test(raw)) {
+          throw new Error(
+            "Failed to execute 'send' on 'WebSocket': Still in CONNECTING state.",
+          );
+        }
+        throw new Error(raw);
       }
       control.send(JSON.stringify({ v: 1, id: msg.id, op: "ok" }));
       return;
     }
     case "ws.close": {
       const ws = sockets.get(msg.socketId);
-      if (!ws) throw new Error(`unknown_socket:${msg.socketId}`);
-      if (msg.code !== undefined) {
-        ws.close(msg.code, msg.reason ?? "");
-      } else {
-        ws.close();
+      if (!ws) {
+        if (closedSockets.has(msg.socketId)) {
+          control.send(JSON.stringify({ v: 1, id: msg.id, op: "ok" }));
+          return;
+        }
+        throw new Error(`unknown_socket:${msg.socketId}`);
+      }
+      try {
+        if (msg.code !== undefined) {
+          ws.close(msg.code, msg.reason ?? "");
+        } else {
+          ws.close();
+        }
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : String(error);
+        if (/close code out of user configurable range/i.test(raw)) {
+          throw new Error(
+            `Failed to execute 'close' on 'WebSocket': The close code must be either 1000, or between 3000 and 4999. ${msg.code} is neither.`,
+          );
+        }
+        throw new Error(raw);
       }
       control.send(JSON.stringify({ v: 1, id: msg.id, op: "ok" }));
       return;
     }
     case "ws.info": {
       const ws = sockets.get(msg.socketId);
-      if (!ws) throw new Error(`unknown_socket:${msg.socketId}`);
+      if (!ws) {
+        const closed = closedSockets.get(msg.socketId);
+        if (!closed) throw new Error(`unknown_socket:${msg.socketId}`);
+        control.send(
+          JSON.stringify({
+            v: 1,
+            id: msg.id,
+            op: "ws.info",
+            readyState: closed.readyState,
+            protocol: closed.protocol,
+            extensions: closed.extensions,
+          }),
+        );
+        return;
+      }
       control.send(
         JSON.stringify({
           v: 1,
