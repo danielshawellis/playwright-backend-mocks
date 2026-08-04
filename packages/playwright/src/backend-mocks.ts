@@ -937,6 +937,12 @@ function toBackendResponse(response: SerializedResponse): BackendResponse {
   const headerMap = { ...response.headers };
   return {
     bodyBuffer,
+    ok() {
+      return response.status >= 200 && response.status <= 299;
+    },
+    url() {
+      return response.url ?? "";
+    },
     status() {
       return response.status;
     },
@@ -945,6 +951,9 @@ function toBackendResponse(response: SerializedResponse): BackendResponse {
     },
     headers() {
       return { ...headerMap };
+    },
+    headersArray() {
+      return Object.entries(headerMap).map(([name, value]) => ({ name, value }));
     },
     headerValue(name: string) {
       const lower = name.toLowerCase();
@@ -963,6 +972,9 @@ function toBackendResponse(response: SerializedResponse): BackendResponse {
     },
     async json() {
       return JSON.parse(bodyBuffer.toString("utf8")) as unknown;
+    },
+    async dispose() {
+      // Playwright APIResponse.dispose — no-op for buffered backend responses.
     },
   };
 }
