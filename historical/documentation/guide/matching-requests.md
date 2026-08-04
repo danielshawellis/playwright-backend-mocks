@@ -118,19 +118,20 @@ Use this carefully — broad matchers increase the chance of [ambiguous matches]
 
 ## Ambiguous matches
 
-If **more than one** registered route matches a request:
+If **two different tests** claim the same Node request:
 
 1. The Node process receives an error (request fails).
-2. Each affected Playwright test receives a proxy error (message matches `/Ambiguous backend mock routing/i`).
+2. Each claiming Playwright test receives a proxy error (message matches `/Ambiguous backend mock routing/i`).
 3. Unless you drain it with `backendMocks.takeErrors()`, fixture teardown fails the test.
 
+This is **cross-test** ownership failure — not “two handlers in one test.” Within one test, Playwright-style HTTP LIFO + `fallback` (and WebSocket newest-match) apply.
+
 ```ts
-// Too overlapping — both match /users
-await backendMocks.route("https://api.example.test/users", handlerA);
-await backendMocks.route(/users$/, handlerB);
+// Bad concurrent setup: Test A and Test B both route the same URL without isolation
+// Fix: mutually exclusive matchers, clientId / process boundaries, or serialize those tests
 ```
 
-Fix by narrowing URL patterns, adding `method` / `clientId`, or `unroute` before registering a replacement.
+Treat `ambiguous_route` as a signal to fix the suite architecture, not ambient flakiness.
 
 ## What is not supported
 

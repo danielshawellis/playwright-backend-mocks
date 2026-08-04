@@ -1,5 +1,7 @@
 # Concepts
 
+> Development source of truth: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md). This VitePress site is user-facing documentation and **may lag** the rewrite.
+
 A small architecture with three roles. Understanding them makes every other page in these docs obvious.
 
 ## Architecture
@@ -43,13 +45,13 @@ You almost never interact with the protocol directly. You write tests against `b
 
 ## Matching outcomes
 
-| Matches | Result                                                                   |
-| ------- | ------------------------------------------------------------------------ |
-| **0**   | Passthrough — the Node process continues the real request                |
-| **1**   | Your handler runs                                                        |
-| **>1**  | Ambiguous — the Node request fails and Playwright receives a proxy error |
+| Claiming tests | Result                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------- |
+| **0**          | Passthrough — the Node process continues the real request                                       |
+| **1**          | That test’s handler runs (within the test: HTTP LIFO + `fallback`; WebSocket newest-match)      |
+| **>1 tests**   | Ambiguous — the Node request fails and each claiming Playwright test receives a proxy error     |
 
-Design matchers so concurrent tests (or overlapping routes in one test) stay unambiguous. Prefer method / `clientId` filters when URLs collide.
+`ambiguous_route` means **two different tests** claimed the same traffic — not two handlers in one test. Architect concurrent suites so that cannot happen (method / `clientId` / process isolation, or serialize). Treat it as a setup bug, not flakiness.
 
 ## Passthrough by default
 

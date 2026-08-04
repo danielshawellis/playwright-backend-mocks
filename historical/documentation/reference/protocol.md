@@ -28,7 +28,7 @@ function serializeRegExp(regex: RegExp): { source: string; flags: string };
 
 Glob rules: `*` within a segment, `**` across segments; matched against the absolute URL. Methods compared case-insensitively. A matcher with no URL still matches when method/client filters pass.
 
-Authoritative route ownership uses a claim broadcast: proxy → Playwright `request:claim`, Playwright → proxy `request:claim-result`. The proxy waits for every test that currently has routes before deciding 0 / 1 / >1 matches.
+Route ownership uses a claim broadcast: proxy → Playwright `request:claim`, Playwright → proxy `request:claim-result`. The proxy waits for every test that currently has routes before deciding 0 / 1 / >1 **claiming tests** (`ambiguous_route` is cross-test only). High-level rules: [PHILOSOPHY.md](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md).
 
 ## Body / header helpers
 

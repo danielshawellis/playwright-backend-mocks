@@ -2,6 +2,8 @@
 
 This document is the implementation plan for rewriting `@playwright-backend-mocks` against Playwright’s request-routing contract.
 
+**High-level source of truth:** [`../PHILOSOPHY.md`](../PHILOSOPHY.md). This file is the Step 1 → Step 2 plan under that philosophy.
+
 Supporting research (not the plan itself):
 
 - [`playwright-parity-tdd.md`](./playwright-parity-tdd.md) — oracle-suite TDD strategy
@@ -29,7 +31,7 @@ Before greenfield work lands in the normal project paths:
 2. Do **not** wire `historical/` into the workspace, build, lint, or CI.
 3. Treat it as short-lived reference material; delete it once the rewrite no longer needs it.
 
-Root config, `documentation/`, `research/`, and product docs may remain living. Update the workspace so only the new tree builds.
+Root config and `research/` remain living. The prototype VitePress site lives under `historical/documentation/` (not deployed). Update the workspace so only the new tree builds.
 
 ---
 
@@ -58,7 +60,7 @@ Map layers to Playwright’s own split (see parity research §1–2 / §1b):
 | `packages/node`       | RouteDelegate + injected `webSocketMock` role (MSW bridge)                                  |
 | `packages/protocol`   | Channel settle messages + WS lifecycle messages                                             |
 
-Do **not** vendor Playwright source. Reimplement. Keep analogous paths documented next to modules for deliberate comparison. Pin the Playwright revision used as reference (below).
+Do **not** vendor Playwright source. Reimplement. Comment exact Playwright GitHub blob URLs at the pinned SHA on mirrored modules, and mark intentional differences with searchable `DIVERGENCE` / `DIVERGENCE END` comments (see [`PHILOSOPHY.md`](../PHILOSOPHY.md) §4). Pin the Playwright revision used as reference (below).
 
 ---
 
@@ -219,20 +221,33 @@ Switch the same suite to library mode and implement until green.
 
 Upstream fake, assertion intent, scenario names/structure for dual-mode cases, public-API-only testing habit.
 
+### Tooling first — match Playwright’s TS / ESLint
+
+Before scaffolding packages, set up TypeScript and ESLint so they do **not** fight one-to-one parity coding.
+
+1. Read the pinned Playwright revision’s `tsconfig` / ESLint setup (same SHA as the oracle pin).
+2. Align our base configs with that baseline: strictness, module settings, and lint rules that would otherwise force stylistic or typing divergences from Playwright-shaped code.
+3. Aim for good code quality **without** inventing a sharply different house style. Where we must differ (monorepo layout, Node package boundaries), keep the delta small and deliberate.
+4. Only then scaffold protocol / proxy / node / playwright packages under those configs.
+
+Lint and typecheck should make Playwright-close code easy to land, not something you constantly `# eslint-disable` around.
+
 ### Implementation approach
 
-1. Add the thinnest skeleton that can load backend mode (protocol, proxy, node agent, playwright fixture wiring) so failures are product failures, not missing process glue.
-2. Drive work from failing backend-mode cases.
-3. Mirror Playwright client handler orchestration closely (`Route` / `RouteHandler`, fallback, times, LIFO, settle checks).
-4. Keep proxy ownership rules: chain within one test; fail across tests.
-5. Port glob matching and settle semantics deliberately from the pinned Playwright revision.
-6. Do not implement a general request-initiation client.
+1. Land Playwright-aligned TS + ESLint configs (above).
+2. Add the thinnest skeleton that can load backend mode (protocol, proxy, node agent, playwright fixture wiring) so failures are product failures, not missing process glue.
+3. Drive work from failing backend-mode cases.
+4. Mirror Playwright client handler orchestration closely (`Route` / `RouteHandler`, fallback, times, LIFO, settle checks).
+5. Keep proxy ownership rules: chain within one test; fail across tests.
+6. Port glob matching and settle semantics deliberately from the pinned Playwright revision.
+7. Do not implement a general request-initiation client.
 
 ### Step 2 done when
 
 - Backend mode passes the oracle/parity suite for the in-scope surface (including `routeFromHAR`).
 - Library-only suite covers multi-process / ambiguity / infra concerns.
-- Module map and `PARITY` / `DIVERGE` notes exist for contributors.
+- Module map, pinned Playwright blob URL comments, and `DIVERGENCE` / `DIVERGENCE END` notes exist for contributors.
+- TS / ESLint remain aligned enough with the Playwright pin that parity-shaped code is not fighting the toolchain.
 - `historical/` can be deleted when no longer useful.
 
 ---
@@ -259,7 +274,7 @@ CI: run browser oracle against pinned Playwright; run backend parity against bui
 1. Archive prototype → `historical/`; clear living package/test/fixture paths for greenfield use.
 2. Pin Playwright; build upstream + browser harness; land Step 1 suite green in browser mode.
 3. Extract thin dual-mode seam including `routeFromHAR` (same HAR files in both modes).
-4. Scaffold Step 2 skeleton; enable backend mode (expect red).
+4. Align TS + ESLint with the pinned Playwright revision; then scaffold Step 2 skeleton and enable backend mode (expect red).
 5. Implement packages against failing cases until backend mode is green (HAR record/replay included).
 6. Add library-only suite; remove `historical/` when finished.
 

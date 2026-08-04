@@ -1,9 +1,10 @@
 # Playwright Parity via Oracle-Suite TDD
 
+Supporting write-up for [`../PHILOSOPHY.md`](../PHILOSOPHY.md) §§1–2. Prefer the philosophy on conflict.
+
 ## Goal
 
-Achieve near-complete behavioral parity with Playwright’s browser request-routing APIs (`page.route` / `context.route`, fulfill / continue / fetch / abort, matchers, unroute, inspection / spying, HAR-style record-replay, **and** `page.routeWebSocket` / `WebSocketRoute`) for **outbound Node.js HTTP and `globalThis.WebSocket`**, without inventing a divergent DX.
-
+Achieve **complete** behavioral parity with Playwright’s browser request-routing APIs (`page.route` / `context.route`, fulfill / continue / fetch / abort, matchers, unroute, inspection / spying, HAR-style record-replay, **and** `page.routeWebSocket` / `WebSocketRoute`) for **outbound Node.js HTTP and `globalThis.WebSocket`**, without inventing a divergent DX — outside the narrow exception set in the philosophy.
 **WebSocket caveat (product, not oracle):** the Playwright oracle exercises the full `WebSocketRoute` contract in-browser. Library mode will only intercept Node’s **`globalThis.WebSocket`**, not every WS client (contrast with near-universal HTTP client coverage). Rewrite-spec §4 requires large docs warnings on every WS page explaining why.
 
 The strategy: **write the parity suite against Playwright itself first**, then switch the same suite onto this library with only a thin adapter change.
@@ -71,7 +72,7 @@ Write tests **only against Playwright**, with none of this library involved.
 
 ### Coverage target (parity surface)
 
-Aim for a suite that is “fairly complete” for the APIs we intend to mirror:
+Aim for a suite that is **complete** for the APIs we intend to mirror:
 
 - **Terminal actions:** `fulfill` (status / headers / body / json / path / response), `continue` (with overrides), `abort` (error codes)
 - **Non-terminal:** `fetch` then modify / re-fulfill
@@ -159,23 +160,15 @@ When backend mode cannot match Playwright, either:
 
 …but do **not** silently weaken assertions.
 
-## Relationship to existing tests
+## Relationship to other suites
 
-This plan complements, rather than replaces, the current pyramid:
+| Layer                       | Role                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| **Parity / oracle suite**   | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity  |
+| Library-only suite (Step 2) | `clientId`, cross-test `ambiguous_route`, disconnects, dashboard — outside Playwright DX |
+| Unit / contract (as needed) | Pure helpers and wire protocol                                                           |
 
-| Layer                         | Role after this plan                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------------- |
-| `tests/unit`                  | Combinatorial helpers (matchers, body encoding, HAR parse)                              |
-| `tests/contract`              | Wire protocol serialize/parse                                                           |
-| Existing `tests/e2e`          | Full cross-process product confidence (proxy, agents, dashboard, security)              |
-| **New parity / oracle suite** | Executable Playwright DX contract; browser mode = oracle, backend mode = product parity |
-
-Existing e2e already follows “test the library by being its user.” The parity suite makes that stricter: **Playwright itself becomes the reference for what the user experience should be.**
-
-Keep both if useful:
-
-- Parity suite: API behavior vs Playwright
-- Broader e2e: multi-process, proxy auth, disconnects, dashboard — topics outside browser `page.route`
+The parity suite makes the DX contract strict: **Playwright itself is the reference for what the user experience should be.**
 
 ## Simplicity constraints
 

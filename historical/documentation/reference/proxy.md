@@ -84,15 +84,17 @@ Each history entry's `outcome.kind` is one of:
 
 `mocked` · `passthrough` · `continued` · `aborted` · `error` · `pending`
 
-## Matching rules (authoritative)
+## Matching rules (ownership)
+
+> High-level rules: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md). This page may lag.
 
 The proxy does not evaluate URL matchers itself for ownership. It broadcasts `request:claim` to every Playwright connection that has active routes, waits for all `request:claim-result` replies (or `claimTimeoutMs`), then applies:
 
-| Matches | Proxy behavior                                                                 |
-| ------- | ------------------------------------------------------------------------------ |
-| 0       | `decision:passthrough` to the Node agent                                       |
-| 1       | `request:matched` to the owning Playwright connection                          |
-| >1      | `decision:error` (`ambiguous_route`) to Node + `proxy:error` to affected tests |
+| Claiming `testId`s | Proxy behavior                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| 0                  | `decision:passthrough` to the Node agent                                                    |
+| 1                  | `request:matched` to the owning Playwright connection (within-test handler rules apply)     |
+| >1 tests           | `decision:error` (`ambiguous_route`) to Node + `proxy:error` to claiming tests              |
 
 If any expected test fails to answer before `claimTimeoutMs`, the Node request fails with `claim_timeout`.
 

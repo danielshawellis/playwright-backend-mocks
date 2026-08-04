@@ -10,5 +10,3 @@ test-results
 *.tsbuildinfo
 .env
 .env.*
-documentation/.vitepress/cache
-documentation/.vitepress/dist

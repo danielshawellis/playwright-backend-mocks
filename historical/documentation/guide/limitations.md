@@ -24,7 +24,7 @@ Unmatched requests go to the real network. That is intentional, but easy to miss
 
 ## Concurrent tests
 
-Overlapping routes from parallel tests produce **ambiguous match** failures. Keep matchers mutually exclusive or serialize those tests.
+If two **different tests** claim the same outbound traffic, you get an **`ambiguous_route`** failure. Within one test, Playwright-style handler rules apply. Architect concurrent suites so cross-test claims cannot happen (mutually exclusive matchers, `clientId` / process isolation, or serialize).
 
 ## Resource bounds
 

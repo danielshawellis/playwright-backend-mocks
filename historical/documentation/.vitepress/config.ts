@@ -97,7 +97,7 @@ export default defineConfig({
     },
     editLink: {
       pattern:
-        "https://github.com/danielshawellis/playwright-backend-mocks-msw/edit/main/documentation/:path",
+        "https://github.com/danielshawellis/playwright-backend-mocks-msw/edit/main/historical/documentation/:path",
       text: "Edit this page on GitHub",
     },
     outline: {

@@ -4,7 +4,8 @@ pnpm-lock.yaml
 coverage
 playwright-report
 test-results
-SPECIFICATION.md
 historical/**
-documentation/.vitepress/cache
-documentation/.vitepress/dist
+
+# Markdown table padding / emphasis churn fails CI on almost every doc edit.
+# Keep Prettier on code; leave prose formatting to authors.
+*.md
