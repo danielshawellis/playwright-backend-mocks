@@ -7,7 +7,8 @@ Doc hierarchy when sources disagree:
 1. [`PHILOSOPHY.md`](./PHILOSOPHY.md)
 2. Living oracle suite: [`tests/parity/`](./tests/parity/)
 3. Rewrite / parity research: [`research/rewrite-specification.md`](./research/rewrite-specification.md), [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md), [`research/playwright-network-parity.md`](./research/playwright-network-parity.md)
-4. [`historical/`](./historical/) — archived prototype + old VitePress site; reference only, not wired into the workspace
+4. User-facing docs: [`documentation/`](./documentation/) (VitePress; plan: [`research/documentation-site-plan.md`](./research/documentation-site-plan.md))
+5. [`historical/`](./historical/) — archived prototype + old VitePress site; reference only, not wired into the workspace
 
 Key pointers from the philosophy:
 

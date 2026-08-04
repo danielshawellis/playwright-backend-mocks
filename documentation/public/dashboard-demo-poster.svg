@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-label="Dashboard demo poster">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="55%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="0%" r="70%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+  <rect x="120" y="110" width="1360" height="680" rx="24" fill="#111827" stroke="#ffffff18"/>
+  <rect x="150" y="140" width="1300" height="64" rx="14" fill="#ffffff0a" stroke="#ffffff14"/>
+  <text x="180" y="180" fill="#f9fafb" font-family="ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="700">Playwright Backend Mocks</text>
+  <rect x="1280" y="156" width="140" height="32" rx="16" fill="#22c55e2e"/>
+  <text x="1322" y="178" fill="#86efac" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700">LIVE</text>
+  <rect x="150" y="230" width="630" height="300" rx="16" fill="#ffffff0a" stroke="#ffffff14"/>
+  <rect x="810" y="230" width="640" height="300" rx="16" fill="#ffffff0a" stroke="#ffffff14"/>
+  <text x="180" y="280" fill="#f9fafb" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24" font-weight="700">Connections</text>
+  <text x="180" y="330" fill="#9ca3af" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20">api-server · job-worker · playwright-0</text>
+  <text x="840" y="280" fill="#f9fafb" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24" font-weight="700">Request history</text>
+  <text x="840" y="330" fill="#9ca3af" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20">mocked · passthrough · aborted</text>
+  <circle cx="800" cy="620" r="48" fill="#38bdf833" stroke="#93c5fd" stroke-width="3"/>
+  <polygon points="790,595 790,645 830,620" fill="#93c5fd"/>
+  <text x="800" y="720" text-anchor="middle" fill="#93c5fd" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">Dashboard demo coming soon</text>
+</svg>
