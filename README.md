@@ -8,22 +8,23 @@ Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application p
 
 **How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) · agent notes: [`AGENTS.md`](./AGENTS.md) · plan: [`research/rewrite-specification.md`](./research/rewrite-specification.md)
 
-## Current status (Step 1)
+## Current status (Step 2 in progress)
 
-The executable contract is the dual-mode parity suite in [`tests/parity/`](./tests/parity/):
+The executable contract is the dual-mode parity suite in [`tests/parity/`](./tests/parity/). Living packages under [`packages/`](./packages/) are being reimplemented against that suite.
 
 ```bash
 pnpm install
+pnpm build
 pnpm --filter @playwright-backend-mocks/parity exec playwright install chromium
-pnpm test          # browser oracle (Playwright-against-Playwright)
-pnpm test:parity:node   # Node downstream smokes (library wiring is Step 2)
+pnpm test                 # browser oracle (Playwright-against-Playwright)
+pnpm test:parity:node     # Node passthrough smokes (+ library agent)
+pnpm test:parity:node:fulfill   # dual-mode routing gate (one fulfill case)
+pnpm test:parity:node:full      # full oracle in node mode (parity backlog)
 pnpm typecheck
 pnpm lint
 ```
 
-Step 2 reimplements the packages against that suite (starting with Playwright-aligned TypeScript / ESLint).
-
-## Packages (Step 2 target)
+## Packages
 
 | Package                                | Description                                   |
 | -------------------------------------- | --------------------------------------------- |
