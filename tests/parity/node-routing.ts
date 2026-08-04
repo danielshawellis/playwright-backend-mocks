@@ -218,20 +218,13 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
       return control.openSocket(openInit) as Promise<DownstreamSocket>;
     },
     waitForRequest: async (urlOrPredicate, options) => {
-      if (typeof urlOrPredicate === "function") {
-        const backend = await mocks.waitForRequest(() => true, options);
-        return backend as unknown as Request;
-      }
-      const backend = await mocks.waitForRequest(
-        urlOrPredicate as RouteMatcherInput,
-        options,
-      );
+      // Pass string | RegExp | request-predicate through unchanged (Playwright-shaped).
+      const backend = await mocks.waitForRequest(urlOrPredicate, options);
       return backend as unknown as Request;
     },
-    waitForResponse: async () => {
-      throw new Error(
-        "waitForResponse is not wired for PARITY_MODE=node yet (Step 2 backlog)",
-      );
+    waitForResponse: async (urlOrPredicate, options) => {
+      const backend = await mocks.waitForResponse(urlOrPredicate, options);
+      return backend as unknown as Response;
     },
   };
 }

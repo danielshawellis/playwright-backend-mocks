@@ -41,6 +41,9 @@ import {
   type RouteMatcherInput,
   type RouteOptions,
   type UnrouteAllOptions,
+  type WaitForNetworkOptions,
+  type WaitForRequestMatcher,
+  type WaitForResponseMatcher,
 } from "./types.js";
 
 interface FallbackOverrides {
@@ -51,7 +54,14 @@ interface FallbackOverrides {
 }
 
 interface PendingFetch {
+  request: BackendRequest;
   resolve(response: BackendResponse): void;
+  reject(error: Error): void;
+}
+
+interface NetworkWaiter<T> {
+  predicate(value: T): boolean | Promise<boolean>;
+  resolve(value: T): void;
   reject(error: Error): void;
 }
 
@@ -355,13 +365,20 @@ class BackendRouteImpl implements BackendRoute {
     const fetchId = randomUUID();
     const overrides = fetchOverridesForRequest(this._request, options);
     const responsePromise = new Promise<BackendResponse>((resolve, reject) => {
-      this._pendingFetches.set(fetchId, { resolve, reject });
+      this._pendingFetches.set(fetchId, {
+        request: this._request,
+        resolve,
+        reject,
+      });
       const timeout = options.timeout ?? 30_000;
-      setTimeout(() => {
-        if (this._pendingFetches.delete(fetchId)) {
-          reject(new Error(`route.fetch timed out after ${timeout}ms`));
-        }
-      }, timeout);
+      // Playwright: timeout 0 disables the deadline.
+      if (timeout > 0) {
+        setTimeout(() => {
+          if (this._pendingFetches.delete(fetchId)) {
+            reject(new Error(`route.fetch timed out after ${timeout}ms`));
+          }
+        }, timeout);
+      }
     });
 
     this._connection.send({
@@ -374,6 +391,7 @@ class BackendRouteImpl implements BackendRoute {
         ...(options.maxRedirects !== undefined
           ? { maxRedirects: options.maxRedirects }
           : {}),
+        ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
       },
     });
 
@@ -382,7 +400,7 @@ class BackendRouteImpl implements BackendRoute {
 
   async fulfill(options: FulfillOptions = {}): Promise<void> {
     await this._handleRoute(async () => {
-      const response = await buildFulfillResponse(options);
+      const response = await buildFulfillResponse(options, this._request.url());
       this._terminalSettled = true;
       this._connection.send({
         type: "handler:result",
@@ -590,12 +608,63 @@ export function createBackendMocks(options: {
   const routes: RouteHandlerRecord[] = [];
   const pendingFetches = new Map<string, PendingFetch>();
   const observed: BackendRequest[] = [];
+  const requestsById = new Map<string, BackendRequestImpl>();
+  const requestWaiters = new Set<NetworkWaiter<BackendRequest>>();
+  const responseWaiters = new Set<NetworkWaiter<BackendResponse>>();
   const errors: Error[] = [];
   const jsonSessions: RouteFromJSONSession[] = [];
 
   const unsubscribe = connection.onMessage((message) => {
     void handleMessage(message);
   });
+
+  /**
+   * Deduplicate request:observed / request:matched into one BackendRequest and
+   * notify future-only waitForRequest waiters (Playwright Page.Request event).
+   * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts
+   */
+  function observeRequest(
+    requestId: string,
+    serialized: SerializedRequest,
+    clientId: string,
+  ): BackendRequestImpl {
+    let request = requestsById.get(requestId);
+    if (request === undefined) {
+      request = new BackendRequestImpl(serialized, clientId);
+      requestsById.set(requestId, request);
+      observed.push(request);
+      void notifyRequestWaiters(request);
+    }
+    return request;
+  }
+
+  async function notifyRequestWaiters(request: BackendRequest): Promise<void> {
+    for (const waiter of [...requestWaiters]) {
+      try {
+        if (await waiter.predicate(request)) {
+          requestWaiters.delete(waiter);
+          waiter.resolve(request);
+        }
+      } catch (error) {
+        requestWaiters.delete(waiter);
+        waiter.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  }
+
+  async function notifyResponseWaiters(response: BackendResponse): Promise<void> {
+    for (const waiter of [...responseWaiters]) {
+      try {
+        if (await waiter.predicate(response)) {
+          responseWaiters.delete(waiter);
+          waiter.resolve(response);
+        }
+      } catch (error) {
+        responseWaiters.delete(waiter);
+        waiter.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  }
 
   async function handleMessage(message: ProxyToClientMessage): Promise<void> {
     switch (message.type) {
@@ -622,12 +691,29 @@ export function createBackendMocks(options: {
         });
         return;
       }
+      case "request:observed": {
+        // All Node traffic (routed or passthrough) — future-only waitForRequest.
+        observeRequest(message.requestId, message.request, message.clientId);
+        return;
+      }
       case "request:matched": {
         if (message.testId !== testId) {
           return;
         }
         // Ignore message.routeId for orchestration — re-evaluate all local routes (LIFO).
         await handleMatchedRequest(message);
+        return;
+      }
+      case "request:response": {
+        if (!message.ok || message.response === undefined) {
+          return;
+        }
+        const request = requestsById.get(message.requestId);
+        if (request === undefined) {
+          return;
+        }
+        const response = toBackendResponse(message.response, request);
+        void notifyResponseWaiters(response);
         return;
       }
       case "fetch:done": {
@@ -644,7 +730,7 @@ export function createBackendMocks(options: {
           );
           return;
         }
-        waiter.resolve(toBackendResponse(message.response));
+        waiter.resolve(toBackendResponse(message.response, waiter.request));
         return;
       }
       case "proxy:error": {
@@ -667,8 +753,11 @@ export function createBackendMocks(options: {
   async function handleMatchedRequest(
     message: Extract<ProxyToClientMessage, { type: "request:matched" }>,
   ): Promise<void> {
-    const request = new BackendRequestImpl(message.request, message.clientId);
-    observed.push(request);
+    const request = observeRequest(
+      message.requestId,
+      message.request,
+      message.clientId,
+    );
     const routeApi = new BackendRouteImpl(
       request,
       message.requestId,
@@ -781,35 +870,33 @@ export function createBackendMocks(options: {
       throw new Error("routeFromHAR is not implemented");
     },
 
-    async waitForRequest(url, options = {}) {
-      const timeout = options.timeout ?? 30_000;
-      const started = Date.now();
+    /**
+     * Playwright-shaped waitForRequest — future-only, timeout 0 = forever, AbortSignal.
+     * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts
+     * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/waiter.ts
+     */
+    async waitForRequest(urlOrPredicate, options = {}) {
+      const predicate = createRequestWaitPredicate(urlOrPredicate, baseURL);
+      return waitForNetworkEvent(
+        requestWaiters,
+        predicate,
+        options,
+        `Timeout ${options.timeout ?? 30_000}ms exceeded while waiting for event "request"`,
+      );
+    },
 
-      while (Date.now() - started < timeout) {
-        const found = observed.find((request) =>
-          matchRouteMatcher(
-            url,
-            {
-              request: {
-                url: request.url(),
-                method: request.method(),
-                headers: { ...request.headers() },
-                bodyBase64: encodeBody(request.postDataBuffer()),
-              },
-              clientId: request.clientId,
-              baseURL,
-            },
-            options.method,
-          ),
-        );
-        if (found) {
-          return found;
-        }
-        await delay(25);
-      }
-
-      throw new Error(
-        `Timed out waiting for backend request matching ${describeMatcher(url, options.method)}`,
+    /**
+     * Playwright-shaped waitForResponse — future-only, timeout 0 = forever, AbortSignal.
+     * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/page.ts
+     * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/waiter.ts
+     */
+    async waitForResponse(urlOrPredicate, options = {}) {
+      const predicate = createResponseWaitPredicate(urlOrPredicate, baseURL);
+      return waitForNetworkEvent(
+        responseWaiters,
+        predicate,
+        options,
+        `Timeout ${options.timeout ?? 30_000}ms exceeded while waiting for event "response"`,
       );
     },
 
@@ -856,6 +943,15 @@ export function createBackendMocks(options: {
         waiter.reject(new Error("Test ended while route.fetch was pending"));
       }
       pendingFetches.clear();
+      for (const waiter of requestWaiters) {
+        waiter.reject(new Error("Test ended while waitForRequest was pending"));
+      }
+      requestWaiters.clear();
+      for (const waiter of responseWaiters) {
+        waiter.reject(new Error("Test ended while waitForResponse was pending"));
+      }
+      responseWaiters.clear();
+      requestsById.clear();
     },
   };
 
@@ -932,16 +1028,28 @@ function describeMatcher(input: RouteMatcherInput, methodFilter?: string): strin
   return JSON.stringify(toSerializedMatcher(input, methodFilter));
 }
 
-function toBackendResponse(response: SerializedResponse): BackendResponse {
+function toBackendResponse(
+  response: SerializedResponse,
+  request?: BackendRequest,
+): BackendResponse {
+  // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (APIResponse)
+  // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (Response)
   const bodyBuffer = decodeBody(response.bodyBase64) ?? Buffer.alloc(0);
   const headerMap = { ...response.headers };
+  let disposed = false;
+  const assertNotDisposed = () => {
+    if (disposed) {
+      throw new Error("Response has been disposed");
+    }
+  };
+
   return {
     bodyBuffer,
     ok() {
       return response.status >= 200 && response.status <= 299;
     },
     url() {
-      return response.url ?? "";
+      return response.url ?? request?.url() ?? "";
     },
     status() {
       return response.status;
@@ -964,18 +1072,148 @@ function toBackendResponse(response: SerializedResponse): BackendResponse {
       }
       return null;
     },
+    request() {
+      if (request === undefined) {
+        throw new Error("Response is not associated with a request");
+      }
+      return request;
+    },
     async body() {
+      assertNotDisposed();
       return bodyBuffer;
     },
     async text() {
+      assertNotDisposed();
       return bodyBuffer.toString("utf8");
     },
     async json() {
+      assertNotDisposed();
       return JSON.parse(bodyBuffer.toString("utf8")) as unknown;
     },
     async dispose() {
-      // Playwright APIResponse.dispose — no-op for buffered backend responses.
+      disposed = true;
     },
+  };
+}
+
+/**
+ * Playwright Waiter.rejectOnTimeout + AbortSignal for network waiters.
+ * `timeout: 0` (falsy) disables the deadline.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/waiter.ts
+ */
+function waitForNetworkEvent<T>(
+  waiters: Set<NetworkWaiter<T>>,
+  predicate: (value: T) => boolean | Promise<boolean>,
+  options: WaitForNetworkOptions,
+  timeoutMessage: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = options.timeout ?? 30_000;
+    const signal = options.signal;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      waiters.delete(waiter);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    const waiter: NetworkWaiter<T> = {
+      predicate,
+      resolve: (value) => {
+        cleanup();
+        resolve(value);
+      },
+      reject: (error) => {
+        cleanup();
+        reject(error);
+      },
+    };
+
+    const onAbort = () => {
+      const reason = signal?.reason;
+      waiter.reject(
+        reason instanceof Error
+          ? reason
+          : new Error(
+              typeof reason === "string" && reason.length > 0
+                ? reason
+                : "The operation was aborted",
+            ),
+      );
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+
+    waiters.add(waiter);
+
+    // Playwright: `if (timeout)` — falsy 0 means wait forever.
+    if (timeout) {
+      timer = setTimeout(() => {
+        waiter.reject(new Error(timeoutMessage));
+      }, timeout);
+    }
+
+    if (signal !== undefined) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+}
+
+function createRequestWaitPredicate(
+  urlOrPredicate: WaitForRequestMatcher,
+  baseURL: string | undefined,
+): (request: BackendRequest) => boolean | Promise<boolean> {
+  if (typeof urlOrPredicate === "function") {
+    return urlOrPredicate;
+  }
+  return (request) =>
+    matchRouteMatcher(urlOrPredicate, {
+      request: {
+        url: request.url(),
+        method: request.method(),
+        headers: { ...request.headers() },
+        bodyBase64: encodeBody(request.postDataBuffer()),
+      },
+      clientId: request.clientId,
+      baseURL,
+    });
+}
+
+function createResponseWaitPredicate(
+  urlOrPredicate: WaitForResponseMatcher,
+  baseURL: string | undefined,
+): (response: BackendResponse) => boolean | Promise<boolean> {
+  if (typeof urlOrPredicate === "function") {
+    return urlOrPredicate;
+  }
+  return (response) => {
+    let clientId = "";
+    try {
+      clientId = response.request().clientId;
+    } catch {
+      clientId = "";
+    }
+    return matchRouteMatcher(urlOrPredicate, {
+      request: {
+        url: response.url(),
+        method: "GET",
+        headers: {},
+        bodyBase64: null,
+      },
+      clientId,
+      baseURL,
+    });
   };
 }
 
@@ -1021,6 +1259,7 @@ function toOverrides(options: ContinueOptions): RequestOverrides | undefined {
 
 async function buildFulfillResponse(
   options: FulfillOptions,
+  requestUrl?: string,
 ): Promise<SerializedResponse> {
   // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts (_innerFulfill)
   if (options.json !== undefined && options.body !== undefined) {
@@ -1051,6 +1290,7 @@ async function buildFulfillResponse(
       statusText: options.response.statusText(),
       headers: normalizeHeaders(headers),
       bodyBase64: encodeBody(body),
+      url: options.response.url() || requestUrl,
     };
   }
 
@@ -1085,6 +1325,7 @@ async function buildFulfillResponse(
     statusText: "",
     headers: normalizeHeaders(headers),
     bodyBase64: encodeBody(body),
+    ...(requestUrl !== undefined ? { url: requestUrl } : {}),
   };
 }
 

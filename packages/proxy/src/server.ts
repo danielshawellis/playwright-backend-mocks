@@ -159,6 +159,9 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       case "fetch:result":
         handleFetchResult(message);
         return;
+      case "request:response":
+        handleRequestResponse(message);
+        return;
       case "agent:error":
         logger.warn(`agent error from ${bound.clientId}: ${message.message}`);
         return;
@@ -240,6 +243,14 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     logger.info(`hello ok role=${bound.role} clientId=${bound.clientId}`);
   }
 
+  function broadcastToPlaywright(message: ProxyToClientMessage): void {
+    for (const connection of connections.values()) {
+      if (connection.role === "playwright") {
+        send(connection, message);
+      }
+    }
+  }
+
   async function handleRequestStart(
     bound: BoundSocket,
     message: Extract<ClientToProxyMessage, { type: "request:start" }>,
@@ -263,6 +274,15 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       fetchWaiters: new Map(),
     };
     pending.set(message.requestId, pendingRequest);
+
+    // Future-only waitForRequest: observe every Node request start, including
+    // passthrough traffic that never becomes request:matched.
+    broadcastToPlaywright({
+      type: "request:observed",
+      requestId: message.requestId,
+      request: message.request,
+      clientId: message.clientId,
+    });
 
     const activeRoutes: RouteRegistration[] = [];
     const expectedTestIds = new Set<string>();
@@ -571,6 +591,18 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     waiter.resolve(message);
   }
 
+  function handleRequestResponse(
+    message: Extract<ClientToProxyMessage, { type: "request:response" }>,
+  ): void {
+    broadcastToPlaywright({
+      type: "request:response",
+      requestId: message.requestId,
+      ok: message.ok,
+      ...(message.response !== undefined ? { response: message.response } : {}),
+      ...(message.error !== undefined ? { error: message.error } : {}),
+    });
+  }
+
   function handleTestRegister(
     bound: BoundSocket,
     message: Extract<ClientToProxyMessage, { type: "test:register" }>,
@@ -661,6 +693,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           requestId: message.requestId,
           response: result.response,
         });
+        // Playwright worker already has the fulfill body; mirror for waitForResponse.
+        broadcastToPlaywright({
+          type: "request:response",
+          requestId: message.requestId,
+          ok: true,
+          response: result.response,
+        });
         finishHistory(
           item.historyId,
           item.startedAt,
@@ -710,6 +749,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           ...(result.maxRedirects !== undefined
             ? { maxRedirects: result.maxRedirects }
             : {}),
+          ...(result.maxRetries !== undefined ? { maxRetries: result.maxRetries } : {}),
         });
 
         const fetchResult = await new Promise<

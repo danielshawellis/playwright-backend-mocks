@@ -242,11 +242,13 @@ export function serializeBackendRequest(request: BackendRequest): SerializedRequ
 }
 
 export function serializeBackendResponse(response: BackendResponse): SerializedResponse {
+  const url = response.url();
   return {
     status: response.status(),
     statusText: response.statusText(),
     headers: { ...response.headers() },
     bodyBase64: encodeBody(response.bodyBuffer),
+    ...(url.length > 0 ? { url } : {}),
   };
 }
 
@@ -359,6 +361,7 @@ function parseSerializedResponse(value: unknown, label: string): SerializedRespo
     statusText: value.statusText,
     headers: value.headers,
     bodyBase64: value.bodyBase64,
+    ...(typeof value.url === "string" ? { url: value.url } : {}),
   };
 }
 

@@ -22,6 +22,11 @@ export type {
   FulfillOptions,
   ContinueOptions,
   FetchOptions,
+  WaitForRequestMatcher,
+  WaitForRequestPredicate,
+  WaitForResponseMatcher,
+  WaitForResponsePredicate,
+  WaitForNetworkOptions,
 } from "./types.js";
 export {
   toSerializedMatcher,

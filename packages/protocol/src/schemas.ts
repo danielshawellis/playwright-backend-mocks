@@ -25,6 +25,8 @@ export const serializedResponseSchema = z.object({
   statusText: z.string(),
   headers: z.record(z.string(), z.string()),
   bodyBase64: z.string().nullable(),
+  /** Final response URL after redirects (Playwright APIResponse.url). Additive. */
+  url: z.string().optional(),
 });
 
 export type SerializedResponse = z.infer<typeof serializedResponseSchema>;
@@ -156,6 +158,17 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
     response: serializedResponseSchema.optional(),
     error: serializedErrorSchema.optional(),
   }),
+  /**
+   * Node → proxy: upstream/settle response for waitForResponse correlation.
+   * Used after continue / passthrough (fulfill is mirrored by the proxy from handler:result).
+   */
+  z.object({
+    type: z.literal("request:response"),
+    requestId: z.string(),
+    ok: z.boolean(),
+    response: serializedResponseSchema.optional(),
+    error: serializedErrorSchema.optional(),
+  }),
   z.object({
     type: z.literal("agent:error"),
     message: z.string(),
@@ -206,6 +219,8 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
         overrides: requestOverridesSchema.optional(),
         /** Playwright route.fetch maxRedirects; omit → default 20; 0 → do not follow. */
         maxRedirects: z.number().int().optional(),
+        /** Playwright route.fetch maxRetries; omit → 0 (no retries). Retries ECONNRESET. */
+        maxRetries: z.number().int().optional(),
       }),
     ]),
   }),
@@ -274,6 +289,8 @@ export const proxyToClientMessageSchema = z.discriminatedUnion("type", [
     overrides: requestOverridesSchema.optional(),
     /** Playwright route.fetch maxRedirects; omit → default 20; 0 → do not follow. */
     maxRedirects: z.number().int().optional(),
+    /** Playwright route.fetch maxRetries; omit → 0 (no retries). Retries ECONNRESET. */
+    maxRetries: z.number().int().optional(),
   }),
   z.object({
     type: z.literal("decision:passthrough"),
@@ -305,6 +322,27 @@ export const proxyToClientMessageSchema = z.discriminatedUnion("type", [
     testId: z.string(),
     request: serializedRequestSchema,
     clientId: z.string(),
+  }),
+  /**
+   * Proxy → Playwright: every Node request start (routed or passthrough), for
+   * future-only waitForRequest observation. Independent of route ownership.
+   */
+  z.object({
+    type: z.literal("request:observed"),
+    requestId: z.string(),
+    request: serializedRequestSchema,
+    clientId: z.string(),
+  }),
+  /**
+   * Proxy → Playwright: settled HTTP response for waitForResponse.
+   * Fulfill: mirrored from handler:result. Continue/passthrough: from Node request:response.
+   */
+  z.object({
+    type: z.literal("request:response"),
+    requestId: z.string(),
+    ok: z.boolean(),
+    response: serializedResponseSchema.optional(),
+    error: serializedErrorSchema.optional(),
   }),
   z.object({
     type: z.literal("fetch:done"),

@@ -172,7 +172,9 @@ function handleProxyMessage(
       const item = pending.get(message.requestId);
       if (!item) return;
       pending.delete(message.requestId);
-      item.resolve();
+      // Always fetch upstream so we can echo the response for waitForResponse.
+      // Equivalent to letting MSW continue, but captures the body for Playwright.
+      void settleWithUpstream(connection, message.requestId, item);
       return;
     }
     case "decision:fulfill": {
@@ -187,23 +189,9 @@ function handleProxyMessage(
       const item = pending.get(message.requestId);
       if (!item) return;
       pending.delete(message.requestId);
-      // Overrides are applied by performing an upstream fetch, then responding.
-      // If no overrides, fall through to the real network.
-      if (message.overrides === undefined) {
-        item.resolve();
-        return;
-      }
-      void performUpstream(item.request, message.overrides)
-        .then((response) => {
-          item.controller.respondWith(response);
-          item.resolve();
-        })
-        .catch((error: unknown) => {
-          item.controller.errorWith(
-            error instanceof Error ? error : new Error(String(error)),
-          );
-          item.resolve();
-        });
+      // Always perform upstream (with optional overrides) and report the response
+      // so waitForResponse can observe continue / network settlements.
+      void settleWithUpstream(connection, message.requestId, item, message.overrides);
       return;
     }
     case "decision:abort": {
@@ -227,6 +215,7 @@ function handleProxyMessage(
       if (!item) return;
       void performUpstream(item.request, message.overrides, {
         maxRedirects: message.maxRedirects,
+        maxRetries: message.maxRetries,
       })
         .then(async (response) => {
           const serialized = await serializeResponse(response);
@@ -255,6 +244,49 @@ function handleProxyMessage(
 }
 
 /**
+ * Continue/passthrough settlement: fetch upstream, respond to the app, and
+ * report `request:response` for Playwright waitForResponse waiters.
+ */
+function settleWithUpstream(
+  connection: ProxyConnection,
+  requestId: string,
+  item: PendingController,
+  overrides?: RequestOverrides,
+): void {
+  void performUpstream(item.request, overrides)
+    .then(async (response) => {
+      const serialized = await serializeResponse(response);
+      item.controller.respondWith(responseFromSerialized(serialized));
+      item.resolve();
+      try {
+        connection.send({
+          type: "request:response",
+          requestId,
+          ok: true,
+          response: serialized,
+        });
+      } catch {
+        // Connection may have closed after the app already received the response.
+      }
+    })
+    .catch((error: unknown) => {
+      const err = error instanceof Error ? error : new Error(String(error));
+      item.controller.errorWith(err);
+      item.resolve();
+      try {
+        connection.send({
+          type: "request:response",
+          requestId,
+          ok: false,
+          error: serializeError(error),
+        });
+      } catch {
+        // ignore
+      }
+    });
+}
+
+/**
  * Perform an upstream request with continue/fetch overrides.
  * Redirect handling mirrors Playwright APIRequestContext / browser continue:
  * headers persist across hops; url/method/postData apply to the first hop only
@@ -264,97 +296,153 @@ function handleProxyMessage(
 async function performUpstream(
   original: Request,
   overrides?: RequestOverrides,
-  options: { maxRedirects?: number } = {},
+  options: { maxRedirects?: number; maxRetries?: number } = {},
 ): Promise<Response> {
   return upstreamBypass.run(true, async () => {
-    // Playwright: maxRedirects ?? 20; 0 → -1 meaning "do not follow".
-    let redirectsRemaining = options.maxRedirects ?? 20;
-    if (options.maxRedirects === 0) {
-      redirectsRemaining = -1;
-    }
-
-    let url = overrides?.url ?? original.url;
-    let method = overrides?.method ?? original.method;
-    const headers = new Headers(
-      overrides?.headers ?? normalizeHeaders(original.headers),
-    );
-
-    let body: Uint8Array | null = null;
-    if (overrides?.bodyBase64 !== undefined) {
-      const decoded = decodeBody(overrides.bodyBase64);
-      body = decoded === null ? null : new Uint8Array(decoded);
-      // Chromium Fetch.continueRequest recalculates Content-Length from postData.
-      syncContentLength(headers, body);
-    } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
-      body = new Uint8Array(await original.clone().arrayBuffer());
-    }
-
-    for (;;) {
-      const init: RequestInit = {
-        method,
-        headers,
-        redirect: "manual",
-      };
-
-      if (
-        body !== null &&
-        method.toUpperCase() !== "GET" &&
-        method.toUpperCase() !== "HEAD"
-      ) {
-        // Copy into a fresh ArrayBuffer-backed view for DOM BodyInit typings.
-        init.body = Uint8Array.from(body);
-      }
-
-      const response = await fetch(url, init);
-
-      if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
-        return response;
-      }
-      if (redirectsRemaining === 0) {
-        throw new Error("Max redirect count exceeded");
-      }
-
-      const locationHeader = response.headers.get("location");
-      if (locationHeader === null || locationHeader.length === 0) {
-        return response;
-      }
-
-      let nextUrl: URL;
+    // Playwright: maxRetries ?? 0; retry only ECONNRESET with exponential backoff.
+    // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts (_sendRequestWithRetries)
+    const maxRetries = options.maxRetries ?? 0;
+    let backoff = 250;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        nextUrl = new URL(locationHeader, url);
-      } catch {
-        throw new Error(
-          `uri requested responds with an invalid redirect URL: ${locationHeader}`,
-        );
+        return await performUpstreamOnce(original, overrides, options);
+      } catch (error) {
+        if (maxRetries === 0) {
+          throw error;
+        }
+        if (attempt === maxRetries) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed after ${attempt + 1} attempt(s): ${message}`);
+        }
+        if (!isConnectionResetError(error)) {
+          throw error;
+        }
+        await delay(backoff);
+        backoff *= 2;
       }
-
-      // Drain the redirect body so the socket can be reused.
-      await response.arrayBuffer().catch(() => undefined);
-
-      const status = response.status;
-      const upperMethod = method.toUpperCase();
-      if (
-        ((status === 301 || status === 302) && upperMethod === "POST") ||
-        (status === 303 && upperMethod !== "GET" && upperMethod !== "HEAD")
-      ) {
-        method = "GET";
-        body = null;
-        headers.delete("content-encoding");
-        headers.delete("content-language");
-        headers.delete("content-length");
-        headers.delete("content-location");
-        headers.delete("content-type");
-      }
-
-      if (nextUrl.origin !== new URL(url).origin) {
-        headers.delete("authorization");
-      }
-      headers.set("host", nextUrl.host);
-
-      url = nextUrl.href;
-      redirectsRemaining -= 1;
     }
+    throw new Error("Unreachable");
   });
+}
+
+async function performUpstreamOnce(
+  original: Request,
+  overrides: RequestOverrides | undefined,
+  options: { maxRedirects?: number },
+): Promise<Response> {
+  // Playwright: maxRedirects ?? 20; 0 → -1 meaning "do not follow".
+  let redirectsRemaining = options.maxRedirects ?? 20;
+  if (options.maxRedirects === 0) {
+    redirectsRemaining = -1;
+  }
+
+  let url = overrides?.url ?? original.url;
+  let method = overrides?.method ?? original.method;
+  const headers = new Headers(
+    overrides?.headers ?? normalizeHeaders(original.headers),
+  );
+
+  let body: Uint8Array | null = null;
+  if (overrides?.bodyBase64 !== undefined) {
+    const decoded = decodeBody(overrides.bodyBase64);
+    body = decoded === null ? null : new Uint8Array(decoded);
+    // Chromium Fetch.continueRequest recalculates Content-Length from postData.
+    syncContentLength(headers, body);
+  } else if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
+    body = new Uint8Array(await original.clone().arrayBuffer());
+  }
+
+  for (;;) {
+    const init: RequestInit = {
+      method,
+      headers,
+      redirect: "manual",
+    };
+
+    if (
+      body !== null &&
+      method.toUpperCase() !== "GET" &&
+      method.toUpperCase() !== "HEAD"
+    ) {
+      // Copy into a fresh ArrayBuffer-backed view for DOM BodyInit typings.
+      init.body = Uint8Array.from(body);
+    }
+
+    const response = await fetch(url, init);
+
+    if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
+      return response;
+    }
+    if (redirectsRemaining === 0) {
+      throw new Error("Max redirect count exceeded");
+    }
+
+    const locationHeader = response.headers.get("location");
+    if (locationHeader === null || locationHeader.length === 0) {
+      return response;
+    }
+
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(locationHeader, url);
+    } catch {
+      throw new Error(
+        `uri requested responds with an invalid redirect URL: ${locationHeader}`,
+      );
+    }
+
+    // Drain the redirect body so the socket can be reused.
+    await response.arrayBuffer().catch(() => undefined);
+
+    const status = response.status;
+    const upperMethod = method.toUpperCase();
+    if (
+      ((status === 301 || status === 302) && upperMethod === "POST") ||
+      (status === 303 && upperMethod !== "GET" && upperMethod !== "HEAD")
+    ) {
+      method = "GET";
+      body = null;
+      headers.delete("content-encoding");
+      headers.delete("content-language");
+      headers.delete("content-length");
+      headers.delete("content-location");
+      headers.delete("content-type");
+    }
+
+    if (nextUrl.origin !== new URL(url).origin) {
+      headers.delete("authorization");
+    }
+    headers.set("host", nextUrl.host);
+
+    url = nextUrl.href;
+    redirectsRemaining -= 1;
+  }
+}
+
+function isConnectionResetError(error: unknown): boolean {
+  // undici/Node may surface ECONNRESET on the error or its cause chain.
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== undefined && current !== null; depth++) {
+    if (typeof current === "object" && "code" in current) {
+      const code = (current as { code?: unknown }).code;
+      if (code === "ECONNRESET") {
+        return true;
+      }
+    }
+    if (typeof current === "object" && "cause" in current) {
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+    break;
+  }
+  if (error instanceof Error && /ECONNRESET/i.test(error.message)) {
+    return true;
+  }
+  return false;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function syncContentLength(headers: Headers, body: Uint8Array | null): void {
@@ -382,5 +470,6 @@ async function serializeResponse(response: Response): Promise<SerializedResponse
     statusText: response.statusText,
     headers: normalizeHeaders(response.headers),
     bodyBase64: encodeBody(buffer),
+    url: response.url,
   };
 }

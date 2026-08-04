@@ -101,9 +101,10 @@ export interface BackendRequest {
 }
 
 /**
- * Response returned from `route.fetch()` / accepted by `route.fulfill({ response })`.
- * Method-shaped like Playwright's APIResponse where practical; keeps buffered
- * body accessors used by cassette helpers.
+ * Response returned from `route.fetch()` / `waitForResponse` / accepted by
+ * `route.fulfill({ response })`.
+ * Combines Playwright Response + APIResponse accessors used by the oracle.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/network.ts
  * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/fetch.ts (APIResponse)
  */
 export interface BackendResponse {
@@ -117,9 +118,35 @@ export interface BackendResponse {
   body(): Promise<Buffer>;
   text(): Promise<string>;
   json(): Promise<unknown>;
+  /** Present for waitForResponse / network Response; fetch associates the route request. */
+  request(): BackendRequest;
   dispose(): Promise<void>;
   /** Buffered body for cassette / fulfill helpers (sync). */
   readonly bodyBuffer: Buffer;
+}
+
+/** Playwright `page.waitForRequest` urlOrPredicate. */
+export type WaitForRequestPredicate = (
+  request: BackendRequest,
+) => boolean | Promise<boolean>;
+
+export type WaitForRequestMatcher = string | RegExp | WaitForRequestPredicate;
+
+/** Playwright `page.waitForResponse` urlOrPredicate. */
+export type WaitForResponsePredicate = (
+  response: BackendResponse,
+) => boolean | Promise<boolean>;
+
+export type WaitForResponseMatcher = string | RegExp | WaitForResponsePredicate;
+
+/**
+ * Playwright TimeoutOptions for waitForRequest / waitForResponse.
+ * `timeout: 0` (falsy) disables the timeout — wait forever until match or abort.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/client/waiter.ts
+ */
+export interface WaitForNetworkOptions {
+  readonly timeout?: number;
+  readonly signal?: AbortSignal;
 }
 
 /** Options shared by continue / fallback / fetch (Playwright FallbackOverrides). */
@@ -220,9 +247,13 @@ export interface BackendMocks {
    */
   routeFromHAR(file: string, options?: RouteFromHAROptions): Promise<void>;
   waitForRequest(
-    url: RouteMatcherInput,
-    options?: { timeout?: number; method?: string },
+    urlOrPredicate: WaitForRequestMatcher,
+    options?: WaitForNetworkOptions,
   ): Promise<BackendRequest>;
+  waitForResponse(
+    urlOrPredicate: WaitForResponseMatcher,
+    options?: WaitForNetworkOptions,
+  ): Promise<BackendResponse>;
   requests(url?: RouteMatcherInput): Promise<readonly BackendRequest[]>;
   /**
    * Return and clear proxy errors recorded for this test.
