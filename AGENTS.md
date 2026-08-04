@@ -13,5 +13,5 @@ Key pointers from the philosophy:
 
 - **Oracle suite:** complete Playwright-against-Playwright DX contract (including edges); same specs + upstream; thin harness switches downstream browser ↔ Node.
 - **Parity:** complete HTTP + WebSocket interception parity with Playwright; narrow exceptions only.
-- **Code mapping:** keep implementation close to Playwright; comment exact GitHub blob URLs at the pinned SHA; mark intentional differences with `DIVERGENCE` / `DIVERGENCE END`.
+- **Code mapping:** keep implementation close to Playwright; comment exact GitHub blob URLs at the pinned SHA; mark intentional differences with `DIVERGENCE` / `DIVERGENCE END`. Align TS/ESLint with the Playwright pin so the toolchain does not fight parity-shaped code.
 - **Cross-test ownership:** if two **tests** claim the same Node request → fail loud (`ambiguous_route`); within one test, mirror Playwright handler rules. Architect suites so cross-test claims cannot happen.

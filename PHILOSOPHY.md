@@ -97,6 +97,8 @@ Because the DX is one-to-one, the implementation should stay as close as practic
 
 Keep the analogous Playwright core beside you while coding. Align naming, layering, and control flow deliberately. Do not invent a parallel design where a Playwright-shaped one exists. Do not vendor Playwright source — reimplement against the pinned revision.
 
+TypeScript and ESLint should support that closeness: base them on the pinned Playwright revision’s configs so lint/typecheck do not force sharp stylistic or typing divergence. Good quality, Playwright-compatible toolchain — not a rival house style. (Step 2 starts here: [`research/rewrite-specification.md`](./research/rewrite-specification.md) §6.)
+
 ### Reference and divergence comments
 
 Every module that mirrors Playwright must make the mapping obvious in source:
