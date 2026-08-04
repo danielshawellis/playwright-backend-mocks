@@ -2,6 +2,8 @@
 
 Research into Microsoft Playwright’s network request **and WebSocket** management implementation, and how closely `@playwright-backend-mocks` can mirror it given our proxy + control-plane WebSocket architecture.
 
+**High-level source of truth:** [`../PHILOSOPHY.md`](../PHILOSOPHY.md). This file is the deep dive / module map under that philosophy.
+
 **Playwright pins:**
 
 | Role                                                   | Value                                                                                                   |
@@ -367,7 +369,7 @@ Suggested developer checklist for every parity change:
 
 1. Find the Playwright file/function in the table above.
 2. Port behavior and subtle edge cases; name symbols similarly where practical (`_checkNotHandled`, `willExpire`, `_applyFallbackOverrides`).
-3. Note divergences in a short comment block (`// PARITY: ...` / `// DIVERGE: ambiguous multi-test`).
+3. Note intentional differences with searchable `DIVERGENCE` / `DIVERGENCE END` comments (see [`../PHILOSOPHY.md`](../PHILOSOPHY.md) §4); keep pinned Playwright GitHub blob URLs on mirrored modules.
 4. Add or adapt a test from the Playwright catalog (below), rewritten against `backendMocks`.
 5. Do **not** copy Playwright source files or license-entangled chunks; reimplement.
 

@@ -2,13 +2,11 @@
 
 ## Purpose
 
-This document provides design guidance for implementing the first version of **Playwright Backend Mocks**.
+This document is early product vision and design guidance for **Playwright Backend Mocks**.
 
-It is not intended to be treated as an inflexible implementation contract. Its purpose is to communicate the project’s vision, priorities, architectural direction, and intended developer experience.
+**High-level source of truth:** [`PHILOSOPHY.md`](./PHILOSOPHY.md). On conflict, prefer that document (and the living oracle suite in [`tests/parity/`](./tests/parity/)).
 
-The implementer should use engineering judgment throughout the project. If research or implementation work reveals a cleaner architecture, a better API, or a more maintainable approach, prefer that improvement over following a suggested implementation detail mechanically.
-
-The high-level philosophy and product goals should remain consistent, but implementation details in this document should generally be treated as informed suggestions.
+This file is not an inflexible implementation contract. Use engineering judgment. If research or implementation reveals a cleaner approach, prefer that over following a suggested detail mechanically — without abandoning the philosophy’s intention, parity, and testing rules.
 
 ## High-Level Goal
 
@@ -38,22 +36,16 @@ This should allow the library to work more broadly than an injected Fetch-only s
 
 ## Guiding Philosophy
 
-When tradeoffs exist, prioritize:
+Defer to [`PHILOSOPHY.md`](./PHILOSOPHY.md). In short:
 
-1. Excellent developer experience.
-2. Simple and understandable implementation.
-3. Clean, maintainable code.
-4. Compatibility with common Playwright patterns.
-5. Correct behavior for common Node.js HTTP clients.
-6. Additional feature completeness.
-
-Version 1 should solve the ordinary 95% use case extremely well.
-
-Supporting more of Playwright, Fetch, or `@mswjs/interceptors` is desirable when doing so is straightforward. Do not substantially complicate the codebase to support uncommon edge cases.
+1. Complete Playwright interception parity for the in-scope HTTP + WebSocket surface (including edges), with only a narrow deliberate exception set.
+2. Playwright-shaped DX via a proxy + Node agent + Playwright fixture — no test litter in app code.
+3. Oracle-suite TDD first; implementation tracks Playwright code as closely as practical (`DIVERGENCE` comments where it cannot).
+4. Fail loudly on cross-test route ownership ambiguity; architect tests so that cannot happen.
 
 Unsupported behavior should fail immediately with clear, actionable errors rather than behaving incorrectly or providing partial compatibility.
 
-Avoid premature optimization and speculative abstractions. Build the smallest clean architecture that delivers the intended experience.
+Avoid premature optimization and speculative abstractions — but do not use “simplicity” as a reason to skip parity for in-scope APIs.
 
 ## Design-First Development
 
@@ -222,6 +214,7 @@ Version 1 supports:
 * Node.js application processes
 * Supported outbound HTTP and HTTPS traffic intercepted through `@mswjs/interceptors`
 * Common clients such as Fetch, Axios, and Node HTTP clients where the interceptor library supports them
+* Application WebSockets created via `globalThis.WebSocket` (Playwright-shaped `routeWebSocket` / `WebSocketRoute` DX)
 * Playwright-controlled route registration
 * Mocked responses
 * Passthrough requests
@@ -235,17 +228,18 @@ Version 1 supports:
 
 Version 1 does not support:
 
-* WebSockets as an application transport
+* Application WebSockets that bypass `globalThis.WebSocket` (e.g. npm `ws`, direct Undici imports)
 * gRPC
 * Arbitrary unsupported socket or native transports
 * Traffic that bypasses the selected interceptor implementation
 * Streaming request bodies
 * Streaming response bodies
 * Perfect emulation of every operating-system-level network failure
+* Browser-only Playwright concerns with no Node analogue (cookie jar, CORS auto-headers, navigation quirks, etc.)
 
-WebSockets may be used internally between Playwright workers, Node agents, and the proxy.
+Control-plane WebSockets are used internally between Playwright workers, Node agents, and the proxy.
 
-The project should accurately document which clients and transports are supported rather than claiming to intercept all process traffic.
+The project should accurately document which clients and transports are supported rather than claiming to intercept all process traffic. See [`PHILOSOPHY.md`](./PHILOSOPHY.md) for the parity exception set.
 
 ## Runtime Support
 
@@ -308,18 +302,17 @@ The proxy should have one stable configured URL for the entire Playwright run.
 
 All participating Node.js processes and Playwright workers connect to the same proxy.
 
-The proxy is the central source of truth for:
+The proxy is the central coordinator for:
 
-* Active route registrations
-* Request matching
-* Route ownership
+* Active route registration metadata (for diagnostics / history)
+* Claim broadcast and route ownership across tests
 * Request lifecycle state
-* Multiple-match detection
+* Cross-test ambiguity detection (`ambiguous_route`)
 * Passthrough coordination
 * Request history
 * Diagnostics
 
-The Node and Playwright packages should remain comparatively thin.
+**Authoritative matcher evaluation runs in Playwright workers** (claim broadcast), not inside the proxy. The Node and Playwright packages should remain comparatively thin.
 
 ## Component Responsibilities
 
@@ -617,24 +610,23 @@ The expected lifecycle is:
 
 ```text
 1. A Playwright test registers a route.
-2. The Playwright fixture sends the serializable matcher to the proxy.
-3. The proxy associates the matcher with the test and WebSocket connection.
-4. The Node process makes a supported outbound HTTP request.
-5. @mswjs/interceptors captures and normalizes the request.
-6. The Node agent sends the normalized request to the proxy.
-7. The proxy evaluates all active matchers.
-8. If exactly one matcher matches, the proxy sends the request to its worker.
-9. The worker executes the route handler.
-10. The worker returns fulfill, continue, fetch, abort, or another supported action.
-11. The proxy returns the decision to the Node agent.
-12. The Node agent applies the result through the interceptor controller.
-13. The originating HTTP client observes the mocked response, passthrough, or failure.
-14. The fixture removes its routes during test teardown.
+2. The Playwright fixture keeps handlers locally and sends serializable matcher metadata to the proxy.
+3. The proxy associates that metadata with the test and WebSocket connection.
+4. The Node process makes a supported outbound HTTP request (or opens a global WebSocket).
+5. @mswjs/interceptors captures and normalizes the traffic.
+6. The Node agent sends the normalized request/socket event to the proxy.
+7. The proxy broadcasts a claim to every Playwright test with active routes.
+8. Workers evaluate matchers; if exactly one testId claims, that worker runs the handler.
+9. The worker returns fulfill, continue, fetch, abort, fallback, or another supported action.
+10. The proxy returns the decision to the Node agent.
+11. The Node agent applies the result through the interceptor controller.
+12. The originating client observes the mocked response, passthrough, or failure.
+13. The fixture removes its routes during test teardown.
 ```
 
-If no route matches, the proxy instructs the Node agent to allow passthrough.
+If no test claims, the proxy instructs the Node agent to allow passthrough.
 
-If multiple routes match, the proxy treats that as an ambiguity error.
+If **two different tests** claim, the proxy fails loudly (`ambiguous_route`). Within one test, mirror Playwright handler rules (HTTP LIFO + `fallback`; WebSocket newest-match).
 
 ## Proxy Behavior
 
@@ -644,9 +636,9 @@ It should:
 
 * Receive normalized requests from Node agents
 * Preserve the original destination and relevant request information
-* Maintain route registrations
+* Maintain route registration metadata
 * Associate registrations with Playwright connections and tests
-* Match incoming requests
+* Broadcast claims and enforce cross-test ownership
 * Dispatch matching requests to Playwright workers
 * Instruct Node agents to pass through unmatched requests
 * Coordinate continued or upstream requests
@@ -787,11 +779,11 @@ The Node package should never decide which Playwright registration owns a reques
 
 For every incoming request:
 
-* Zero matches: pass through by default.
-* One match: dispatch to that route’s Playwright connection.
-* Multiple matches: fail loudly.
+* Zero claiming tests: pass through by default.
+* One claiming `testId`: dispatch to that test’s Playwright connection; within the test, mirror Playwright handler orchestration.
+* Multiple claiming `testId`s: fail loudly (`ambiguous_route`).
 
-Multiple-match diagnostics should identify all matching registrations, including available information such as:
+Cross-test ambiguity diagnostics should identify all claiming registrations, including available information such as:
 
 * Matcher
 * Test name
@@ -804,13 +796,13 @@ Every affected Playwright test should fail.
 
 The corresponding Node request should fail with an actionable error indicating that backend mock routing was ambiguous.
 
-Tests that run concurrently are responsible for registering mutually exclusive routes. Serial execution is an available fallback when this is impractical.
+Concurrent tests must be architected so two tests cannot claim the same traffic — mutually exclusive matchers, `clientId` / process isolation, or serialization. Treat `ambiguous_route` as a setup bug, not ambient flakiness.
 
 ## Public Routing API
 
-The exact public API should be designed after researching Playwright’s current surface.
+The exact public API should track Playwright’s interception surface for the in-scope contract (see [`PHILOSOPHY.md`](./PHILOSOPHY.md) and [`research/rewrite-specification.md`](./research/rewrite-specification.md) §4).
 
-The goal is to support the common Playwright routing experience without copying every advanced capability.
+The goal is complete parity for that surface, not a partial “common cases only” subset.
 
 Likely concepts include:
 
@@ -1019,9 +1011,11 @@ Include a protocol version in cross-process handshakes so incompatible versions 
 
 ## Testing Philosophy
 
-Favor broad, real cross-process testing.
+Defer to [`PHILOSOPHY.md`](./PHILOSOPHY.md) §§1–2.
 
-The most important tests should exercise the package exactly as users will:
+**Primary suite:** the dual-mode oracle in [`tests/parity/`](./tests/parity/). Write a complete Playwright-against-Playwright DX contract first (browser downstream), then reuse the same specs with a Node downstream behind a thin harness. Shared upstream stays in Node. Completeness includes edges and lesser-used options for every in-scope API.
+
+**Library-only suite (sibling):** behaviors Playwright does not have — `clientId`, cross-test `ambiguous_route`, proxy auth/disconnects, dashboard — plus broad cross-process exercises of the real stack:
 
 ```text
 Playwright test
@@ -1031,38 +1025,8 @@ Playwright test
     → WebSocket
     → Node interception agent
     → @mswjs/interceptors
-    → application HTTP client
+    → application HTTP / globalThis.WebSocket client
 ```
-
-The repository should include small fixture processes such as:
-
-* A web application using Fetch
-* A web application or worker using Axios
-* A process using `node:http` or another supported client
-* A background worker
-* A fake upstream HTTP server
-
-Important cross-process scenarios should include:
-
-* Basic mocked responses
-* Dynamic route handlers
-* Request inspection
-* Spying and request counts
-* Passthrough
-* Response modification
-* Failure simulation
-* Abort behavior
-* Multiple Node.js processes
-* Multiple HTTP clients
-* Multiple Playwright workers
-* Multiple-match failures
-* Route cleanup
-* Unexpected Playwright disconnects
-* Unexpected Node-agent disconnects
-* Unsupported transport behavior
-* Protocol validation
-* Protocol-version mismatches
-* Dashboard and history behavior
 
 Everything should remain local. No test should depend on the public internet.
 

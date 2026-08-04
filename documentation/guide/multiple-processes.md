@@ -68,6 +68,6 @@ Routes from different tests can collide if they match the same outbound request.
 
 1. Prefer mutually exclusive matchers (`clientId`, method, unique URL prefixes).
 2. Run sensitive suites with fewer workers / serial mode when isolation is hard.
-3. Treat ambiguous-route failures as a signal to tighten matchers — don't ignore them.
+3. Treat `ambiguous_route` (two tests claiming the same traffic) as a setup bug — tighten matchers / isolation; don't ignore it.
 
 Each Playwright **worker** opens one connection to the proxy; each **test** registers its own routes on that connection.

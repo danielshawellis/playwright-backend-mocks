@@ -1,5 +1,7 @@
 # Why this library
 
+> Development source of truth: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md). This VitePress site is user-facing documentation and **may lag** the rewrite.
+
 Good end-to-end tests should cover your **entire application** — the UI _and_ the server — and mock **only at the boundaries**.
 
 That sounds obvious. In Playwright suites it is surprisingly rare.
@@ -63,6 +65,6 @@ The payment URL is called by your **Node** process. The handler still looks like
 
 - Not a replacement for `page.route()` — use both when the browser _and_ the server talk to the outside world.
 - Not a general HTTP proxy for browsers or non-Node clients.
-- Not an interceptor for gRPC, raw TCP, or non-global WebSocket clients (npm `ws`, etc.). Application `globalThis.WebSocket` mocking is on the rewrite roadmap — see [Limitations](/guide/limitations).
+- Not an interceptor for gRPC, raw TCP, or non-global WebSocket clients (npm `ws`, etc.). Application WebSockets are supported via **`globalThis.WebSocket` only** — see [Limitations](/guide/limitations).
 
 See [Limitations](/guide/limitations) for the v1 boundary, or [get started](/guide/getting-started) and wire it into a suite.

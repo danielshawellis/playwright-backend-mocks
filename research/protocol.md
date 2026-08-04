@@ -442,12 +442,12 @@ Streaming bodies are rejected before serialization.
 
 ## Matching rules
 
-For each `request:start`:
+For each `request:start` (aligned with claim broadcast; see [`../PHILOSOPHY.md`](../PHILOSOPHY.md)):
 
-1. Evaluate all active route registrations.
-2. Zero matches → `decision:passthrough`.
-3. One match → `request:matched` to owning Playwright connection; await `handler:result`.
-4. Multiple matches → `decision:error` (`ambiguous_route`) to Node; `proxy:error` to every matching Playwright test.
+1. Broadcast `request:claim` to every Playwright test with active routes; workers evaluate matchers.
+2. Zero claiming `testId`s → `decision:passthrough`.
+3. One claiming `testId` → `request:matched` to that connection; await `handler:result` (within the test, mirror Playwright HTTP LIFO + `fallback`).
+4. Multiple claiming `testId`s → `decision:error` (`ambiguous_route`) to Node; `proxy:error` to every claiming Playwright test.
 
 URL glob matching follows a Playwright-like algorithm (`*` / `**`). Method and clientId filters are case-insensitive for methods.
 

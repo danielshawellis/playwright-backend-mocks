@@ -1,8 +1,17 @@
 # Development Philosophy
 
-How this repository is developed. This document is the developer’s north star. Product detail: [`SPECIFICATION.md`](./SPECIFICATION.md). Homepage framing: [`documentation/index.md`](./documentation/index.md), [`documentation/guide/why.md`](./documentation/guide/why.md).
+**This is the high-level source of truth** for how this repository is developed and how the system should work.
 
-Further development assertions follow. Start here.
+Other docs are supporting detail and may lag:
+
+| Kind | Role |
+| ---- | ---- |
+| [`SPECIFICATION.md`](./SPECIFICATION.md) | Early product vision; defer here on conflict |
+| [`research/`](./research/) | Plans and deep dives (rewrite, parity, protocol) |
+| [`documentation/`](./documentation/) | User-facing VitePress site — **may be outdated** during the rewrite |
+| [`tests/parity/`](./tests/parity/) | Living oracle suite (executable contract) |
+
+Further assertions will be added over time. Start here.
 
 ---
 
@@ -32,7 +41,7 @@ Playwright test  ──WebSocket──►  Proxy coordinator  ◄──WebSocket
 
 Three processes, one coordinator. The app stays production-shaped; the DX stays Playwright-shaped.
 
-Detail: [`documentation/guide/concepts.md`](./documentation/guide/concepts.md).
+Supporting detail (may lag): [`research/rewrite-specification.md`](./research/rewrite-specification.md), [`research/protocol.md`](./research/protocol.md).
 
 ---
 
@@ -48,7 +57,7 @@ That suite is the developer-experience contract. It pins Playwright’s behavior
 
 Scope the suite to the APIs we will develop analogously — not all of Playwright, but all of the contract we claim.
 
-The living suite is [`tests/parity/`](./tests/parity/). Details: [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md).
+The living suite is [`tests/parity/`](./tests/parity/). Supporting write-up: [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md).
 
 ---
 
@@ -56,10 +65,10 @@ The living suite is [`tests/parity/`](./tests/parity/). Details: [`research/play
 
 Parity tests drive a **downstream** process that talks to an **upstream** process (always Node).
 
-| Mode    | Downstream                         | Routing API under test      |
-| ------- | ---------------------------------- | --------------------------- |
-| Oracle  | Browser                            | Playwright (`page.route`, …) |
-| Library | Same downstream logic, hosted in Node | `backendMocks`              |
+| Mode    | Downstream                            | Routing API under test       |
+| ------- | ------------------------------------- | ---------------------------- |
+| Oracle  | Browser                               | Playwright (`page.route`, …) |
+| Library | Same downstream logic, hosted in Node | `backendMocks`               |
 
 Share the downstream code. Put a **thin harness** in front so tests do not care which host is running. Upstream stays fixed. Specs stay fixed. Only the downstream host and routing handle switch.
 
@@ -75,10 +84,11 @@ Exceptions are a **narrow, deliberate set**, not a soft “mostly like Playwrigh
 
 - **Browser-only concerns** that have no Node analogue (e.g. the cookie jar, CORS auto-headers, navigation quirks).
 - **Small library additions** required by Node / multi-process reality (e.g. `clientId` on matchers).
+- **Interception surface limits** that are product reality, not DX drift (e.g. app WebSockets via `globalThis.WebSocket` only).
 
 Outside that set: complete parity. Do not invent divergent behavior for convenience.
 
-Boundary detail: [`research/rewrite-specification.md`](./research/rewrite-specification.md) §4.
+Supporting boundary detail: [`research/rewrite-specification.md`](./research/rewrite-specification.md) §4.
 
 ---
 
@@ -117,4 +127,6 @@ Playwright’s interception is scoped to a page (and thus to one test at a time)
 
 If an outbound Node request (or WebSocket) matches route registrations from **two different tests**, fail loudly — do not guess an owner. That ambiguity is a test-architecture bug, not a silent race to paper over.
 
-The intended developer experience is an architecture where this cannot (or virtually never) happen: isolate traffic per test, use matchers / `clientId` / process boundaries deliberately, and treat `ambiguous_route` as a signal to fix the setup rather than as ambient flakiness.
+Within a single test, mirror Playwright: HTTP LIFO + `fallback`; WebSocket newest-match only.
+
+The intended developer experience is an architecture where cross-test claims cannot (or virtually never) happen: isolate traffic per test, use matchers / `clientId` / process boundaries deliberately, and treat `ambiguous_route` as a signal to fix the setup rather than as ambient flakiness.

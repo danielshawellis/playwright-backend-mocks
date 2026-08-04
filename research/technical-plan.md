@@ -1,5 +1,7 @@
 # Technical Plan
 
+> **Status:** early planning snapshot. Prefer [`../PHILOSOPHY.md`](../PHILOSOPHY.md) and [`rewrite-specification.md`](./rewrite-specification.md) for current direction. Tree layout and “proxy owns matching” notes below are outdated relative to the claim-broadcast architecture and oracle suite.
+
 ## Repository structure
 
 ```text

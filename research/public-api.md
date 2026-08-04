@@ -1,5 +1,7 @@
 # Public API Plan
 
+> Early API sketch. Prefer [`../PHILOSOPHY.md`](../PHILOSOPHY.md) and [`rewrite-specification.md`](./rewrite-specification.md) §4 for the in-scope surface (including `fallback`, `unrouteAll`, `times`, `waitForResponse`, `routeFromHAR`, `routeWebSocket`). This file may lag.
+
 ## Packages
 
 | Package                                | Purpose                              | Publish                                          |

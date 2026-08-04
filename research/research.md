@@ -2,6 +2,8 @@
 
 Findings that informed the v1 architecture. This is a decision log, not a comprehensive survey.
 
+**High-level source of truth:** [`../PHILOSOPHY.md`](../PHILOSOPHY.md). Prefer that document (and the rewrite/parity plans) when this log disagrees.
+
 For a deeper dive into Playwright’s HTTP **and WebSocket** routing implementation, how closely this library can mirror it across the control-plane WebSocket boundary, MSW bridge gaps for `routeWebSocket`, and a catalog of Playwright’s related tests, see [`playwright-network-parity.md`](./playwright-network-parity.md) (test dump: [`playwright-network-tests.json`](./playwright-network-tests.json); living oracle: [`tests/parity/`](../tests/parity/)).
 
 ## Playwright request routing
@@ -43,7 +45,7 @@ Rationale:
 
 - Matches the spec’s central coordinator model
 - Supports multiple Node processes and multiple Playwright workers
-- Proxy owns route registry, matching, history, and diagnostics
+- Proxy owns coordination, claim broadcast, ownership, history, and diagnostics; authoritative matcher evaluation runs in Playwright workers
 - Node/Playwright packages stay thin
 
 Connection granularity: one WebSocket per Playwright worker, with test-scoped route registrations multiplexed over that connection. Node agents use one WebSocket per process.

@@ -4,11 +4,13 @@ Date: 2026-08-03 (updated after source fine-tooth comb)
 Pin: `@playwright/test@1.62.1` / research commit `15b1aec`  
 Suite at latest green run: **322** browser-mode tests
 
-**Authoritative source-branch report:** [`source-coverage-pass.md`](./source-coverage-pass.md).
+> Historical coverage-pass notes. Prefer [`../../PHILOSOPHY.md`](../../PHILOSOPHY.md), [`source-coverage-pass.md`](./source-coverage-pass.md), and [`checklist.md`](./checklist.md) for current status.
 
-**Status:** WebSockets stay on the rewrite roadmap with **loud docs caveats** (HTTP ≈ all clients; WS = `globalThis.WebSocket` only — see rewrite-spec §4). Oracle `route-websocket.spec.ts` pins Playwright `WebSocketRoute` + injected `webSocketMock.ts` (64 WS cases). Remaining WS skips are only browser document-lifecycle (`_executionContextGone` / `page.close`).
+**Latest source-branch report:** [`source-coverage-pass.md`](./source-coverage-pass.md).
 
-This document is the methodical docs → implementation → suite comparison for Step 1. Prefer `source-coverage-pass.md` for the latest branch-by-branch gap list after the Playwright source audit.
+**Status:** WebSockets are in-scope for the oracle (and rewrite DX) with **loud docs caveats** (HTTP ≈ all clients; WS = `globalThis.WebSocket` only — see rewrite-spec §4 / PHILOSOPHY). Oracle `route-websocket.spec.ts` pins Playwright `WebSocketRoute` + injected `webSocketMock.ts`. Remaining WS skips are only browser document-lifecycle (`_executionContextGone` / `page.close`).
+
+This document is an earlier docs → implementation → suite comparison for Step 1.
 ---
 
 ## Method
@@ -27,7 +29,7 @@ This document is the methodical docs → implementation → suite comparison for
 | Topic                                                                                | Rewrite-spec today                   | This pass                                                                                                                            |
 | ------------------------------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Ajax/HTTP route settle + matchers + times + wait + HAR→JSON control flow             | **In scope**                         | Keep / deepen                                                                                                                        |
-| `routeWebSocket` / `WebSocketRoute`                                                  | Listed **out of scope**              | **User now wants full oracle coverage** — treat as new in-scope for the suite; update rewrite-spec when implementing                 |
+| `routeWebSocket` / `WebSocketRoute`                                                  | **In scope** (global WebSocket only) | Oracle coverage landed; library Step 2 implements behind the same harness                                                             |
 | Cookie jar, CORS auto-headers, SW, navigation, favicon, HAR zip, resource timing/TLS | Out of scope                         | Remain skips                                                                                                                         |
 | Page vs context route precedence                                                     | Product has one `backendMocks` scope | Still valuable as **oracle-only** pins if we ever expose dual scopes; not required for library parity if divergence stays documented |
 

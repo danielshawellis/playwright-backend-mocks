@@ -2,6 +2,8 @@
 
 This document is the implementation plan for rewriting `@playwright-backend-mocks` against Playwright’s request-routing contract.
 
+**High-level source of truth:** [`../PHILOSOPHY.md`](../PHILOSOPHY.md). This file is the Step 1 → Step 2 plan under that philosophy.
+
 Supporting research (not the plan itself):
 
 - [`playwright-parity-tdd.md`](./playwright-parity-tdd.md) — oracle-suite TDD strategy
@@ -58,7 +60,7 @@ Map layers to Playwright’s own split (see parity research §1–2 / §1b):
 | `packages/node`       | RouteDelegate + injected `webSocketMock` role (MSW bridge)                                  |
 | `packages/protocol`   | Channel settle messages + WS lifecycle messages                                             |
 
-Do **not** vendor Playwright source. Reimplement. Keep analogous paths documented next to modules for deliberate comparison. Pin the Playwright revision used as reference (below).
+Do **not** vendor Playwright source. Reimplement. Comment exact Playwright GitHub blob URLs at the pinned SHA on mirrored modules, and mark intentional differences with searchable `DIVERGENCE` / `DIVERGENCE END` comments (see [`PHILOSOPHY.md`](../PHILOSOPHY.md) §4). Pin the Playwright revision used as reference (below).
 
 ---
 
@@ -232,7 +234,7 @@ Upstream fake, assertion intent, scenario names/structure for dual-mode cases, p
 
 - Backend mode passes the oracle/parity suite for the in-scope surface (including `routeFromHAR`).
 - Library-only suite covers multi-process / ambiguity / infra concerns.
-- Module map and `PARITY` / `DIVERGE` notes exist for contributors.
+- Module map, pinned Playwright blob URL comments, and `DIVERGENCE` / `DIVERGENCE END` notes exist for contributors.
 - `historical/` can be deleted when no longer useful.
 
 ---
