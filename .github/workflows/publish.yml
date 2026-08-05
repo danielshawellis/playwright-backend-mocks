@@ -13,11 +13,14 @@ concurrency:
 
 jobs:
   ci:
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
 
   publish:
     name: Publish to npm
     needs: ci
+    # Restrict workflow_dispatch (and any non-main ref) so feature branches cannot publish.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -29,15 +32,13 @@ jobs:
       - uses: pnpm/action-setup@v4
         # Version comes from package.json "packageManager"
 
-      # Node 22.14+ and npm 11.5.1+ required for trusted publishing / OIDC.
+      # Node 24 ships npm 11.5.1+ required for trusted publishing / OIDC.
+      # Do not set registry-url: setup-node would write an empty _authToken line
+      # that prevents npm from using OIDC (ENEEDAUTH / misleading E404).
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.14.0
-          registry-url: https://registry.npmjs.org
+          node-version: 24
           cache: pnpm
-
-      - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -47,4 +48,4 @@ jobs:
 
       - name: Publish unpublished package versions
         run: pnpm publish:packages
-        # Do not set NODE_AUTH_TOKEN — npm falls back to OIDC trusted publishing.
+        # Do not set NODE_AUTH_TOKEN — npm uses OIDC trusted publishing.
