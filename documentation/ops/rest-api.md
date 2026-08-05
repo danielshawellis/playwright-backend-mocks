@@ -1,17 +1,23 @@
 # REST API
 
-The proxy exposes a small read-only HTTP API for diagnostics. The default base URL is `http://127.0.0.1:4310`.
+The proxy exposes a read-only HTTP API for observability. The default base URL is `http://127.0.0.1:4310`.
 
-All endpoints listed here are safe to poll. CORS is enabled for API paths.
+All endpoints listed here are safe to poll. CORS is enabled for API paths. `--token` authenticates the coordinator WebSocket only — bind the proxy to localhost (default) so history bodies stay local.
+
+Overview and dashboard setup: [Observability](/ops/observability).
 
 ## Endpoints
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness and version information. |
-| `GET` | `/api/history` | In-memory request history, newest first. |
+| `GET` | `/health` | Liveness, version, and capture mode. |
+| `GET` | `/api/history` | In-memory HTTP history (filterable). |
+| `GET` | `/api/history/:id` | Single HTTP history entry. |
+| `GET` | `/api/history/:id/har` | Download that request as a single-entry HAR 1.2 (for `routeFromHAR`). |
+| `GET` | `/api/ws` | In-memory WebSocket connections (filterable). |
+| `GET` | `/api/ws/:id` | Single WebSocket connection + event timeline. |
 | `GET` | `/api/connections` | Connected Node agents and Playwright workers. |
-| `OPTIONS` | `/health`, `/api/history`, `/api/connections` | CORS preflight. |
+| `OPTIONS` | API paths | CORS preflight. |
 
 Unmatched paths return:
 
@@ -20,6 +26,21 @@ Unmatched paths return:
 ```
 
 The coordinator WebSocket is mounted at `/ws`, but it is not a REST API.
+
+## Query parameters
+
+Shared by `/api/history` and `/api/ws`:
+
+| Param | Description |
+| --- | --- |
+| `q` | Case-insensitive string search. URL matches rank highest, then method/status/title/path/testId, then headers, then bodies/events. |
+| `from` | Earliest timestamp (epoch ms). |
+| `to` | Latest timestamp (epoch ms). |
+| `testId` | Exact test id. |
+| `clientId` | Exact Node `clientId`. |
+| `action` | HTTP: history `action`. WS list: connection `outcome`. |
+| `limit` | Max results. |
+| `offset` | Skip first N results. |
 
 ## `GET /health`
 
@@ -31,7 +52,8 @@ curl -s http://127.0.0.1:4310/health
 {
   "ok": true,
   "version": "0.1.0",
-  "protocolVersion": 1
+  "protocolVersion": 2,
+  "historyCapture": "all"
 }
 ```
 
@@ -64,7 +86,7 @@ curl -s http://127.0.0.1:4310/api/connections | jq .
 ## `GET /api/history`
 
 ```bash
-curl -s http://127.0.0.1:4310/api/history | jq '.entries[:5]'
+curl -s "http://127.0.0.1:4310/api/history?q=charges" | jq '.entries[:5]'
 ```
 
 ```json
@@ -96,15 +118,22 @@ curl -s http://127.0.0.1:4310/api/history | jq '.entries[:5]'
         "routeId": "...",
         "testId": "..."
       },
+      "action": "fulfill",
+      "title": "declined card shows an error",
+      "path": "/tests/pay.spec.ts",
       "durationMs": 12,
       "testId": "...",
-      "routeId": "..."
+      "routeId": "...",
+      "events": [
+        { "id": "...", "timestamp": 1710000000000, "kind": "observed" },
+        { "id": "...", "timestamp": 1710000000012, "kind": "fulfill" }
+      ]
     }
   ]
 }
 ```
 
-## History entry shape
+### History entry fields
 
 | Field | Description |
 | --- | --- |
@@ -112,26 +141,51 @@ curl -s http://127.0.0.1:4310/api/history | jq '.entries[:5]'
 | `timestamp` | Milliseconds since epoch when the request was observed. |
 | `clientId` | Node agent that made the request. |
 | `request` | Serialized URL, method, headers, and base64 body. |
-| `outcome` | Current or final outcome. |
+| `outcome` | Current or final outcome (`pending`, `mocked`, `passthrough`, `continued`, `aborted`, `error`). For `error`, may include `code` (e.g. `ambiguous_route`) and `matches` (claiming tests). |
+| `action` | Normalized terminal action: `fulfill`, `continue`, `abort`, `passthrough`, `error`, `pending`. |
+| `title` | Playwright test title when a test owned the request. |
+| `path` | Playwright test file path when a test owned the request. |
 | `durationMs` | Present after the outcome settles. |
-| `testId` | Owning test, when any. |
-| `routeId` | Owning route, when any. |
+| `testId` / `routeId` | Owning test/route when any. |
+| `overrides` | Request overrides when `continue` modified the request. |
+| `events` | Short timeline for the request. |
 
-## History outcomes
+History is stored in memory and capped by `--history-limit`. Capture mode is `--history-capture` (`all` \| `handled` \| `none`). See [Observability](/ops/observability#capture-modes).
 
-| `outcome.kind` | Meaning |
-| --- | --- |
-| `pending` | The request is currently being coordinated or handled. |
-| `mocked` | A handler fulfilled a response. |
-| `passthrough` | No route claimed the request. |
-| `continued` | A handler called `continue()`. |
-| `aborted` | A handler called `abort()`. |
-| `error` | Ambiguity, disconnect, claim timeout, or another coordination failure. |
+## `GET /api/ws`
 
-History is stored in memory and capped by `--history-limit`.
+```bash
+curl -s http://127.0.0.1:4310/api/ws | jq '.connections[:5]'
+```
+
+Each connection includes `url`, `outcome` (`pending` \| `matched` \| `passthrough` \| `error`), optional `title` / `path` / `testId`, and an `events` timeline (frames, handler actions, close).
+
+There is **no** WebSocket HAR/export endpoint.
+
+## `GET /api/history/:id/har`
+
+```bash
+curl -OJ "http://127.0.0.1:4310/api/history/<requestId>/har"
+```
+
+Returns a **single-entry** HAR 1.2 file for that HTTP request — suitable for Playwright / this library’s `routeFromHAR`:
+
+```ts
+await backendMocks.routeFromHAR("./fixtures/charge.har", {
+  url: "**/charges",
+  update: false,
+});
+```
+
+Unknown ids return `{ "error": "not_found" }` with status 404. There is no bulk HAR export and no WebSocket HAR export.
+
+## Using this with coding agents
+
+There is no MCP server. Paste this page (or [Observability](/ops/observability)) into a local agent’s context along with the proxy URL so it can inspect traffic while writing or running tests.
 
 ## Related
 
+- [Observability](/ops/observability)
+- [Dashboard](/ops/dashboard)
 - [Proxy](/ops/proxy)
 - [Troubleshooting](/guide/troubleshooting)
-- [Spying and waiting](/guide/spying-and-waiting)

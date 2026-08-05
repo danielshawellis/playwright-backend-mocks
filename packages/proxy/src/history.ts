@@ -12,6 +12,17 @@ export class HistoryStore {
     }
   }
 
+  get(id: string): HistoryEntry | undefined {
+    return this.entries.find((entry) => entry.id === id);
+  }
+
+  remove(id: string): void {
+    const index = this.entries.findIndex((entry) => entry.id === id);
+    if (index !== -1) {
+      this.entries.splice(index, 1);
+    }
+  }
+
   update(
     id: string,
     updater: (entry: HistoryEntry) => HistoryEntry,

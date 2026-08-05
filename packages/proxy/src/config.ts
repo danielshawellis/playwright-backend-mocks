@@ -1,10 +1,14 @@
 export type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
 
+export type HistoryCaptureMode = "all" | "handled" | "none";
+
 export interface ProxyConfig {
   readonly host: string;
   readonly port: number;
   readonly token: string | undefined;
   readonly historyLimit: number;
+  readonly wsHistoryLimit: number;
+  readonly historyCapture: HistoryCaptureMode;
   readonly heartbeatMs: number;
   readonly idleTimeoutMs: number;
   /** How long to wait for every Playwright test with routes to answer a claim. */
@@ -17,6 +21,8 @@ export const DEFAULT_PROXY_CONFIG: ProxyConfig = {
   port: 4310,
   token: undefined,
   historyLimit: 1000,
+  wsHistoryLimit: 200,
+  historyCapture: "all",
   heartbeatMs: 15_000,
   idleTimeoutMs: 60_000,
   claimTimeoutMs: 5_000,

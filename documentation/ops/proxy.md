@@ -17,12 +17,16 @@ playwright-backend-mocks-proxy [options]
 | `--host <host>` | `127.0.0.1` | Bind host. |
 | `--port <port>` | `4310` | Bind port. |
 | `--token <token>` | none | Optional shared connection token. |
-| `--history-limit <n>` | `1000` | Number of recent history entries retained in memory. |
+| `--history-limit <n>` | `1000` | Number of recent HTTP history entries retained in memory. |
+| `--ws-history-limit <n>` | `200` | Number of recent WebSocket connections retained in memory. |
+| `--history-capture <mode>` | `all` | `all`, `handled` (test-acted only), or `none`. |
 | `--heartbeat-ms <ms>` | `15000` | WebSocket ping interval. |
 | `--idle-timeout-ms <ms>` | `60000` | Idle socket disconnect timeout. |
 | `--claim-timeout-ms <ms>` | `5000` | How long to wait for Playwright route claim replies. |
 | `--log-level <level>` | `info` | `silent`, `error`, `warn`, `info`, or `debug`. |
 | `-h`, `--help` | | Print help. |
+
+On startup the proxy prints the Node/Playwright WebSocket URL, REST base URL, and how to point the [dashboard](/ops/dashboard) at the proxy. See [Observability](/ops/observability).
 
 The process handles `SIGINT` and `SIGTERM` by stopping the server.
 
@@ -63,11 +67,15 @@ await server.stop();
 ```ts
 type LogLevel = "silent" | "error" | "warn" | "info" | "debug";
 
+type HistoryCaptureMode = "all" | "handled" | "none";
+
 interface ProxyConfig {
   readonly host: string;
   readonly port: number;
   readonly token: string | undefined;
   readonly historyLimit: number;
+  readonly wsHistoryLimit: number;
+  readonly historyCapture: HistoryCaptureMode;
   readonly heartbeatMs: number;
   readonly idleTimeoutMs: number;
   readonly claimTimeoutMs: number;
@@ -82,12 +90,16 @@ interface ProxyConfig {
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness plus package and protocol versions. |
-| `GET` | `/api/history` | Recent intercepted request history. |
+| `GET` | `/api/history` | Recent HTTP history (filterable). |
+| `GET` | `/api/history/:id` | One history entry. |
+| `GET` | `/api/history/:id/har` | Single-request HAR 1.2 (for `routeFromHAR`). |
+| `GET` | `/api/ws` | Recent WebSocket connections (filterable). |
+| `GET` | `/api/ws/:id` | One WebSocket connection + event timeline. |
 | `GET` | `/api/connections` | Connected Node agents and Playwright workers. |
 | `OPTIONS` | API paths | CORS preflight. |
-| WebSocket | `/ws` | Internal coordinator transport. |
+| WebSocket | `/ws` | Internal coordinator transport (`--token` protects this; REST is local/read-only). |
 
-See [REST API](/ops/rest-api).
+See [REST API](/ops/rest-api) and [Observability](/ops/observability).
 
 ## Ownership rules
 

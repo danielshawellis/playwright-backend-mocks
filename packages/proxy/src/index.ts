@@ -4,4 +4,5 @@ export {
   DEFAULT_PROXY_CONFIG,
   type ProxyConfig,
   type LogLevel,
+  type HistoryCaptureMode,
 } from "./config.js";

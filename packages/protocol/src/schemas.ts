@@ -116,11 +116,36 @@ export const historyOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("error"),
     message: z.string(),
+    /** Proxy decision code when known, e.g. `ambiguous_route`. */
+    code: z.string().optional(),
+    /** Competing route claims for `ambiguous_route`. */
+    matches: z.array(routeMatchDiagnosticSchema).optional(),
   }),
   z.object({
     kind: z.literal("pending"),
   }),
 ]);
+
+/** Normalized terminal / coordinator action recorded on history entries. */
+export const historyActionSchema = z.enum([
+  "fulfill",
+  "continue",
+  "abort",
+  "passthrough",
+  "error",
+  "pending",
+]);
+
+export type HistoryAction = z.infer<typeof historyActionSchema>;
+
+export const historyEventSchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  kind: z.string(),
+  detail: z.string().optional(),
+});
+
+export type HistoryEvent = z.infer<typeof historyEventSchema>;
 
 export const historyEntrySchema = z.object({
   id: z.string(),
@@ -131,9 +156,66 @@ export const historyEntrySchema = z.object({
   durationMs: z.number().optional(),
   testId: z.string().optional(),
   routeId: z.string().optional(),
+  action: historyActionSchema.optional(),
+  /** Playwright test title when a test owned the request. */
+  title: z.string().optional(),
+  /** Playwright test file path when a test owned the request. */
+  path: z.string().optional(),
+  overrides: requestOverridesSchema.optional(),
+  events: z.array(historyEventSchema).optional(),
 });
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
+
+export const wsConnectionOutcomeSchema = z.enum([
+  "pending",
+  "matched",
+  "passthrough",
+  "error",
+]);
+
+export type WsConnectionOutcome = z.infer<typeof wsConnectionOutcomeSchema>;
+
+export const wsTimelineEventSchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  direction: z.enum(["client", "server", "system"]),
+  kind: z.enum(["open", "frame", "close", "error", "handler"]),
+  detail: z.string().optional(),
+  data: z.string().optional(),
+  isBase64: z.boolean().optional(),
+});
+
+export type WsTimelineEvent = z.infer<typeof wsTimelineEventSchema>;
+
+export const wsConnectionEntrySchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  clientId: z.string(),
+  url: z.string(),
+  protocols: z.array(z.string()).optional(),
+  title: z.string().optional(),
+  path: z.string().optional(),
+  testId: z.string().optional(),
+  routeId: z.string().optional(),
+  outcome: wsConnectionOutcomeSchema,
+  /** Proxy decision code when outcome is `error`, e.g. `ambiguous_route`. */
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+  /** Competing route claims for `ambiguous_route`. */
+  matches: z.array(routeMatchDiagnosticSchema).optional(),
+  closedAt: z.number().optional(),
+  close: z
+    .object({
+      code: z.number().optional(),
+      reason: z.string().optional(),
+      wasClean: z.boolean(),
+    })
+    .optional(),
+  events: z.array(wsTimelineEventSchema),
+});
+
+export type WsConnectionEntry = z.infer<typeof wsConnectionEntrySchema>;
 
 export const connectionRoleSchema = z.enum(["node", "playwright"]);
 
