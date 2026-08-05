@@ -141,7 +141,7 @@ curl -s "http://127.0.0.1:4310/api/history?q=charges" | jq '.entries[:5]'
 | `timestamp` | Milliseconds since epoch when the request was observed. |
 | `clientId` | Node agent that made the request. |
 | `request` | Serialized URL, method, headers, and base64 body. |
-| `outcome` | Current or final outcome (`pending`, `mocked`, `passthrough`, `continued`, `aborted`, `error`). |
+| `outcome` | Current or final outcome (`pending`, `mocked`, `passthrough`, `continued`, `aborted`, `error`). For `error`, may include `code` (e.g. `ambiguous_route`) and `matches` (claiming tests). |
 | `action` | Normalized action: `fulfill`, `continue`, `abort`, `passthrough`, `fetch`, `error`, `pending`. |
 | `title` | Playwright test title when a test owned the request. |
 | `path` | Playwright test file path when a test owned the request. |

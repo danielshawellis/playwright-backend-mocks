@@ -554,6 +554,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       finishHistory(historyId, startedAt, {
         kind: "error",
         message: errorMessage,
+        code: "ambiguous_route",
+        matches: diagnostics,
       });
       pending.delete(message.requestId);
 
@@ -946,7 +948,12 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       const errorMessage = `Ambiguous backend mock routing: ${matchesByTestId.size} tests claimed WebSocket ${message.url}`;
 
       pendingSockets.delete(message.socketId);
-      settleWsHistory(message.socketId, "error", { detail: errorMessage });
+      settleWsHistory(message.socketId, "error", {
+        detail: errorMessage,
+        errorCode: "ambiguous_route",
+        errorMessage,
+        matches: diagnostics,
+      });
       send(bound, {
         type: "ws:error",
         socketId: message.socketId,
@@ -1370,6 +1377,9 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       testId?: string;
       routeId?: string;
       detail?: string;
+      errorCode?: string;
+      errorMessage?: string;
+      matches?: RouteMatchDiagnostic[];
     } = {},
   ): void {
     if (config.historyCapture === "none") {
@@ -1384,6 +1394,11 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       ...(extras.path !== undefined ? { path: extras.path } : {}),
       ...(extras.testId !== undefined ? { testId: extras.testId } : {}),
       ...(extras.routeId !== undefined ? { routeId: extras.routeId } : {}),
+      ...(extras.errorCode !== undefined ? { errorCode: extras.errorCode } : {}),
+      ...(extras.errorMessage !== undefined
+        ? { errorMessage: extras.errorMessage }
+        : {}),
+      ...(extras.matches !== undefined ? { matches: extras.matches } : {}),
     });
     wsHistory.appendEvent(socketId, {
       timestamp: Date.now(),

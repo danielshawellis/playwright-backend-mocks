@@ -29,6 +29,8 @@ Common fixes:
 
 `ambiguous_route` means more than one test claimed the same Node request.
 
+In the [dashboard](/ops/dashboard), those entries show an **Ambiguous route** callout with the claiming test titles/files and a link back here. The REST history entry stores the same claimants under `outcome.matches` (and `outcome.code: "ambiguous_route"`).
+
 Fix the test architecture:
 
 - Add `clientId` filters.

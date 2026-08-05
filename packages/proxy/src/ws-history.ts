@@ -76,7 +76,18 @@ export class WsHistoryStore {
     id: string,
     outcome: WsConnectionOutcome,
     extras: Partial<
-      Pick<WsConnectionEntry, "title" | "path" | "testId" | "routeId" | "closedAt" | "close">
+      Pick<
+        WsConnectionEntry,
+        | "title"
+        | "path"
+        | "testId"
+        | "routeId"
+        | "errorCode"
+        | "errorMessage"
+        | "matches"
+        | "closedAt"
+        | "close"
+      >
     > = {},
   ): void {
     this.update(id, (entry) => ({

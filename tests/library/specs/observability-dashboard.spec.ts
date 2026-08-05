@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { TestSocket } from "../helpers.js";
 import {
   fulfill,
   registerHttpRoute,
@@ -180,6 +181,145 @@ test.describe("observability dashboard", () => {
       });
 
       playwright.close();
+      node.close();
+    });
+  });
+
+  test("copy URL writes the request URL to the clipboard", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "copy me",
+        file: "/tests/copy.spec.ts",
+        matcher: "http://example.test/copy-target",
+      });
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/copy-target",
+      });
+      await fulfill(playwright, node, requestId, { status: 200 });
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await page.getByText("http://example.test/copy-target").first().click();
+        await page.getByRole("button", { name: "Copy URL" }).first().click();
+        await expect(page.getByRole("status")).toContainText("URL copied");
+        expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+          "http://example.test/copy-target",
+        );
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("time range filter can hide existing requests", async ({ page }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "range filter",
+        file: "/tests/range.spec.ts",
+        matcher: "http://example.test/range",
+      });
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/range",
+      });
+      await fulfill(playwright, node, requestId, { status: 200 });
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await expect(page.getByText("http://example.test/range").first()).toBeVisible();
+
+        // From far in the future → no matches.
+        await page.getByLabel("From time").fill("2099-01-01T00:00");
+        await expect(page.getByText("No matching requests")).toBeVisible();
+
+        await page.getByLabel("From time").fill("");
+        await expect(page.getByText("http://example.test/range").first()).toBeVisible();
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("ambiguous_route shows callout with claiming tests and docs link", async ({
+    page,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const workerA = await TestSocket.connect(proxy.url);
+      const workerB = await TestSocket.connect(proxy.url);
+      const node = await TestSocket.connect(proxy.url);
+
+      expect(
+        (await workerA.hello({ role: "playwright", workerId: "dash-a" })).type,
+      ).toBe("hello:ok");
+      expect(
+        (await workerB.hello({ role: "playwright", workerId: "dash-b" })).type,
+      ).toBe("hello:ok");
+      expect((await node.hello({ role: "node", clientId: "obs-node" })).type).toBe(
+        "hello:ok",
+      );
+
+      const testA = randomUUID();
+      const testB = randomUUID();
+      workerA.send({
+        type: "test:register",
+        testId: testA,
+        title: "dashboard claim A",
+        file: "/tests/dash-a.spec.ts",
+        workerId: "dash-a",
+      });
+      workerA.send({
+        type: "route:register",
+        routeId: randomUUID(),
+        testId: testA,
+        matcher: { urlGlob: "http://example.test/collision" },
+      });
+      workerB.send({
+        type: "test:register",
+        testId: testB,
+        title: "dashboard claim B",
+        file: "/tests/dash-b.spec.ts",
+        workerId: "dash-b",
+      });
+      workerB.send({
+        type: "route:register",
+        routeId: randomUUID(),
+        testId: testB,
+        matcher: { urlGlob: "http://example.test/**" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      const requestId = randomUUID();
+      node.send({
+        type: "request:start",
+        requestId,
+        clientId: "obs-node",
+        request: {
+          url: "http://example.test/collision",
+          method: "GET",
+          headers: {},
+          bodyBase64: null,
+        },
+      });
+      await node.waitForType("decision:error", 5_000);
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await expect(page.getByText("ambiguous").first()).toBeVisible();
+        await page.getByText("http://example.test/collision").first().click();
+        await expect(page.getByRole("heading", { name: "Ambiguous route" })).toBeVisible();
+        await expect(page.getByText("dashboard claim A")).toBeVisible();
+        await expect(page.getByText("dashboard claim B")).toBeVisible();
+        await expect(
+          page.getByRole("link", { name: "How to fix ambiguous_route →" }),
+        ).toHaveAttribute("href", /troubleshooting#ambiguous_route/);
+      });
+
+      workerA.close();
+      workerB.close();
       node.close();
     });
   });

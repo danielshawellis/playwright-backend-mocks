@@ -41,8 +41,8 @@ Open `http://127.0.0.1:4311/`.
 
 | View | Contents |
 | --- | --- |
-| **HTTP** | Request timeline + detail (action, test title/path, bodies, overrides). Per-request **HAR download** (for `routeFromHAR`) and copy buttons for URL / full history |
-| **WebSockets** | Connection list + bidirectional event timeline (live only), with copy buttons for URL / full connection history |
+| **HTTP** | Request timeline + detail (action, test title/path, bodies, overrides). Per-request **HAR download** (for `routeFromHAR`) and copy buttons for URL / full history. `ambiguous_route` errors get a callout listing claiming tests plus a link to the troubleshooting docs |
+| **WebSockets** | Connection list + bidirectional event timeline (live only), with copy buttons for URL / full connection history. Same `ambiguous_route` callout when two tests claim one socket |
 | **Connections** | Node agents and Playwright workers |
 
 Toolbar: search, optional time range, **Auto-refresh** (on by default, ~2s), and **Refresh**. Styling uses the same VitePress CSS variable tokens as this documentation site.

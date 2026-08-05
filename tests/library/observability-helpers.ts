@@ -20,9 +20,16 @@ export type HistoryEntryJson = {
   path?: string;
   testId?: string;
   clientId?: string;
+  timestamp?: number;
   overrides?: { url?: string; method?: string };
   request: { url: string; method: string };
-  outcome: { kind: string; errorCode?: string };
+  outcome: {
+    kind: string;
+    errorCode?: string;
+    code?: string;
+    message?: string;
+    matches?: Array<{ testId: string; title: string; file: string }>;
+  };
   events?: Array<{ kind: string }>;
 };
 

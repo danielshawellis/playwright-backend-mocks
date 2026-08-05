@@ -116,6 +116,10 @@ export const historyOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("error"),
     message: z.string(),
+    /** Proxy decision code when known, e.g. `ambiguous_route`. */
+    code: z.string().optional(),
+    /** Competing route claims for `ambiguous_route`. */
+    matches: z.array(routeMatchDiagnosticSchema).optional(),
   }),
   z.object({
     kind: z.literal("pending"),
@@ -196,6 +200,11 @@ export const wsConnectionEntrySchema = z.object({
   testId: z.string().optional(),
   routeId: z.string().optional(),
   outcome: wsConnectionOutcomeSchema,
+  /** Proxy decision code when outcome is `error`, e.g. `ambiguous_route`. */
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+  /** Competing route claims for `ambiguous_route`. */
+  matches: z.array(routeMatchDiagnosticSchema).optional(),
   closedAt: z.number().optional(),
   close: z
     .object({

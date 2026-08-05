@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { HistoryEntry, WsConnectionEntry } from "@playwright-backend-mocks/protocol";
+import type {
+  HistoryEntry,
+  RouteMatchDiagnostic,
+  WsConnectionEntry,
+} from "@playwright-backend-mocks/protocol";
 import {
   copyText,
   fetchConnections,
@@ -13,6 +17,10 @@ import {
 } from "./api";
 
 type View = "http" | "ws" | "connections";
+
+/** Published docs — keep the dashboard pointing at the living troubleshooting guide. */
+const AMBIGUOUS_ROUTE_DOCS =
+  "https://danielshawellis.github.io/playwright-backend-mocks-msw/guide/troubleshooting#ambiguous_route";
 
 const proxyUrl = ref<string | null>(null);
 const view = ref<View>("http");
@@ -50,8 +58,66 @@ const selectedWs = computed(
 function actionClass(action: string | undefined): string {
   if (action === "fulfill" || action === "continue" || action === "matched") return "ok";
   if (action === "passthrough" || action === "pending") return "warn";
-  if (action === "abort" || action === "error") return "err";
+  if (action === "abort" || action === "error" || action === "ambiguous") return "err";
   return "muted";
+}
+
+function isAmbiguousHttp(entry: HistoryEntry): boolean {
+  return entry.outcome.kind === "error" && entry.outcome.code === "ambiguous_route";
+}
+
+function isAmbiguousWs(entry: WsConnectionEntry): boolean {
+  return entry.outcome === "error" && entry.errorCode === "ambiguous_route";
+}
+
+function httpActionLabel(entry: HistoryEntry): string {
+  if (isAmbiguousHttp(entry)) return "ambiguous";
+  return entry.action ?? entry.outcome.kind;
+}
+
+function wsOutcomeLabel(entry: WsConnectionEntry): string {
+  if (isAmbiguousWs(entry)) return "ambiguous";
+  return entry.outcome;
+}
+
+function uniqueClaimants(
+  matches: RouteMatchDiagnostic[] | undefined,
+): Array<{ testId: string; title: string; file: string }> {
+  if (!matches?.length) return [];
+  const seen = new Map<string, { testId: string; title: string; file: string }>();
+  for (const match of matches) {
+    if (!seen.has(match.testId)) {
+      seen.set(match.testId, {
+        testId: match.testId,
+        title: match.title,
+        file: match.file,
+      });
+    }
+  }
+  return [...seen.values()];
+}
+
+/** Timeline "Test" column — for collisions, show who collided instead of a blank. */
+function httpTestLabel(entry: HistoryEntry): string {
+  if (isAmbiguousHttp(entry) && entry.outcome.kind === "error") {
+    const claimants = uniqueClaimants(entry.outcome.matches);
+    if (claimants.length > 0) {
+      return claimants.map((claim) => claim.title).join(" · ");
+    }
+    return "multiple tests";
+  }
+  return entry.title ?? "—";
+}
+
+function wsTestLabel(entry: WsConnectionEntry): string {
+  if (isAmbiguousWs(entry)) {
+    const claimants = uniqueClaimants(entry.matches);
+    if (claimants.length > 0) {
+      return claimants.map((claim) => claim.title).join(" · ");
+    }
+    return "multiple tests";
+  }
+  return entry.title ?? "—";
 }
 
 function formatTime(timestamp: number): string {
@@ -70,7 +136,9 @@ function statusFor(entry: HistoryEntry): string {
     return String(entry.outcome.response.status);
   }
   if (entry.outcome.kind === "aborted") return entry.outcome.errorCode;
-  if (entry.outcome.kind === "error") return "error";
+  if (entry.outcome.kind === "error") {
+    return entry.outcome.code === "ambiguous_route" ? "ambiguous" : "error";
+  }
   return "—";
 }
 
@@ -221,7 +289,9 @@ onUnmounted(() => {
       <div v-if="view === 'http'" class="split">
         <section class="panel">
           <div class="panel__head">HTTP timeline · {{ entries.length }}</div>
-          <div v-if="entries.length === 0" class="meta">No requests yet</div>
+          <div v-if="entries.length === 0" class="meta">
+            {{ search || from || to ? "No matching requests" : "No requests yet" }}
+          </div>
           <table v-else class="timeline">
             <thead>
               <tr>
@@ -242,14 +312,14 @@ onUnmounted(() => {
               >
                 <td class="mono">{{ formatTime(entry.timestamp) }}</td>
                 <td>
-                  <span class="pill" :class="actionClass(entry.action)">
-                    {{ entry.action ?? entry.outcome.kind }}
+                  <span class="pill" :class="actionClass(httpActionLabel(entry))">
+                    {{ httpActionLabel(entry) }}
                   </span>
                 </td>
                 <td>{{ entry.request.method }}</td>
                 <td class="mono">{{ statusFor(entry) }}</td>
                 <td class="mono" :title="entry.request.url">{{ entry.request.url }}</td>
-                <td>{{ entry.title ?? "—" }}</td>
+                <td :title="httpTestLabel(entry)">{{ httpTestLabel(entry) }}</td>
               </tr>
             </tbody>
           </table>
@@ -305,6 +375,34 @@ onUnmounted(() => {
           </div>
           <div v-if="!selectedHttp" class="meta">Select a request</div>
           <div v-else class="detail">
+            <section v-if="isAmbiguousHttp(selectedHttp)" class="callout callout--danger">
+              <h3>Ambiguous route</h3>
+              <p>
+                More than one Playwright test claimed this Node request. The proxy fails loud on
+                purpose — this is a test-architecture bug, not flaky networking.
+              </p>
+              <p
+                v-if="selectedHttp.outcome.kind === 'error'"
+                class="callout__message mono"
+              >
+                {{ selectedHttp.outcome.message }}
+              </p>
+              <ul v-if="selectedHttp.outcome.kind === 'error' && selectedHttp.outcome.matches">
+                <li
+                  v-for="claim in uniqueClaimants(selectedHttp.outcome.matches)"
+                  :key="claim.testId"
+                >
+                  <strong>{{ claim.title }}</strong>
+                  <span class="mono"> · {{ claim.file }}</span>
+                </li>
+              </ul>
+              <p class="callout__actions">
+                <a :href="AMBIGUOUS_ROUTE_DOCS" target="_blank" rel="noreferrer">
+                  How to fix ambiguous_route →
+                </a>
+              </p>
+            </section>
+
             <section>
               <h3>Summary</h3>
               <div class="kv">
@@ -328,8 +426,8 @@ onUnmounted(() => {
                 </dd>
                 <dt>Action</dt>
                 <dd>
-                  <span class="pill" :class="actionClass(selectedHttp.action)">
-                    {{ selectedHttp.action ?? selectedHttp.outcome.kind }}
+                  <span class="pill" :class="actionClass(httpActionLabel(selectedHttp))">
+                    {{ httpActionLabel(selectedHttp) }}
                   </span>
                   <template v-if="selectedHttp.durationMs !== undefined">
                     · {{ selectedHttp.durationMs }}ms
@@ -393,7 +491,9 @@ onUnmounted(() => {
       <div v-else-if="view === 'ws'" class="split split--ws">
         <section class="panel">
           <div class="panel__head">Connections · {{ wsConnections.length }}</div>
-          <div v-if="wsConnections.length === 0" class="meta">No WebSocket connections yet</div>
+          <div v-if="wsConnections.length === 0" class="meta">
+            {{ search || from || to ? "No matching connections" : "No WebSocket connections yet" }}
+          </div>
           <ul v-else class="list">
             <li
               v-for="socket in wsConnections"
@@ -403,12 +503,14 @@ onUnmounted(() => {
             >
               <div class="list__title">{{ socket.url }}</div>
               <div class="list__sub">
-                <span class="pill" :class="actionClass(socket.outcome)">{{
-                  socket.outcome
+                <span class="pill" :class="actionClass(wsOutcomeLabel(socket))">{{
+                  wsOutcomeLabel(socket)
                 }}</span>
                 ·
-                {{ socket.title ?? "—" }}
-                <template v-if="socket.path"> · {{ socket.path }}</template>
+                {{ wsTestLabel(socket) }}
+                <template v-if="socket.path && !isAmbiguousWs(socket)">
+                  · {{ socket.path }}
+                </template>
               </div>
             </li>
           </ul>
@@ -450,6 +552,28 @@ onUnmounted(() => {
           </div>
           <div v-if="!selectedWs" class="meta">Select a connection</div>
           <div v-else class="detail">
+            <section v-if="isAmbiguousWs(selectedWs)" class="callout callout--danger">
+              <h3>Ambiguous route</h3>
+              <p>
+                More than one Playwright test claimed this WebSocket. The proxy fails loud on
+                purpose — fix suite scoping rather than treating this as flakiness.
+              </p>
+              <p v-if="selectedWs.errorMessage" class="callout__message mono">
+                {{ selectedWs.errorMessage }}
+              </p>
+              <ul v-if="selectedWs.matches?.length">
+                <li v-for="claim in uniqueClaimants(selectedWs.matches)" :key="claim.testId">
+                  <strong>{{ claim.title }}</strong>
+                  <span class="mono"> · {{ claim.file }}</span>
+                </li>
+              </ul>
+              <p class="callout__actions">
+                <a :href="AMBIGUOUS_ROUTE_DOCS" target="_blank" rel="noreferrer">
+                  How to fix ambiguous_route →
+                </a>
+              </p>
+            </section>
+
             <section>
               <h3>Connection</h3>
               <div class="kv">
@@ -473,8 +597,8 @@ onUnmounted(() => {
                 </dd>
                 <dt>Outcome</dt>
                 <dd>
-                  <span class="pill" :class="actionClass(selectedWs.outcome)">{{
-                    selectedWs.outcome
+                  <span class="pill" :class="actionClass(wsOutcomeLabel(selectedWs))">{{
+                    wsOutcomeLabel(selectedWs)
                   }}</span>
                 </dd>
                 <dt v-if="selectedWs.title">Title</dt>

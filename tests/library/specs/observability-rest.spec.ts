@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { TestSocket } from "../helpers.js";
 import {
   abortRequest,
   continueRequest,
@@ -298,6 +299,132 @@ test.describe("observability REST — filters and HAR", () => {
         method: "OPTIONS",
       });
       expect(harPreflight.status()).toBe(204);
+    });
+  });
+
+  test("time range from/to filters history", async ({ request: api }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "time filter",
+        file: "/tests/time.spec.ts",
+        matcher: "http://example.test/**",
+      });
+
+      const firstId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/first",
+      });
+      await fulfill(playwright, node, firstId, { status: 200 });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const secondId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/second",
+      });
+      await fulfill(playwright, node, secondId, { status: 200 });
+
+      const all = await getHistory(api, proxy.url);
+      const first = all.find((entry) => entry.id === firstId);
+      const second = all.find((entry) => entry.id === secondId);
+      expect(first?.timestamp).toBeTruthy();
+      expect(second?.timestamp).toBeTruthy();
+
+      const onlyFirst = await getHistory(
+        api,
+        proxy.url,
+        `?from=${first!.timestamp}&to=${first!.timestamp}`,
+      );
+      expect(onlyFirst.map((entry) => entry.id)).toContain(firstId);
+      expect(onlyFirst.map((entry) => entry.id)).not.toContain(secondId);
+
+      const afterFirst = await getHistory(
+        api,
+        proxy.url,
+        `?from=${(first!.timestamp ?? 0) + 1}`,
+      );
+      expect(afterFirst.map((entry) => entry.id)).toContain(secondId);
+      expect(afterFirst.map((entry) => entry.id)).not.toContain(firstId);
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("ambiguous_route history includes code and claiming tests", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const workerA = await TestSocket.connect(proxy.url);
+      const workerB = await TestSocket.connect(proxy.url);
+      const node = await TestSocket.connect(proxy.url);
+
+      expect(
+        (await workerA.hello({ role: "playwright", workerId: "ambig-a" })).type,
+      ).toBe("hello:ok");
+      expect(
+        (await workerB.hello({ role: "playwright", workerId: "ambig-b" })).type,
+      ).toBe("hello:ok");
+      expect((await node.hello({ role: "node", clientId: "obs-node" })).type).toBe(
+        "hello:ok",
+      );
+
+      const testA = randomUUID();
+      const testB = randomUUID();
+      workerA.send({
+        type: "test:register",
+        testId: testA,
+        title: "claiming test A",
+        file: "/tests/a.spec.ts",
+        workerId: "ambig-a",
+      });
+      workerA.send({
+        type: "route:register",
+        routeId: randomUUID(),
+        testId: testA,
+        matcher: { urlGlob: "http://example.test/shared" },
+      });
+      workerB.send({
+        type: "test:register",
+        testId: testB,
+        title: "claiming test B",
+        file: "/tests/b.spec.ts",
+        workerId: "ambig-b",
+      });
+      workerB.send({
+        type: "route:register",
+        routeId: randomUUID(),
+        testId: testB,
+        matcher: { urlGlob: "http://example.test/**" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      const requestId = randomUUID();
+      node.send({
+        type: "request:start",
+        requestId,
+        clientId: "obs-node",
+        request: {
+          url: "http://example.test/shared",
+          method: "GET",
+          headers: {},
+          bodyBase64: null,
+        },
+      });
+      const decision = await node.waitForType("decision:error", 5_000);
+      expect(decision).toMatchObject({ code: "ambiguous_route" });
+
+      const entry = (await getHistory(api, proxy.url)).find((item) => item.id === requestId);
+      expect(entry).toMatchObject({
+        action: "error",
+        outcome: {
+          kind: "error",
+          code: "ambiguous_route",
+        },
+      });
+      const titles = (entry?.outcome.matches ?? []).map((match) => match.title);
+      expect(titles).toEqual(expect.arrayContaining(["claiming test A", "claiming test B"]));
+
+      workerA.close();
+      workerB.close();
+      node.close();
     });
   });
 });

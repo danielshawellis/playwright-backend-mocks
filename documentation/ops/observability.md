@@ -51,6 +51,7 @@ webServer: [
 
 - **HTTP** — timeline of requests/responses; action; owning test **title** and **path**; request/response bodies; continue overrides; short per-request timeline
 - **WebSockets** — each connection, outcome (matched / passthrough / error), and a bidirectional event timeline (live only — no WS file download)
+- **`ambiguous_route`** — history records the competing tests; the dashboard shows a clear callout and links to [troubleshooting](/guide/troubleshooting#ambiguous_route)
 - **Connections** — connected Node agents and Playwright workers
 
 ### HAR download (single request → `routeFromHAR`)

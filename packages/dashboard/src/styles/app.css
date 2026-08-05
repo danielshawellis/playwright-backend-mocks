@@ -281,6 +281,65 @@ a {
   animation: fade-in 0.15s ease;
 }
 
+.callout {
+  border-radius: var(--vp-radius);
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+  padding: 0.85rem 0.95rem;
+}
+
+.callout--danger {
+  border-color: color-mix(in srgb, var(--vp-c-danger-1) 40%, transparent);
+  background: color-mix(in srgb, var(--vp-c-danger-1) 10%, var(--vp-c-bg));
+}
+
+.callout h3 {
+  margin: 0 0 0.4rem;
+  color: var(--vp-c-danger-1);
+  font-size: 0.92rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.callout p {
+  margin: 0 0 0.55rem;
+  font-size: 0.85rem;
+  color: var(--vp-c-text-2);
+  line-height: 1.45;
+}
+
+.callout ul {
+  margin: 0 0 0.65rem;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+}
+
+.callout li + li {
+  margin-top: 0.25rem;
+}
+
+.callout__message {
+  margin: 0 0 0.65rem;
+  font-size: 12px;
+  opacity: 0.9;
+  word-break: break-word;
+}
+
+.callout__actions {
+  margin-bottom: 0 !important;
+}
+
+.callout__actions a {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.callout__actions a:hover {
+  text-decoration: underline;
+}
+
 .meta {
   color: var(--vp-c-text-3);
   font-size: 0.85rem;
