@@ -2,7 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 /**
  * Library-only suite — product concerns outside the dual-mode oracle:
- * clientId filtering, cross-test ambiguous_route, disconnect / auth.
+ * clientId filtering, cross-test ambiguous_route, disconnect / auth,
+ * and observability (proxy REST + dashboard).
  *
  * No browser / upstream fixtures; each spec spins its own proxy (+ agents).
  */

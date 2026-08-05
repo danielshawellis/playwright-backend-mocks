@@ -81,6 +81,14 @@ export function harDownloadUrl(proxyUrl: string, requestId: string): string {
   return `${proxyUrl}/api/history/${encodeURIComponent(requestId)}/har`;
 }
 
+/** HAR is only useful when a response body was recorded (fulfill, or continue with upstream). */
+export function historyEntryHasExportableHar(entry: HistoryEntry): boolean {
+  if (entry.outcome.kind === "mocked") {
+    return true;
+  }
+  return entry.outcome.kind === "continued" && entry.outcome.response !== undefined;
+}
+
 export function decodeBody(bodyBase64: string | null | undefined): string {
   if (bodyBase64 === null || bodyBase64 === undefined || bodyBase64 === "") {
     return "";

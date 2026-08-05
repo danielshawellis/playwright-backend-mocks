@@ -8,6 +8,7 @@
 | [`research/playwright-parity-tdd.md`](./research/playwright-parity-tdd.md)         | Oracle / dual-mode TDD strategy                               |
 | [`research/playwright-network-parity.md`](./research/playwright-network-parity.md) | Playwright module map and deep dive                           |
 | [`research/documentation-site-plan.md`](./research/documentation-site-plan.md)     | VitePress docs site rewrite plan + Playwright docs map        |
+| [`research/observability-system-plan.md`](./research/observability-system-plan.md) | Proxy REST + dashboard observability plan (library-only)      |
 | [`documentation/`](./documentation/)                                               | Living user-facing VitePress site (deploys via GitHub Pages)  |
 | [`tests/parity/`](./tests/parity/)                                                 | Living oracle suite (executable contract)                     |
 | [`historical/`](./historical/)                                                     | Archived prototype code + old VitePress site (reference only) |
@@ -38,11 +39,11 @@ Playwright test  ──WebSocket──►  Proxy coordinator  ◄──WebSocket
 
 - **Node agent** — `@mswjs/interceptors` pauses nearly all outbound HTTP (and `globalThis.WebSocket`) inside the real app process. No per-call mock wiring in application code; start the agent once.
 - **Playwright fixture** — tests use `backendMocks` like `page.route`: register handlers, fulfill / continue / abort / fetch. Handlers run in the Playwright worker.
-- **Proxy** — both sides connect over WebSockets. When Node reports traffic, the proxy broadcasts claims, picks an owning test (or passthrough / loud ambiguity), and relays the settle decision back to Node.
+- **Proxy** — both sides connect over WebSockets. When Node reports traffic, the proxy broadcasts claims, picks an owning test (or passthrough / loud ambiguity), and relays the settle decision back to Node. It also exposes a **read-only** in-memory REST history API for observability; an optional Vue dashboard package consumes that API. Observability never changes routing.
 
 Three processes, one coordinator. The app stays production-shaped; the DX stays Playwright-shaped.
 
-Supporting detail: [`research/rewrite-specification.md`](./research/rewrite-specification.md).
+Supporting detail: [`research/rewrite-specification.md`](./research/rewrite-specification.md). Observability plan: [`research/observability-system-plan.md`](./research/observability-system-plan.md) (library-only — not part of the parity oracle).
 
 ---
 
