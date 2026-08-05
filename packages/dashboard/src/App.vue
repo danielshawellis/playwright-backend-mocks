@@ -20,7 +20,7 @@ type View = "http" | "ws" | "connections";
 
 /** Published docs — keep the dashboard pointing at the living troubleshooting guide. */
 const AMBIGUOUS_ROUTE_DOCS =
-  "https://danielshawellis.github.io/playwright-backend-mocks-msw/guide/troubleshooting#ambiguous_route";
+  "https://danielshawellis.github.io/playwright-backend-mocks/guide/troubleshooting#ambiguous_route";
 
 const proxyUrl = ref<string | null>(null);
 const view = ref<View>("http");

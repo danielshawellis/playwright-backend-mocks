@@ -39,11 +39,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danielshawellis/playwright-backend-mocks-msw.git",
+    "url": "git+https://github.com/danielshawellis/playwright-backend-mocks.git",
     "directory": "packages/node"
   },
-  "homepage": "https://danielshawellis.github.io/playwright-backend-mocks-msw/",
+  "homepage": "https://danielshawellis.github.io/playwright-backend-mocks/",
   "bugs": {
-    "url": "https://github.com/danielshawellis/playwright-backend-mocks-msw/issues"
+    "url": "https://github.com/danielshawellis/playwright-backend-mocks/issues"
   }
 }

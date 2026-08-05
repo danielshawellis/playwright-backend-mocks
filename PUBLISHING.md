@@ -36,7 +36,7 @@ For **each** package above:
    | Field | Value |
    | --- | --- |
    | Organization or user | `danielshawellis` |
-   | Repository | `playwright-backend-mocks-msw` |
+   | Repository | `playwright-backend-mocks` |
    | Workflow filename | `publish.yml` |
    | Environment name | _(leave empty)_ |
    | Allowed actions | `npm publish` |
@@ -53,9 +53,9 @@ Docs CD is already wired. In the GitHub repo:
 
 1. **Settings → Pages**
 2. **Source**: GitHub Actions
-3. Confirm the [Deploy docs](https://github.com/danielshawellis/playwright-backend-mocks-msw/actions/workflows/deploy-docs.yml) workflow is succeeding on `main`
+3. Confirm the [Deploy docs](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/deploy-docs.yml) workflow is succeeding on `main`
 
-Site URL: https://danielshawellis.github.io/playwright-backend-mocks-msw/
+Site URL: https://danielshawellis.github.io/playwright-backend-mocks/
 
 ### 4. Optional hardening after the first green publish
 

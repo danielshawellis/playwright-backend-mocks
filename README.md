@@ -4,7 +4,7 @@
 
 Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application processes in Playwright tests — with a DX that matches Playwright’s browser interception APIs as closely as practical.
 
-**Docs:** [`documentation/`](./documentation/) (VitePress) · [live site](https://danielshawellis.github.io/playwright-backend-mocks-msw/) (GitHub Pages on `main`)  
+**Docs:** [`documentation/`](./documentation/) (VitePress) · [live site](https://danielshawellis.github.io/playwright-backend-mocks/) (GitHub Pages on `main`)  
 **Publish:** npm packages from `main` via OIDC trusted publishing — see [`PUBLISHING.md`](./PUBLISHING.md)  
 **How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) · agent notes: [`AGENTS.md`](./AGENTS.md) · plan: [`research/rewrite-specification.md`](./research/rewrite-specification.md)
 

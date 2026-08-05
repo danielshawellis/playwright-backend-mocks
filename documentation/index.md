@@ -15,7 +15,7 @@ hero:
       link: /guide/philosophy
     - theme: alt
       text: GitHub
-      link: https://github.com/danielshawellis/playwright-backend-mocks-msw
+      link: https://github.com/danielshawellis/playwright-backend-mocks
 ---
 
 ## Mock Node.js outbound requests from Playwright
