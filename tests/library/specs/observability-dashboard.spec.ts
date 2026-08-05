@@ -308,13 +308,18 @@ test.describe("observability dashboard", () => {
 
       await withDashboard(proxy.url, async (dashboardUrl) => {
         await page.goto(dashboardUrl);
+        await page.getByLabel("Auto-refresh").uncheck();
         await expect(page.getByText("ambiguous").first()).toBeVisible();
         await page.getByText("http://example.test/collision").first().click();
-        await expect(page.getByRole("heading", { name: "Ambiguous route" })).toBeVisible();
-        await expect(page.getByText("dashboard claim A")).toBeVisible();
-        await expect(page.getByText("dashboard claim B")).toBeVisible();
+
+        const callout = page.locator(".callout--danger");
+        await expect(callout.getByRole("heading", { name: "Ambiguous route" })).toBeVisible();
+        await expect(callout).toContainText("dashboard claim A");
+        await expect(callout).toContainText("dashboard claim B");
+        await expect(callout).toContainText("/tests/dash-a.spec.ts");
+        await expect(callout).toContainText("/tests/dash-b.spec.ts");
         await expect(
-          page.getByRole("link", { name: "How to fix ambiguous_route →" }),
+          callout.getByRole("link", { name: "How to fix ambiguous_route →" }),
         ).toHaveAttribute("href", /troubleshooting#ambiguous_route/);
       });
 
