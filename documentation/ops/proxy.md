@@ -92,7 +92,7 @@ interface ProxyConfig {
 | `GET` | `/health` | Liveness plus package and protocol versions. |
 | `GET` | `/api/history` | Recent HTTP history (filterable). |
 | `GET` | `/api/ws` | Recent WebSocket connections (filterable). |
-| `GET` | `/api/export/har` | HTTP history as HAR 1.2. |
+| `GET` | `/api/history/:id/har` | Single-request HAR 1.2 (for `routeFromHAR`). |
 | `GET` | `/api/connections` | Connected Node agents and Playwright workers. |
 | `OPTIONS` | API paths | CORS preflight. |
 | WebSocket | `/ws` | Internal coordinator transport. |

@@ -160,7 +160,7 @@ While the proxy is running, inspect HTTP and WebSocket traffic — including whi
 
 - `GET /api/history` — HTTP timeline
 - `GET /api/ws` — WebSocket connections and events
-- `GET /api/export/har` — download HTTP as HAR
+- `GET /api/history/:id/har` — download one HTTP request as HAR (for `routeFromHAR`)
 
 Local coding agents can use the same REST surface; see [Observability](/ops/observability).
 

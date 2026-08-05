@@ -216,6 +216,71 @@ a {
   font-weight: 600;
 }
 
+.panel__head--actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.icon-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vp-c-text-3);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.icon-btn:hover {
+  color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  border-color: color-mix(in srgb, var(--vp-c-brand-1) 30%, transparent);
+}
+
+.with-copy {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.with-copy .icon-btn {
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+.copy-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 20;
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--vp-radius);
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-2);
+  font-size: 0.8rem;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--vp-c-black) 12%, transparent);
+  animation: fade-in 0.15s ease;
+}
+
 .meta {
   color: var(--vp-c-text-3);
   font-size: 0.85rem;

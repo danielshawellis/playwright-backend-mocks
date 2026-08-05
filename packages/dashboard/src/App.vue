@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { HistoryEntry, WsConnectionEntry } from "@playwright-backend-mocks/protocol";
 import {
+  copyText,
   fetchConnections,
   fetchHistory,
   fetchWsConnections,
@@ -16,6 +17,7 @@ type View = "http" | "ws" | "connections";
 const proxyUrl = ref<string | null>(null);
 const view = ref<View>("http");
 const error = ref<string | null>(null);
+const copyFlash = ref<string | null>(null);
 
 const search = ref("");
 const from = ref("");
@@ -29,6 +31,7 @@ const selectedHttpId = ref<string | null>(null);
 const selectedWsId = ref<string | null>(null);
 
 let timer: ReturnType<typeof setInterval> | undefined;
+let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
 const query = computed(() => ({
   ...(search.value.trim() ? { q: search.value.trim() } : {}),
@@ -87,6 +90,15 @@ function responseHeaders(entry: HistoryEntry): Record<string, string> | null {
     return entry.outcome.response.headers;
   }
   return null;
+}
+
+async function copy(label: string, text: string): Promise<void> {
+  const ok = await copyText(text);
+  copyFlash.value = ok ? label : "Copy failed";
+  if (copyTimer !== undefined) clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => {
+    copyFlash.value = null;
+  }, 1400);
 }
 
 async function refresh(): Promise<void> {
@@ -151,6 +163,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (timer !== undefined) clearInterval(timer);
+  if (copyTimer !== undefined) clearTimeout(copyTimer);
 });
 </script>
 
@@ -191,14 +204,6 @@ onUnmounted(() => {
           Auto-refresh
         </label>
         <button type="button" class="btn" @click="refresh">Refresh</button>
-        <a
-          v-if="view === 'http' && proxyUrl"
-          class="btn btn-brand"
-          :href="harDownloadUrl(proxyUrl, query)"
-          download
-        >
-          Download HAR
-        </a>
       </div>
       <div v-else class="toolbar">
         <label class="auto">
@@ -210,6 +215,7 @@ onUnmounted(() => {
     </header>
 
     <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="copyFlash" class="copy-toast" role="status">{{ copyFlash }}</p>
 
     <main class="main">
       <div v-if="view === 'http'" class="split">
@@ -250,15 +256,75 @@ onUnmounted(() => {
         </section>
 
         <aside class="panel">
-          <div class="panel__head">Detail</div>
+          <div class="panel__head panel__head--actions">
+            <span>Detail</span>
+            <div v-if="selectedHttp && proxyUrl" class="icon-row">
+              <button
+                type="button"
+                class="icon-btn"
+                title="Copy URL"
+                aria-label="Copy URL"
+                @click="copy('URL copied', selectedHttp.request.url)"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M6.5 2A1.5 1.5 0 0 0 5 3.5v7A1.5 1.5 0 0 0 6.5 12h5A1.5 1.5 0 0 0 13 10.5v-7A1.5 1.5 0 0 0 11.5 2h-5zm-3 3A1.5 1.5 0 0 0 2 6.5v7A1.5 1.5 0 0 0 3.5 15h5A1.5 1.5 0 0 0 10 13.5V13H6.5A2.5 2.5 0 0 1 4 10.5V5H3.5z"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="icon-btn"
+                title="Copy full history entry"
+                aria-label="Copy full history entry"
+                @click="copy('History copied', JSON.stringify(selectedHttp, null, 2))"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M6.5 2A1.5 1.5 0 0 0 5 3.5v7A1.5 1.5 0 0 0 6.5 12h5A1.5 1.5 0 0 0 13 10.5v-7A1.5 1.5 0 0 0 11.5 2h-5zm-3 3A1.5 1.5 0 0 0 2 6.5v7A1.5 1.5 0 0 0 3.5 15h5A1.5 1.5 0 0 0 10 13.5V13H6.5A2.5 2.5 0 0 1 4 10.5V5H3.5z"
+                  />
+                </svg>
+              </button>
+              <a
+                class="icon-btn"
+                title="Download HAR for routeFromHAR"
+                aria-label="Download HAR"
+                :href="harDownloadUrl(proxyUrl, selectedHttp.id)"
+                download
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M8 1a.75.75 0 0 1 .75.75v7.19l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V1.75A.75.75 0 0 1 8 1zM2.75 12a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75z"
+                  />
+                </svg>
+              </a>
+            </div>
+          </div>
           <div v-if="!selectedHttp" class="meta">Select a request</div>
           <div v-else class="detail">
             <section>
               <h3>Summary</h3>
               <div class="kv">
                 <dt>Request</dt>
-                <dd class="mono">
-                  {{ selectedHttp.request.method }} {{ selectedHttp.request.url }}
+                <dd class="mono with-copy">
+                  <span>{{ selectedHttp.request.method }} {{ selectedHttp.request.url }}</span>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    title="Copy URL"
+                    aria-label="Copy URL"
+                    @click="copy('URL copied', selectedHttp.request.url)"
+                  >
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M6.5 2A1.5 1.5 0 0 0 5 3.5v7A1.5 1.5 0 0 0 6.5 12h5A1.5 1.5 0 0 0 13 10.5v-7A1.5 1.5 0 0 0 11.5 2h-5zm-3 3A1.5 1.5 0 0 0 2 6.5v7A1.5 1.5 0 0 0 3.5 15h5A1.5 1.5 0 0 0 10 13.5V13H6.5A2.5 2.5 0 0 1 4 10.5V5H3.5z"
+                      />
+                    </svg>
+                  </button>
                 </dd>
                 <dt>Action</dt>
                 <dd>
@@ -349,14 +415,62 @@ onUnmounted(() => {
         </section>
 
         <aside class="panel">
-          <div class="panel__head">Event timeline</div>
+          <div class="panel__head panel__head--actions">
+            <span>Event timeline</span>
+            <div v-if="selectedWs" class="icon-row">
+              <button
+                type="button"
+                class="icon-btn"
+                title="Copy URL"
+                aria-label="Copy URL"
+                @click="copy('URL copied', selectedWs.url)"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M6.5 2A1.5 1.5 0 0 0 5 3.5v7A1.5 1.5 0 0 0 6.5 12h5A1.5 1.5 0 0 0 13 10.5v-7A1.5 1.5 0 0 0 11.5 2h-5zm-3 3A1.5 1.5 0 0 0 2 6.5v7A1.5 1.5 0 0 0 3.5 15h5A1.5 1.5 0 0 0 10 13.5V13H6.5A2.5 2.5 0 0 1 4 10.5V5H3.5z"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="icon-btn"
+                title="Copy full connection history"
+                aria-label="Copy full connection history"
+                @click="copy('History copied', JSON.stringify(selectedWs, null, 2))"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M6.5 2A1.5 1.5 0 0 0 5 3.5v7A1.5 1.5 0 0 0 6.5 12h5A1.5 1.5 0 0 0 13 10.5v-7A1.5 1.5 0 0 0 11.5 2h-5zm-3 3A1.5 1.5 0 0 0 2 6.5v7A1.5 1.5 0 0 0 3.5 15h5A1.5 1.5 0 0 0 10 13.5V13H6.5A2.5 2.5 0 0 1 4 10.5V5H3.5z"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
           <div v-if="!selectedWs" class="meta">Select a connection</div>
           <div v-else class="detail">
             <section>
               <h3>Connection</h3>
               <div class="kv">
                 <dt>URL</dt>
-                <dd class="mono">{{ selectedWs.url }}</dd>
+                <dd class="mono with-copy">
+                  <span>{{ selectedWs.url }}</span>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    title="Copy URL"
+                    aria-label="Copy URL"
+                    @click="copy('URL copied', selectedWs.url)"
+                  >
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M6.5 2A1.5 1.5 0 0 0 5 3.5v7A1.5 1.5 0 0 0 6.5 12h5A1.5 1.5 0 0 0 13 10.5v-7A1.5 1.5 0 0 0 11.5 2h-5zm-3 3A1.5 1.5 0 0 0 2 6.5v7A1.5 1.5 0 0 0 3.5 15h5A1.5 1.5 0 0 0 10 13.5V13H6.5A2.5 2.5 0 0 1 4 10.5V5H3.5z"
+                      />
+                    </svg>
+                  </button>
+                </dd>
                 <dt>Outcome</dt>
                 <dd>
                   <span class="pill" :class="actionClass(selectedWs.outcome)">{{

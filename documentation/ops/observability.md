@@ -53,15 +53,15 @@ webServer: [
 - **WebSockets** — each connection, outcome (matched / passthrough / error), and a bidirectional event timeline (live only — no WS file download)
 - **Connections** — connected Node agents and Playwright workers
 
-### HAR download
+### HAR download (single request → `routeFromHAR`)
 
-From the dashboard HTTP view, or via REST:
+Export one HTTP request as a HAR file, then replay it with `routeFromHAR`:
 
 ```bash
-curl -OJ "http://127.0.0.1:4310/api/export/har"
+curl -OJ "http://127.0.0.1:4310/api/history/<requestId>/har"
 ```
 
-HAR export is **HTTP only**. Playwright does not meaningfully replay WebSockets from HAR, so this library does not offer a WebSocket download.
+In the dashboard, select a request and use the download control in the detail panel. HAR export is **HTTP only** (one entry per file). There is no WebSocket HAR download.
 
 ## Capture modes
 
@@ -88,7 +88,7 @@ There is no MCP package. If a local agent is writing or running tests against th
 1. The [REST API](/ops/rest-api) documentation (this site’s REST page), and
 2. The proxy base URL (default `http://127.0.0.1:4310`).
 
-The agent can then call `GET /api/history`, `GET /api/ws`, and `GET /api/export/har` to inspect what tests intercepted — the same data the dashboard shows. Dropping the REST page into the agent’s context is usually enough.
+The agent can then call `GET /api/history`, `GET /api/ws`, and `GET /api/history/:id/har` to inspect what tests intercepted — the same data the dashboard shows. The dashboard also has small copy controls for URLs and full history JSON. Dropping the REST page into the agent’s context is usually enough.
 
 ## Related
 

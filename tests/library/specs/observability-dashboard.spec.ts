@@ -86,11 +86,12 @@ test.describe("observability dashboard", () => {
         await expect(page.getByRole("button", { name: "Connections" })).toBeVisible();
         await expect(page.getByLabel("Auto-refresh")).toBeChecked();
         await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
-        await expect(page.getByRole("link", { name: "Download HAR" })).toBeVisible();
+        await expect(page.getByText("Select a request")).toBeVisible();
+        // HAR / copy actions appear once a request is selected.
+        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveCount(0);
 
         await page.getByRole("button", { name: "WebSockets" }).click();
         await expect(page.getByText("No WebSocket connections yet")).toBeVisible();
-        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveCount(0);
 
         await page.getByRole("button", { name: "Connections" }).click();
         await expect(page.getByText("Node agents", { exact: true })).toBeVisible();

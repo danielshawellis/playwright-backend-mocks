@@ -13,10 +13,10 @@ Overview and dashboard setup: [Observability](/ops/observability).
 | `GET` | `/health` | Liveness, version, and capture mode. |
 | `GET` | `/api/history` | In-memory HTTP history (filterable). |
 | `GET` | `/api/history/:id` | Single HTTP history entry. |
+| `GET` | `/api/history/:id/har` | Download that request as a single-entry HAR 1.2 (for `routeFromHAR`). |
 | `GET` | `/api/ws` | In-memory WebSocket connections (filterable). |
 | `GET` | `/api/ws/:id` | Single WebSocket connection + event timeline. |
 | `GET` | `/api/connections` | Connected Node agents and Playwright workers. |
-| `GET` | `/api/export/har` | Download HTTP history as HAR 1.2. |
 | `OPTIONS` | API paths | CORS preflight. |
 
 Unmatched paths return:
@@ -29,7 +29,7 @@ The coordinator WebSocket is mounted at `/ws`, but it is not a REST API.
 
 ## Query parameters
 
-Shared by `/api/history`, `/api/ws`, and `/api/export/har`:
+Shared by `/api/history` and `/api/ws`:
 
 | Param | Description |
 | --- | --- |
@@ -162,13 +162,22 @@ Each connection includes `url`, `outcome` (`pending` \| `matched` \| `passthroug
 
 There is **no** WebSocket HAR/export endpoint.
 
-## `GET /api/export/har`
+## `GET /api/history/:id/har`
 
 ```bash
-curl -OJ "http://127.0.0.1:4310/api/export/har?q=charges"
+curl -OJ "http://127.0.0.1:4310/api/history/<requestId>/har"
 ```
 
-Returns a HAR 1.2 document for the filtered **HTTP** history. Custom fields `_action`, `_testId`, `_title`, and `_path` are included when present.
+Returns a **single-entry** HAR 1.2 file for that HTTP request — suitable for Playwright / this library’s `routeFromHAR`:
+
+```ts
+await backendMocks.routeFromHAR("./fixtures/charge.har", {
+  url: "**/charges",
+  update: false,
+});
+```
+
+Unknown ids return `{ "error": "not_found" }` with status 404. There is no bulk HAR export and no WebSocket HAR export.
 
 ## Using this with coding agents
 

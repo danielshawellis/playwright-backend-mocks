@@ -125,7 +125,7 @@ Base: `http://127.0.0.1:4310`. CORS open for local dashboard. Read-only `GET` + 
 | `GET` | `/api/history/:id` | Single HTTP entry + full detail/timeline |
 | `GET` | `/api/ws` | Live WS connections (same filter query where applicable) |
 | `GET` | `/api/ws/:id` | One connection + event timeline |
-| `GET` | `/api/export/har` | HAR 1.2 for **HTTP** history only (same filters). `Content-Disposition` attachment |
+| `GET` | `/api/history/:id/har` | Single-entry HAR 1.2 for that HTTP request (for `routeFromHAR`) |
 
 **Search ranking** (`q`): URL highest → method/status/title/path/testId → headers → body/frame payload. Time filter `from`/`to` (epoch ms). Newest-first when unscored.
 

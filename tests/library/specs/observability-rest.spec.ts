@@ -217,7 +217,9 @@ test.describe("observability REST", () => {
     });
   });
 
-  test("HAR export returns HTTP archive JSON", async ({ request: api }) => {
+  test("per-request HAR export is a single-entry archive for routeFromHAR", async ({
+    request: api,
+  }) => {
     await withProxy({}, async (proxy) => {
       const { playwright, node } = await setupPair(proxy.url);
       const testId = randomUUID();
@@ -261,16 +263,24 @@ test.describe("observability REST", () => {
       });
       await node.waitForType("decision:fulfill", 5_000);
 
-      const har = await api.get(`${proxy.url}/api/export/har`);
+      const missing = await api.get(`${proxy.url}/api/history/does-not-exist/har`);
+      expect(missing.status()).toBe(404);
+
+      const har = await api.get(`${proxy.url}/api/history/${requestId}/har`);
       expect(har.status()).toBe(200);
       expect(har.headers()["content-disposition"]).toMatch(/\.har/);
       const body = (await har.json()) as {
-        log: { entries: Array<{ request: { url: string }; _action?: string }> };
+        log: {
+          entries: Array<{
+            request: { url: string; method: string };
+            response: { status: number };
+          }>;
+        };
       };
-      expect(body.log.entries.some((entry) => entry.request.url.includes("charges"))).toBe(
-        true,
-      );
-      expect(body.log.entries.some((entry) => entry._action === "fulfill")).toBe(true);
+      expect(body.log.entries).toHaveLength(1);
+      expect(body.log.entries[0]?.request.url).toContain("charges");
+      expect(body.log.entries[0]?.request.method).toBe("POST");
+      expect(body.log.entries[0]?.response.status).toBe(201);
 
       playwright.close();
       node.close();

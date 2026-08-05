@@ -16,7 +16,7 @@ import {
   type SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 import { createProxyConfig, type ProxyConfig } from "./config.js";
-import { historyToHar } from "./har.js";
+import { historyEntryToHar } from "./har.js";
 import { HistoryStore } from "./history.js";
 import { Logger } from "./logger.js";
 import {
@@ -1501,6 +1501,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
+    const historyHarMatch = /^\/api\/history\/([^/]+)\/har$/.exec(url.pathname);
     const historyMatch = /^\/api\/history\/([^/]+)$/.exec(url.pathname);
     const wsMatch = /^\/api\/ws\/([^/]+)$/.exec(url.pathname);
     const isApiPath =
@@ -1508,7 +1509,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       url.pathname === "/api/history" ||
       url.pathname === "/api/connections" ||
       url.pathname === "/api/ws" ||
-      url.pathname === "/api/export/har" ||
+      historyHarMatch !== null ||
       historyMatch !== null ||
       wsMatch !== null;
 
@@ -1538,6 +1539,26 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       return;
     }
 
+    if (req.method === "GET" && historyHarMatch !== null) {
+      const id = decodeURIComponent(historyHarMatch[1] ?? "");
+      const entry = history.get(id);
+      if (entry === undefined) {
+        json(res, 404, { error: "not_found" });
+        return;
+      }
+      const har = historyEntryToHar(entry);
+      const payload = JSON.stringify(har, null, 2);
+      const safeId = id.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 64);
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="playwright-backend-mocks-${safeId}.har"`,
+        "content-length": Buffer.byteLength(payload),
+        "access-control-allow-origin": "*",
+      });
+      res.end(payload);
+      return;
+    }
+
     if (req.method === "GET" && historyMatch !== null) {
       const id = decodeURIComponent(historyMatch[1] ?? "");
       const entry = history.get(id);
@@ -1563,22 +1584,6 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       }
       json(res, 200, { connection: entry });
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/export/har") {
-      const query = parseObservabilityQuery(url);
-      const entries = filterHistory(history.list(), query);
-      const har = historyToHar(entries);
-      const payload = JSON.stringify(har, null, 2);
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      res.writeHead(200, {
-        "content-type": "application/json; charset=utf-8",
-        "content-disposition": `attachment; filename="playwright-backend-mocks-${stamp}.har"`,
-        "content-length": Buffer.byteLength(payload),
-        "access-control-allow-origin": "*",
-      });
-      res.end(payload);
       return;
     }
 

@@ -76,8 +76,9 @@ export async function fetchConnections(proxyUrl: string): Promise<ConnectionsRes
   return (await response.json()) as ConnectionsResponse;
 }
 
-export function harDownloadUrl(proxyUrl: string, query: HistoryQuery = {}): string {
-  return `${proxyUrl}/api/export/har${buildQuery(query)}`;
+/** Single-request HAR for use with Playwright `routeFromHAR`. */
+export function harDownloadUrl(proxyUrl: string, requestId: string): string {
+  return `${proxyUrl}/api/history/${encodeURIComponent(requestId)}/har`;
 }
 
 export function decodeBody(bodyBase64: string | null | undefined): string {
@@ -98,5 +99,26 @@ export function prettyBody(bodyBase64: string | null | undefined): string {
     return JSON.stringify(JSON.parse(text), null, 2);
   } catch {
     return text;
+  }
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.left = "-9999px";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(area);
+      return ok;
+    } catch {
+      return false;
+    }
   }
 }
