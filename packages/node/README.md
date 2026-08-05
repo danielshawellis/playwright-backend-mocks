@@ -75,20 +75,13 @@ Because interception happens at the lowest level through `@mswjs/interceptors`, 
 2. **Route Node HTTP through it** — this package catches outbound `fetch` / `http` / `https` (and WebSocket) calls.
 3. **Control it from Playwright** — `backendMocks.route(...)` handlers decide fulfill / continue / abort.
 
-```mermaid
-sequenceDiagram
-  participant App as Your Node app
-  participant MSW as @mswjs/interceptors
-  participant Proxy as Proxy server
-  participant Test as Playwright test
+When your app makes an outbound call:
 
-  App->>MSW: outbound HTTP call
-  MSW->>Proxy: pause and forward request
-  Proxy->>Test: match backendMocks.route()
-  Test-->>Proxy: fulfill / continue / abort
-  Proxy-->>MSW: return decision
-  MSW-->>App: mocked or real response
-```
+1. `@mswjs/interceptors` pauses the request inside the Node process.
+2. This agent forwards it to the [proxy](https://www.npmjs.com/package/@playwright-backend-mocks/proxy).
+3. The proxy matches it against the owning test’s `backendMocks.route()` handlers.
+4. The Playwright handler settles with `fulfill`, `continue`, or `abort`.
+5. The decision returns to the app as a mocked or real response.
 
 Unmatched requests pass through to the real network.
 
