@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type APIRequestContext } from "@playwright/test";
-import { encodeBody } from "@playwright-backend-mocks/protocol";
+import { encodeBody, type BackendErrorCode } from "@playwright-backend-mocks/protocol";
 import { getFreePort, TestSocket, withProxy } from "./helpers.js";
 
 export { withProxy, TestSocket };
@@ -190,7 +190,7 @@ export async function abortRequest(
   playwright: TestSocket,
   node: TestSocket,
   requestId: string,
-  errorCode = "failed",
+  errorCode: BackendErrorCode = "failed",
 ): Promise<void> {
   playwright.send({
     type: "handler:result",
@@ -203,10 +203,7 @@ export async function abortRequest(
   await node.waitForType("decision:abort", 5_000);
 }
 
-export async function passthrough(
-  node: TestSocket,
-  url: string,
-): Promise<string> {
+export async function passthrough(node: TestSocket, url: string): Promise<string> {
   const requestId = randomUUID();
   node.send({
     type: "request:start",
@@ -268,7 +265,15 @@ export async function withDashboard(
   const port = await getFreePort();
   const child: ChildProcess = spawn(
     process.execPath,
-    [dashboardCli, "--host", "127.0.0.1", "--port", String(port), "--proxy-url", proxyUrl],
+    [
+      dashboardCli,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--proxy-url",
+      proxyUrl,
+    ],
     {
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,

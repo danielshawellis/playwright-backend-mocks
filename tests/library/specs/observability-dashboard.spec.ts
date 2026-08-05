@@ -37,7 +37,9 @@ test.describe("observability dashboard", () => {
     await withProxy({}, async (proxy) => {
       await withDashboard(proxy.url, async (dashboardUrl) => {
         await page.goto(dashboardUrl);
-        await expect(page.getByRole("heading", { name: "Playwright Backend Mocks" })).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: "Playwright Backend Mocks" }),
+        ).toBeVisible();
         await expect(page.getByRole("button", { name: "HTTP" })).toBeVisible();
         await expect(page.getByRole("button", { name: "WebSockets" })).toBeVisible();
         await expect(page.getByRole("button", { name: "Connections" })).toBeVisible();
@@ -91,7 +93,9 @@ test.describe("observability dashboard", () => {
           "href",
           new RegExp(`/api/history/${requestId}/har`),
         );
-        await expect(page.getByRole("button", { name: "Copy URL" }).first()).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Copy URL" }).first(),
+        ).toBeVisible();
         await expect(
           page.getByRole("button", { name: "Copy full history entry" }),
         ).toBeVisible();
@@ -143,7 +147,9 @@ test.describe("observability dashboard", () => {
           page.getByText("/tests/dashboard-ws.spec.ts", { exact: true }),
         ).toBeVisible();
         await expect(page.getByText('"ping"')).toBeVisible();
-        await expect(page.getByRole("button", { name: "Copy URL" }).first()).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Copy URL" }).first(),
+        ).toBeVisible();
         await expect(
           page.getByRole("button", { name: "Copy full connection history" }),
         ).toBeVisible();
@@ -252,12 +258,12 @@ test.describe("observability dashboard", () => {
       const workerB = await TestSocket.connect(proxy.url);
       const node = await TestSocket.connect(proxy.url);
 
-      expect(
-        (await workerA.hello({ role: "playwright", workerId: "dash-a" })).type,
-      ).toBe("hello:ok");
-      expect(
-        (await workerB.hello({ role: "playwright", workerId: "dash-b" })).type,
-      ).toBe("hello:ok");
+      expect((await workerA.hello({ role: "playwright", workerId: "dash-a" })).type).toBe(
+        "hello:ok",
+      );
+      expect((await workerB.hello({ role: "playwright", workerId: "dash-b" })).type).toBe(
+        "hello:ok",
+      );
       expect((await node.hello({ role: "node", clientId: "obs-node" })).type).toBe(
         "hello:ok",
       );
@@ -313,7 +319,9 @@ test.describe("observability dashboard", () => {
         await page.getByText("http://example.test/collision").first().click();
 
         const callout = page.locator(".callout--danger");
-        await expect(callout.getByRole("heading", { name: "Ambiguous route" })).toBeVisible();
+        await expect(
+          callout.getByRole("heading", { name: "Ambiguous route" }),
+        ).toBeVisible();
         await expect(callout).toContainText("dashboard claim A");
         await expect(callout).toContainText("dashboard claim B");
         await expect(callout).toContainText("/tests/dash-a.spec.ts");

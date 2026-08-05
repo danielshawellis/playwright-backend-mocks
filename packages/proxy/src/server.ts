@@ -25,11 +25,7 @@ import {
   makeHistoryEvent,
   shouldRetainWs,
 } from "./observability.js";
-import {
-  filterHistory,
-  filterWsConnections,
-  parseObservabilityQuery,
-} from "./search.js";
+import { filterHistory, filterWsConnections, parseObservabilityQuery } from "./search.js";
 import { WsHistoryStore } from "./ws-history.js";
 
 interface BoundSocket {
@@ -325,7 +321,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:sendToPage":
         if (bound.role === "playwright") {
-          recordWsFrame(message.socketId, "server", message.data, message.isBase64, "handler sendToPage");
+          recordWsFrame(
+            message.socketId,
+            "server",
+            message.data,
+            message.isBase64,
+            "handler sendToPage",
+          );
           relayWsToNode(message.socketId, {
             type: "ws:sendToPage",
             socketId: message.socketId,
@@ -336,7 +338,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:sendToServer":
         if (bound.role === "playwright") {
-          recordWsFrame(message.socketId, "client", message.data, message.isBase64, "handler sendToServer");
+          recordWsFrame(
+            message.socketId,
+            "client",
+            message.data,
+            message.isBase64,
+            "handler sendToServer",
+          );
           relayWsToNode(message.socketId, {
             type: "ws:sendToServer",
             socketId: message.socketId,
@@ -1003,7 +1011,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       settleWsHistory(message.socketId, "error", {
         detail: "Matched Playwright worker disconnected before handling the WebSocket",
         errorCode: "disconnected",
-        errorMessage: "Matched Playwright worker disconnected before handling the WebSocket",
+        errorMessage:
+          "Matched Playwright worker disconnected before handling the WebSocket",
         testId: match.testId,
         routeId: match.routeId,
         title: match.test.title,
@@ -1315,8 +1324,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     if (config.historyCapture === "none") {
       return;
     }
-    const test =
-      item?.testId !== undefined ? tests.get(item.testId) : undefined;
+    const test = item?.testId !== undefined ? tests.get(item.testId) : undefined;
     finishHistoryEntry({
       history,
       capture: config.historyCapture,
@@ -1383,9 +1391,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       ...(extras.testId !== undefined ? { testId: extras.testId } : {}),
       ...(extras.routeId !== undefined ? { routeId: extras.routeId } : {}),
       ...(extras.errorCode !== undefined ? { errorCode: extras.errorCode } : {}),
-      ...(extras.errorMessage !== undefined
-        ? { errorMessage: extras.errorMessage }
-        : {}),
+      ...(extras.errorMessage !== undefined ? { errorMessage: extras.errorMessage } : {}),
       ...(extras.matches !== undefined ? { matches: extras.matches } : {}),
     });
     wsHistory.appendEvent(socketId, {

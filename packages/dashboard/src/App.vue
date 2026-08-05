@@ -247,7 +247,11 @@ onUnmounted(() => {
           </div>
         </div>
         <nav class="nav" aria-label="Views">
-          <button type="button" :class="{ active: view === 'http' }" @click="view = 'http'">
+          <button
+            type="button"
+            :class="{ active: view === 'http' }"
+            @click="view = 'http'"
+          >
             HTTP
           </button>
           <button type="button" :class="{ active: view === 'ws' }" @click="view = 'ws'">
@@ -264,7 +268,11 @@ onUnmounted(() => {
       </div>
 
       <div v-if="view !== 'connections'" class="toolbar">
-        <input v-model="search" type="search" placeholder="Search URL, body, headers, test…" />
+        <input
+          v-model="search"
+          type="search"
+          placeholder="Search URL, body, headers, test…"
+        />
         <input v-model="from" type="datetime-local" aria-label="From time" />
         <input v-model="to" type="datetime-local" aria-label="To time" />
         <label class="auto">
@@ -378,8 +386,8 @@ onUnmounted(() => {
             <section v-if="isAmbiguousHttp(selectedHttp)" class="callout callout--danger">
               <h3>Ambiguous route</h3>
               <p>
-                More than one Playwright test claimed this Node request. The proxy fails loud on
-                purpose — this is a test-architecture bug, not flaky networking.
+                More than one Playwright test claimed this Node request. The proxy fails
+                loud on purpose — this is a test-architecture bug, not flaky networking.
               </p>
               <p
                 v-if="selectedHttp.outcome.kind === 'error'"
@@ -387,7 +395,11 @@ onUnmounted(() => {
               >
                 {{ selectedHttp.outcome.message }}
               </p>
-              <ul v-if="selectedHttp.outcome.kind === 'error' && selectedHttp.outcome.matches">
+              <ul
+                v-if="
+                  selectedHttp.outcome.kind === 'error' && selectedHttp.outcome.matches
+                "
+              >
                 <li
                   v-for="claim in uniqueClaimants(selectedHttp.outcome.matches)"
                   :key="claim.testId"
@@ -408,7 +420,10 @@ onUnmounted(() => {
               <div class="kv">
                 <dt>Request</dt>
                 <dd class="mono with-copy">
-                  <span>{{ selectedHttp.request.method }} {{ selectedHttp.request.url }}</span>
+                  <span
+                    >{{ selectedHttp.request.method }}
+                    {{ selectedHttp.request.url }}</span
+                  >
                   <button
                     type="button"
                     class="icon-btn"
@@ -438,7 +453,9 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section v-if="selectedHttp.title || selectedHttp.path || selectedHttp.testId">
+            <section
+              v-if="selectedHttp.title || selectedHttp.path || selectedHttp.testId"
+            >
               <h3>Test</h3>
               <div class="kv">
                 <dt v-if="selectedHttp.title">Title</dt>
@@ -448,7 +465,9 @@ onUnmounted(() => {
                 <dt v-if="selectedHttp.testId">testId</dt>
                 <dd v-if="selectedHttp.testId" class="mono">{{ selectedHttp.testId }}</dd>
                 <dt v-if="selectedHttp.routeId">routeId</dt>
-                <dd v-if="selectedHttp.routeId" class="mono">{{ selectedHttp.routeId }}</dd>
+                <dd v-if="selectedHttp.routeId" class="mono">
+                  {{ selectedHttp.routeId }}
+                </dd>
               </div>
             </section>
 
@@ -492,7 +511,11 @@ onUnmounted(() => {
         <section class="panel">
           <div class="panel__head">Connections · {{ wsConnections.length }}</div>
           <div v-if="wsConnections.length === 0" class="meta">
-            {{ search || from || to ? "No matching connections" : "No WebSocket connections yet" }}
+            {{
+              search || from || to
+                ? "No matching connections"
+                : "No WebSocket connections yet"
+            }}
           </div>
           <ul v-else class="list">
             <li
@@ -555,14 +578,17 @@ onUnmounted(() => {
             <section v-if="isAmbiguousWs(selectedWs)" class="callout callout--danger">
               <h3>Ambiguous route</h3>
               <p>
-                More than one Playwright test claimed this WebSocket. The proxy fails loud on
-                purpose — fix suite scoping rather than treating this as flakiness.
+                More than one Playwright test claimed this WebSocket. The proxy fails loud
+                on purpose — fix suite scoping rather than treating this as flakiness.
               </p>
               <p v-if="selectedWs.errorMessage" class="callout__message mono">
                 {{ selectedWs.errorMessage }}
               </p>
               <ul v-if="selectedWs.matches?.length">
-                <li v-for="claim in uniqueClaimants(selectedWs.matches)" :key="claim.testId">
+                <li
+                  v-for="claim in uniqueClaimants(selectedWs.matches)"
+                  :key="claim.testId"
+                >
                   <strong>{{ claim.title }}</strong>
                   <span class="mono"> · {{ claim.file }}</span>
                 </li>
@@ -613,7 +639,11 @@ onUnmounted(() => {
               <h3>Events</h3>
               <div v-if="selectedWs.events.length === 0" class="meta">No events</div>
               <div v-else class="events">
-                <div v-for="event in [...selectedWs.events].reverse()" :key="event.id" class="event">
+                <div
+                  v-for="event in [...selectedWs.events].reverse()"
+                  :key="event.id"
+                  class="event"
+                >
                   <div class="event__time">{{ formatTime(event.timestamp) }}</div>
                   <div class="event__dir">
                     <template v-if="event.direction === 'client'">→</template>
@@ -655,7 +685,10 @@ onUnmounted(() => {
             <li class="meta">No playwright workers</li>
           </ul>
           <ul v-else>
-            <li v-for="worker in connections.playwrightWorkers" :key="worker.connectionId">
+            <li
+              v-for="worker in connections.playwrightWorkers"
+              :key="worker.connectionId"
+            >
               <span class="pill">pw</span>
               <span class="mono"> {{ worker.clientId }}</span>
               · tests {{ worker.testCount }} · routes {{ worker.routeCount }}

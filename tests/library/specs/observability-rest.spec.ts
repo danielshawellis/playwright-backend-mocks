@@ -68,7 +68,9 @@ test.describe("observability REST — HTTP recording", () => {
     });
   });
 
-  test("all mode records continue (with overrides) and abort", async ({ request: api }) => {
+  test("all mode records continue (with overrides) and abort", async ({
+    request: api,
+  }) => {
     await withProxy({}, async (proxy) => {
       const { playwright, node } = await setupPair(proxy.url);
       await registerHttpRoute(playwright, {
@@ -165,7 +167,9 @@ test.describe("observability REST — HTTP recording", () => {
     });
   });
 
-  test("none mode records neither HTTP nor WebSocket history", async ({ request: api }) => {
+  test("none mode records neither HTTP nor WebSocket history", async ({
+    request: api,
+  }) => {
     await withProxy({ historyCapture: "none" }, async (proxy) => {
       const { playwright, node } = await setupPair(proxy.url);
       await registerHttpRoute(playwright, {
@@ -204,7 +208,9 @@ test.describe("observability REST — HTTP recording", () => {
 });
 
 test.describe("observability REST — filters and HAR", () => {
-  test("filters by q, testId, and action; ranks URL matches", async ({ request: api }) => {
+  test("filters by q, testId, and action; ranks URL matches", async ({
+    request: api,
+  }) => {
     await withProxy({}, async (proxy) => {
       const { playwright, node } = await setupPair(proxy.url);
       const { testId } = await registerHttpRoute(playwright, {
@@ -411,7 +417,9 @@ test.describe("observability REST — filters and HAR", () => {
       const decision = await node.waitForType("decision:error", 5_000);
       expect(decision).toMatchObject({ code: "ambiguous_route" });
 
-      const entry = (await getHistory(api, proxy.url)).find((item) => item.id === requestId);
+      const entry = (await getHistory(api, proxy.url)).find(
+        (item) => item.id === requestId,
+      );
       expect(entry).toMatchObject({
         action: "error",
         outcome: {
@@ -420,7 +428,9 @@ test.describe("observability REST — filters and HAR", () => {
         },
       });
       const titles = (entry?.outcome.matches ?? []).map((match) => match.title);
-      expect(titles).toEqual(expect.arrayContaining(["claiming test A", "claiming test B"]));
+      expect(titles).toEqual(
+        expect.arrayContaining(["claiming test A", "claiming test B"]),
+      );
 
       workerA.close();
       workerB.close();

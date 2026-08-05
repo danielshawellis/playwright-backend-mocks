@@ -50,10 +50,7 @@ export class WsHistoryStore {
     return next;
   }
 
-  appendEvent(
-    id: string,
-    event: Omit<WsTimelineEvent, "id"> & { id?: string },
-  ): void {
+  appendEvent(id: string, event: Omit<WsTimelineEvent, "id"> & { id?: string }): void {
     this.update(id, (entry) => {
       const nextEvent: WsTimelineEvent = {
         id: event.id ?? randomUUID(),

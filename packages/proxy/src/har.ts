@@ -106,9 +106,7 @@ export function historyEntryToHar(entry: HistoryEntry): unknown {
       ...(entry.outcome.kind === "aborted"
         ? { _failureText: entry.outcome.errorCode }
         : {}),
-      ...(entry.outcome.kind === "error"
-        ? { _failureText: entry.outcome.message }
-        : {}),
+      ...(entry.outcome.kind === "error" ? { _failureText: entry.outcome.message } : {}),
     },
     cache: {},
     timings: {

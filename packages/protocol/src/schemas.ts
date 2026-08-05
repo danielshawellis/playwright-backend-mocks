@@ -136,7 +136,6 @@ export const historyActionSchema = z.enum([
   "pending",
 ]);
 
-
 export type HistoryAction = z.infer<typeof historyActionSchema>;
 
 export const historyEventSchema = z.object({
