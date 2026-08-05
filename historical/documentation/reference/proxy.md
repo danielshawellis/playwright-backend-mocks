@@ -86,7 +86,7 @@ Each history entry's `outcome.kind` is one of:
 
 ## Matching rules (ownership)
 
-> High-level rules: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md). This page may lag.
+> High-level rules: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/PHILOSOPHY.md). This page may lag.
 
 The proxy does not evaluate URL matchers itself for ownership. It broadcasts `request:claim` to every Playwright connection that has active routes, waits for all `request:claim-result` replies (or `claimTimeoutMs`), then applies:
 

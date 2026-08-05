@@ -12,7 +12,7 @@ pnpm docs:preview  # serve the production build
 
 ## Deployment
 
-Pushing to `main` runs [`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml), which builds with `pnpm docs:build` and deploys `.vitepress/dist` to GitHub Pages (`base: /playwright-backend-mocks-msw/`).
+Pushing to `main` runs [`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml), which builds with `pnpm docs:build` and deploys `.vitepress/dist` to GitHub Pages (`base: /playwright-backend-mocks/`).
 
 ## Authoring notes
 

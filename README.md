@@ -4,7 +4,8 @@
 
 Mock outbound HTTP/HTTPS (and `globalThis.WebSocket`) from Node.js application processes in Playwright tests — with a DX that matches Playwright’s browser interception APIs as closely as practical.
 
-**Docs:** [`documentation/`](./documentation/) (VitePress) · deploy on `main` via GitHub Pages  
+**Docs:** [`documentation/`](./documentation/) (VitePress) · [live site](https://danielshawellis.github.io/playwright-backend-mocks/) (GitHub Pages on `main`)  
+**Publish:** npm packages from `main` via OIDC trusted publishing — see [`PUBLISHING.md`](./PUBLISHING.md)  
 **How we develop this repo:** [`PHILOSOPHY.md`](./PHILOSOPHY.md) · agent notes: [`AGENTS.md`](./AGENTS.md) · plan: [`research/rewrite-specification.md`](./research/rewrite-specification.md)
 
 > The archived prototype (including the old docs site) lives under [`historical/`](./historical/) and is **not** wired into the workspace.
@@ -38,15 +39,15 @@ pnpm docs:build           # static site → documentation/.vitepress/dist
 
 ## Packages
 
-| Package                                | Description                                   |
-| -------------------------------------- | --------------------------------------------- |
-| `@playwright-backend-mocks/playwright` | Playwright fixtures (`backendMocks.route`, …) |
-| `@playwright-backend-mocks/node`       | Node agent that installs interceptors         |
-| `@playwright-backend-mocks/proxy`      | Standalone coordinator + REST API CLI         |
-| `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
-| `@playwright-backend-mocks/dashboard`  | Optional read-only observability UI           |
+| Package | Description |
+| --- | --- |
+| [`@playwright-backend-mocks/playwright`](./packages/playwright/README.md) | Playwright fixtures (`backendMocks.route`, …) |
+| [`@playwright-backend-mocks/node`](./packages/node/README.md) | Node agent that installs interceptors |
+| [`@playwright-backend-mocks/proxy`](./packages/proxy/README.md) | Standalone coordinator + REST API CLI |
+| [`@playwright-backend-mocks/protocol`](./packages/protocol/README.md) | Shared wire protocol (types + validators) |
+| [`@playwright-backend-mocks/dashboard`](./packages/dashboard/README.md) | Optional read-only observability UI |
 
-Docs: [Observability](./documentation/ops/observability.md). Packages are **not published from this tree yet**.
+Docs: [Observability](./documentation/ops/observability.md). Releases: [`PUBLISHING.md`](./PUBLISHING.md).
 
 ## Target DX
 

@@ -1,6 +1,6 @@
 {
   "name": "@playwright-backend-mocks/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared protocol types and validators for Playwright Backend Mocks",
   "license": "MIT",
   "type": "module",
@@ -33,5 +33,14 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielshawellis/playwright-backend-mocks.git",
+    "directory": "packages/protocol"
+  },
+  "homepage": "https://danielshawellis.github.io/playwright-backend-mocks/",
+  "bugs": {
+    "url": "https://github.com/danielshawellis/playwright-backend-mocks/issues"
   }
 }

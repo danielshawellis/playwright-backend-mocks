@@ -16,5 +16,5 @@ hero:
       link: /guide/why
     - theme: alt
       text: GitHub
-      link: https://github.com/danielshawellis/playwright-backend-mocks-msw
+      link: https://github.com/danielshawellis/playwright-backend-mocks
 ---

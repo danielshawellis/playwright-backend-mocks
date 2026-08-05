@@ -1,22 +1,51 @@
+# Publish library packages to npm when versions on main are not yet released.
+# Auth: npm Trusted Publishing (OIDC) — no NPM_TOKEN. Gated on full CI.
 name: Publish
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
+  ci:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    name: Publish to npm
+    needs: ci
+    # Restrict workflow_dispatch (and any non-main ref) so feature branches cannot publish.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # OIDC for npm trusted publishing
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip publish during rewrite
-        run: |
-          echo "Library packages are archived under historical/ during the greenfield rewrite."
-          echo "Publishing will resume once Step 2 packages land."
-          exit 1
+      - uses: pnpm/action-setup@v4
+        # Version comes from package.json "packageManager"
+
+      # Node 24 ships npm 11.5.1+ required for trusted publishing / OIDC.
+      # Do not set registry-url: setup-node would write an empty _authToken line
+      # that prevents npm from using OIDC (ENEEDAUTH / misleading E404).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Publish unpublished package versions
+        run: pnpm publish:packages
+        # Do not set NODE_AUTH_TOKEN — npm uses OIDC trusted publishing.

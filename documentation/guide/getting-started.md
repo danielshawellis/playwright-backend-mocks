@@ -11,7 +11,7 @@ Get from a Playwright project to a working backend mock: install the packages, s
 | Packages | `@playwright-backend-mocks/playwright`, `node`, `proxy` |
 
 ::: tip
-Keep `@playwright-backend-mocks/playwright`, `@playwright-backend-mocks/node`, `@playwright-backend-mocks/proxy`, and `@playwright-backend-mocks/protocol` on the same version. Until packages are published to npm, develop against this monorepo’s `packages/` workspace.
+Keep `@playwright-backend-mocks/playwright`, `@playwright-backend-mocks/node`, `@playwright-backend-mocks/proxy`, and `@playwright-backend-mocks/protocol` on the same version.
 :::
 
 ## 1. Install

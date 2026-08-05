@@ -1,7 +1,7 @@
 {
   "name": "playwright-backend-mocks",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Mock outbound Node.js HTTP from Playwright tests",
   "license": "MIT",
@@ -25,6 +25,7 @@
     "docs:dev": "vitepress dev documentation",
     "docs:build": "vitepress build documentation",
     "docs:preview": "vitepress preview documentation",
+    "publish:packages": "node scripts/publish-packages.mjs",
     "clean": "rm -rf test-results playwright-report packages/*/dist documentation/.vitepress/dist documentation/.vitepress/cache"
   },
   "devDependencies": {
