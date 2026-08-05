@@ -185,7 +185,7 @@ Document optional Playwright `webServer` entry alongside the proxy.
 - **Brand** in the top bar (product name), not buried.
 - Primary nav: three destinations — **HTTP**, **WebSockets**, **Connections**.
 - Shared toolbar on HTTP/WS: search, optional time range, auto-refresh checkbox (**checked by default**), Refresh button.
-- **Download HAR** only on the HTTP view (and maybe Connections omitted). Disabled/hidden on WS.
+- **Download HAR** on the selected HTTP detail (single request, for `routeFromHAR`). Not on WS.
 - Proxy URL shown subtly in the header (from `/config.json`).
 - Connection error banner if proxy unreachable.
 
@@ -246,7 +246,8 @@ Row click selects. Selected row highlighted with brand-soft background (not a he
 
 Empty states: “No requests yet” / “No matches for this search”.
 
-HAR button downloads current filtered set via `GET /api/export/har?...`.
+HAR control downloads the selected request via `GET /api/history/:id/har`.
+Copy icons copy URL and full history JSON (HTTP + WebSockets).
 
 ---
 
@@ -361,7 +362,7 @@ tests/library/specs/observability/
 2. `--history-capture all|handled|none` behaves as specified.  
 3. `/api/history` lists/filters/searches HTTP with action + title + path.  
 4. `/api/ws` exposes live WS timelines (no export).  
-5. `/api/export/har` downloads HTTP-only HAR.  
+5. `/api/history/:id/har` downloads a single-entry HTTP HAR for `routeFromHAR`.  
 6. Dashboard package installs separately, defaults auto-refresh on, has Refresh + HAR on HTTP view, separate HTTP/WS/Connections views, VitePress-like styling.  
 7. Docs explain REST for humans and local agents; no MCP package.  
 8. Library Playwright tests cover REST + dashboard smoke.
