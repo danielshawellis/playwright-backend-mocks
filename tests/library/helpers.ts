@@ -85,7 +85,12 @@ export class TestSocket {
         this.answerClaim(message);
         return;
       }
+      if (message.type === "ws:claim") {
+        this.answerWsClaim(message);
+        return;
+      }
       const waiter = this.waiters.shift();
+
       if (waiter) {
         waiter(message);
       } else {
@@ -152,6 +157,40 @@ export class TestSocket {
       this.send({
         type: "request:claim-result",
         requestId: message.requestId,
+        testId,
+        matches: byTest.get(testId) ?? [],
+      });
+    }
+  }
+
+  private answerWsClaim(
+    message: Extract<ProxyToClientMessage, { type: "ws:claim" }>,
+  ): void {
+    const byTest = new Map<string, Array<{ routeId: string }>>();
+    for (const [routeId, route] of this.routes) {
+      if (
+        !matchSerializedMatcher(route.matcher, {
+          request: {
+            url: message.url,
+            method: "GET",
+            headers: {},
+            bodyBase64: null,
+          },
+          clientId: message.clientId,
+        })
+      ) {
+        continue;
+      }
+      const matches = byTest.get(route.testId) ?? [];
+      matches.push({ routeId });
+      byTest.set(route.testId, matches);
+    }
+
+    const testIds = new Set([...this.routes.values()].map((route) => route.testId));
+    for (const testId of testIds) {
+      this.send({
+        type: "ws:claim-result",
+        socketId: message.socketId,
         testId,
         matches: byTest.get(testId) ?? [],
       });

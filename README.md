@@ -44,8 +44,9 @@ pnpm docs:build           # static site → documentation/.vitepress/dist
 | `@playwright-backend-mocks/node`       | Node agent that installs interceptors         |
 | `@playwright-backend-mocks/proxy`      | Standalone coordinator + REST API CLI         |
 | `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
+| `@playwright-backend-mocks/dashboard`  | Optional read-only observability UI           |
 
-Optional dashboard remains archived under `historical/` for now. Packages are **not published from this tree yet**.
+Docs: [Observability](./documentation/ops/observability.md). Packages are **not published from this tree yet**.
 
 ## Target DX
 

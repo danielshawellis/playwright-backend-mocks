@@ -7,6 +7,7 @@
     "test": "playwright test"
   },
   "devDependencies": {
+    "@playwright-backend-mocks/dashboard": "workspace:*",
     "@playwright-backend-mocks/node": "workspace:*",
     "@playwright-backend-mocks/playwright": "workspace:*",
     "@playwright-backend-mocks/protocol": "workspace:*",

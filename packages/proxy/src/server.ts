@@ -11,12 +11,26 @@ import {
   type ClientToProxyMessage,
   type HistoryEntry,
   type ProxyToClientMessage,
+  type RequestOverrides,
   type RouteMatchDiagnostic,
   type SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 import { createProxyConfig, type ProxyConfig } from "./config.js";
+import { historyToHar } from "./har.js";
 import { HistoryStore } from "./history.js";
 import { Logger } from "./logger.js";
+import {
+  finishHistoryEntry,
+  formatStartupBanner,
+  makeHistoryEvent,
+  shouldRetainWs,
+} from "./observability.js";
+import {
+  filterHistory,
+  filterWsConnections,
+  parseObservabilityQuery,
+} from "./search.js";
+import { WsHistoryStore } from "./ws-history.js";
 
 interface BoundSocket {
   readonly socket: WebSocket;
@@ -101,6 +115,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
   const config = createProxyConfig(overrides);
   const logger = new Logger(config.logLevel);
   const history = new HistoryStore(config.historyLimit);
+  const wsHistory = new WsHistoryStore(config.wsHistoryLimit);
 
   const connections = new Map<string, BoundSocket>();
   const routes = new Map<string, RouteRegistration>();
@@ -228,6 +243,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:messageFromPage":
         if (bound.role === "node") {
+          recordWsFrame(message.socketId, "client", message.data, message.isBase64);
           relayWsToOwner(message.socketId, {
             type: "ws:messageFromPage",
             socketId: message.socketId,
@@ -238,6 +254,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:messageFromServer":
         if (bound.role === "node") {
+          recordWsFrame(message.socketId, "server", message.data, message.isBase64);
           relayWsToOwner(message.socketId, {
             type: "ws:messageFromServer",
             socketId: message.socketId,
@@ -248,6 +265,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:closePage":
         if (bound.role === "node") {
+          recordWsClose(message.socketId, message);
           relayWsToOwner(message.socketId, {
             type: "ws:closePage",
             socketId: message.socketId,
@@ -256,6 +274,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
             wasClean: message.wasClean,
           });
         } else if (bound.role === "playwright") {
+          recordWsClose(message.socketId, message);
           relayWsToNode(message.socketId, {
             type: "ws:closePage",
             socketId: message.socketId,
@@ -267,6 +286,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:closeServer":
         if (bound.role === "node") {
+          recordWsClose(message.socketId, message);
           relayWsToOwner(message.socketId, {
             type: "ws:closeServer",
             socketId: message.socketId,
@@ -275,6 +295,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
             wasClean: message.wasClean,
           });
         } else if (bound.role === "playwright") {
+          recordWsClose(message.socketId, message);
           relayWsToNode(message.socketId, {
             type: "ws:closeServer",
             socketId: message.socketId,
@@ -286,6 +307,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:connect":
         if (bound.role === "playwright") {
+          recordWsHandler(message.socketId, "connect");
           relayWsToNode(message.socketId, {
             type: "ws:connect",
             socketId: message.socketId,
@@ -294,6 +316,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:ensureOpened":
         if (bound.role === "playwright") {
+          recordWsHandler(message.socketId, "ensureOpened");
           relayWsToNode(message.socketId, {
             type: "ws:ensureOpened",
             socketId: message.socketId,
@@ -302,6 +325,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:sendToPage":
         if (bound.role === "playwright") {
+          recordWsFrame(message.socketId, "server", message.data, message.isBase64, "handler sendToPage");
           relayWsToNode(message.socketId, {
             type: "ws:sendToPage",
             socketId: message.socketId,
@@ -312,6 +336,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         return;
       case "ws:sendToServer":
         if (bound.role === "playwright") {
+          recordWsFrame(message.socketId, "client", message.data, message.isBase64, "handler sendToServer");
           relayWsToNode(message.socketId, {
             type: "ws:sendToServer",
             socketId: message.socketId,
@@ -391,13 +416,17 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
   ): Promise<void> {
     const historyId = message.requestId;
     const startedAt = Date.now();
-    history.add({
-      id: historyId,
-      timestamp: startedAt,
-      clientId: message.clientId,
-      request: message.request,
-      outcome: { kind: "pending" },
-    });
+    if (config.historyCapture !== "none") {
+      history.add({
+        id: historyId,
+        timestamp: startedAt,
+        clientId: message.clientId,
+        request: message.request,
+        outcome: { kind: "pending" },
+        action: "pending",
+        events: [makeHistoryEvent("observed", undefined, startedAt)],
+      });
+    }
 
     const pendingRequest: PendingRequest = {
       requestId: message.requestId,
@@ -820,6 +849,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       protocols: message.protocols,
     };
     pendingSockets.set(message.socketId, pendingSocket);
+    beginWsHistory(message);
 
     const activeRoutes: RouteRegistration[] = [];
     const expectedTestIds = new Set<string>();
@@ -839,6 +869,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
     if (expectedTestIds.size === 0) {
       pendingSockets.delete(message.socketId);
+      settleWsHistory(message.socketId, "passthrough");
       send(bound, { type: "ws:passthrough", socketId: message.socketId });
       return;
     }
@@ -857,6 +888,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           ? "claim_timeout"
           : "internal";
       pendingSockets.delete(message.socketId);
+      settleWsHistory(message.socketId, "error", { detail: errorMessage });
       send(bound, {
         type: "ws:error",
         socketId: message.socketId,
@@ -885,6 +917,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
     if (matches.length === 0) {
       pendingSockets.delete(message.socketId);
+      settleWsHistory(message.socketId, "passthrough");
       send(bound, { type: "ws:passthrough", socketId: message.socketId });
       return;
     }
@@ -913,6 +946,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       const errorMessage = `Ambiguous backend mock routing: ${matchesByTestId.size} tests claimed WebSocket ${message.url}`;
 
       pendingSockets.delete(message.socketId);
+      settleWsHistory(message.socketId, "error", { detail: errorMessage });
       send(bound, {
         type: "ws:error",
         socketId: message.socketId,
@@ -952,6 +986,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     const worker = connections.get(match.connectionId);
     if (worker === undefined || worker.socket.readyState !== WebSocket.OPEN) {
       pendingSockets.delete(message.socketId);
+      settleWsHistory(message.socketId, "error", {
+        detail: "Matched Playwright worker disconnected before handling the WebSocket",
+        testId: match.testId,
+        routeId: match.routeId,
+        title: match.test.title,
+        path: match.test.file,
+      });
       send(bound, {
         type: "ws:error",
         socketId: message.socketId,
@@ -960,6 +1001,14 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       });
       return;
     }
+
+    settleWsHistory(message.socketId, "matched", {
+      testId: match.testId,
+      routeId: match.routeId,
+      title: match.test.title,
+      path: match.test.file,
+      detail: "matched",
+    });
 
     // Keep pendingSockets entry for lifecycle relay until both sides finish.
     send(worker, {
@@ -1142,7 +1191,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           requestId: message.requestId,
           ...(result.overrides !== undefined ? { overrides: result.overrides } : {}),
         });
-        finishHistory(item.historyId, item.startedAt, { kind: "continued" }, item);
+        finishHistory(
+          item.historyId,
+          item.startedAt,
+          { kind: "continued" },
+          item,
+          result.overrides !== undefined ? { overrides: result.overrides } : undefined,
+        );
         pending.delete(message.requestId);
         return;
       }
@@ -1237,14 +1292,165 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     startedAt: number,
     outcome: HistoryEntry["outcome"],
     item?: PendingRequest,
+    extras?: {
+      overrides?: RequestOverrides;
+      eventDetail?: string;
+    },
   ): void {
-    history.update(historyId, (entry) => ({
-      ...entry,
+    if (config.historyCapture === "none") {
+      return;
+    }
+    const test =
+      item?.testId !== undefined ? tests.get(item.testId) : undefined;
+    finishHistoryEntry({
+      history,
+      capture: config.historyCapture,
+      historyId,
+      startedAt,
       outcome,
-      durationMs: Date.now() - startedAt,
       ...(item?.testId !== undefined ? { testId: item.testId } : {}),
       ...(item?.routeId !== undefined ? { routeId: item.routeId } : {}),
+      ...(test !== undefined ? { title: test.title, path: test.file } : {}),
+      ...(extras?.overrides !== undefined ? { overrides: extras.overrides } : {}),
+      ...(extras?.eventDetail !== undefined
+        ? { event: makeHistoryEvent(actionLabel(outcome), extras.eventDetail) }
+        : {}),
+    });
+  }
+
+  function actionLabel(outcome: HistoryEntry["outcome"]): string {
+    switch (outcome.kind) {
+      case "mocked":
+        return "fulfill";
+      case "continued":
+        return "continue";
+      case "aborted":
+        return "abort";
+      case "passthrough":
+        return "passthrough";
+      case "error":
+        return "error";
+      case "pending":
+        return "pending";
+    }
+  }
+
+  function beginWsHistory(
+    message: Extract<ClientToProxyMessage, { type: "ws:connection" }>,
+  ): void {
+    if (config.historyCapture === "none") {
+      return;
+    }
+    const timestamp = Date.now();
+    wsHistory.add({
+      id: message.socketId,
+      timestamp,
+      clientId: message.clientId,
+      url: message.url,
+      protocols: message.protocols,
+      outcome: "pending",
+      events: [
+        {
+          id: randomUUID(),
+          timestamp,
+          direction: "system",
+          kind: "open",
+          detail: "connection observed",
+        },
+      ],
+    });
+  }
+
+  function settleWsHistory(
+    socketId: string,
+    outcome: "matched" | "passthrough" | "error",
+    extras: {
+      title?: string;
+      path?: string;
+      testId?: string;
+      routeId?: string;
+      detail?: string;
+    } = {},
+  ): void {
+    if (config.historyCapture === "none") {
+      return;
+    }
+    if (!shouldRetainWs(config.historyCapture, outcome)) {
+      wsHistory.remove(socketId);
+      return;
+    }
+    wsHistory.setOutcome(socketId, outcome, {
+      ...(extras.title !== undefined ? { title: extras.title } : {}),
+      ...(extras.path !== undefined ? { path: extras.path } : {}),
+      ...(extras.testId !== undefined ? { testId: extras.testId } : {}),
+      ...(extras.routeId !== undefined ? { routeId: extras.routeId } : {}),
+    });
+    wsHistory.appendEvent(socketId, {
+      timestamp: Date.now(),
+      direction: "system",
+      kind: outcome === "error" ? "error" : "handler",
+      detail: extras.detail ?? outcome,
+    });
+  }
+
+  function recordWsFrame(
+    socketId: string,
+    direction: "client" | "server",
+    data: string,
+    isBase64: boolean,
+    detail?: string,
+  ): void {
+    if (config.historyCapture === "none" || wsHistory.get(socketId) === undefined) {
+      return;
+    }
+    wsHistory.appendEvent(socketId, {
+      timestamp: Date.now(),
+      direction,
+      kind: "frame",
+      data,
+      isBase64,
+      ...(detail !== undefined ? { detail } : {}),
+    });
+  }
+
+  function recordWsHandler(socketId: string, detail: string): void {
+    if (config.historyCapture === "none" || wsHistory.get(socketId) === undefined) {
+      return;
+    }
+    wsHistory.appendEvent(socketId, {
+      timestamp: Date.now(),
+      direction: "system",
+      kind: "handler",
+      detail,
+    });
+  }
+
+  function recordWsClose(
+    socketId: string,
+    message: { code?: number; reason?: string; wasClean: boolean },
+  ): void {
+    if (config.historyCapture === "none" || wsHistory.get(socketId) === undefined) {
+      return;
+    }
+    const closedAt = Date.now();
+    wsHistory.update(socketId, (entry) => ({
+      ...entry,
+      closedAt,
+      close: {
+        ...(message.code !== undefined ? { code: message.code } : {}),
+        ...(message.reason !== undefined ? { reason: message.reason } : {}),
+        wasClean: message.wasClean,
+      },
     }));
+    wsHistory.appendEvent(socketId, {
+      timestamp: closedAt,
+      direction: "system",
+      kind: "close",
+      detail:
+        message.code !== undefined
+          ? `close ${message.code}${message.reason ? ` ${message.reason}` : ""}`
+          : "close",
+    });
   }
 
   function onDisconnect(bound: BoundSocket): void {
@@ -1295,10 +1501,16 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
+    const historyMatch = /^\/api\/history\/([^/]+)$/.exec(url.pathname);
+    const wsMatch = /^\/api\/ws\/([^/]+)$/.exec(url.pathname);
     const isApiPath =
       url.pathname === "/health" ||
       url.pathname === "/api/history" ||
-      url.pathname === "/api/connections";
+      url.pathname === "/api/connections" ||
+      url.pathname === "/api/ws" ||
+      url.pathname === "/api/export/har" ||
+      historyMatch !== null ||
+      wsMatch !== null;
 
     if (isApiPath) {
       setCors(res);
@@ -1315,12 +1527,58 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         ok: true,
         version: PACKAGE_VERSION,
         protocolVersion: PROTOCOL_VERSION,
+        historyCapture: config.historyCapture,
       });
       return;
     }
 
     if (req.method === "GET" && url.pathname === "/api/history") {
-      json(res, 200, { entries: history.list() });
+      const query = parseObservabilityQuery(url);
+      json(res, 200, { entries: filterHistory(history.list(), query) });
+      return;
+    }
+
+    if (req.method === "GET" && historyMatch !== null) {
+      const id = decodeURIComponent(historyMatch[1] ?? "");
+      const entry = history.get(id);
+      if (entry === undefined) {
+        json(res, 404, { error: "not_found" });
+        return;
+      }
+      json(res, 200, { entry });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/ws") {
+      const query = parseObservabilityQuery(url);
+      json(res, 200, { connections: filterWsConnections(wsHistory.list(), query) });
+      return;
+    }
+
+    if (req.method === "GET" && wsMatch !== null) {
+      const id = decodeURIComponent(wsMatch[1] ?? "");
+      const entry = wsHistory.get(id);
+      if (entry === undefined) {
+        json(res, 404, { error: "not_found" });
+        return;
+      }
+      json(res, 200, { connection: entry });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/export/har") {
+      const query = parseObservabilityQuery(url);
+      const entries = filterHistory(history.list(), query);
+      const har = historyToHar(entries);
+      const payload = JSON.stringify(har, null, 2);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="playwright-backend-mocks-${stamp}.har"`,
+        "content-length": Buffer.byteLength(payload),
+        "access-control-allow-origin": "*",
+      });
+      res.end(payload);
       return;
     }
 
@@ -1400,6 +1658,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         }
       }, config.heartbeatMs);
 
+      const banner = formatStartupBanner({
+        httpUrl: this.url,
+        historyCapture: config.historyCapture,
+      });
+      if (config.logLevel !== "silent") {
+        console.log(`\n${banner}\n`);
+      }
       logger.info(`listening on ${this.url}`);
     },
     async stop() {

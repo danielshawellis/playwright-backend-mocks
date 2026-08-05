@@ -75,7 +75,7 @@ The living package set is:
 - `@playwright-backend-mocks/proxy`
 - `@playwright-backend-mocks/protocol`
 
-There is no dashboard package in the living tree.
+Observability history is in-memory only (cleared when the proxy exits). WebSocket traffic can be inspected live via REST/dashboard but is not exported as HAR. There is no MCP server — local agents should use the [REST API](/ops/rest-api) directly (see [Observability](/ops/observability)).
 
 ## Node and Playwright versions
 

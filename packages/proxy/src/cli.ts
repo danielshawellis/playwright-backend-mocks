@@ -1,5 +1,5 @@
 import { createProxyServer } from "./server.js";
-import type { LogLevel } from "./config.js";
+import type { HistoryCaptureMode, LogLevel } from "./config.js";
 
 function printHelp(): void {
   console.log(`Usage: playwright-backend-mocks-proxy [options]
@@ -8,7 +8,9 @@ Options:
   --host <host>              Bind host (default: 127.0.0.1)
   --port <port>              Bind port (default: 4310)
   --token <token>            Optional shared connection token
-  --history-limit <n>        In-memory history size (default: 1000)
+  --history-limit <n>        In-memory HTTP history size (default: 1000)
+  --ws-history-limit <n>     In-memory WebSocket history size (default: 200)
+  --history-capture <mode>   all|handled|none (default: all)
   --heartbeat-ms <ms>        Ping interval (default: 15000)
   --idle-timeout-ms <ms>     Idle disconnect timeout (default: 60000)
   --claim-timeout-ms <ms>    Wait for Playwright route claims (default: 5000)
@@ -44,6 +46,19 @@ function parseArgs(argv: string[]) {
     throw new Error(`Invalid --history-limit: ${historyLimitRaw}`);
   }
 
+  const wsHistoryLimitRaw = readFlag(argv, "--ws-history-limit") ?? "200";
+  const wsHistoryLimit = Number(wsHistoryLimitRaw);
+  if (!Number.isInteger(wsHistoryLimit) || wsHistoryLimit <= 0) {
+    throw new Error(`Invalid --ws-history-limit: ${wsHistoryLimitRaw}`);
+  }
+
+  const historyCapture = (readFlag(argv, "--history-capture") ??
+    "all") as HistoryCaptureMode;
+  const captureModes: HistoryCaptureMode[] = ["all", "handled", "none"];
+  if (!captureModes.includes(historyCapture)) {
+    throw new Error(`Invalid --history-capture: ${historyCapture}`);
+  }
+
   const heartbeatRaw = readFlag(argv, "--heartbeat-ms") ?? "15000";
   const heartbeatMs = Number(heartbeatRaw);
   if (!Number.isInteger(heartbeatMs) || heartbeatMs <= 0) {
@@ -74,6 +89,8 @@ function parseArgs(argv: string[]) {
     host,
     port,
     historyLimit,
+    wsHistoryLimit,
+    historyCapture,
     heartbeatMs,
     idleTimeoutMs,
     claimTimeoutMs,

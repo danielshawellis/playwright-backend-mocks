@@ -132,4 +132,4 @@ curl -s http://127.0.0.1:4310/api/connections | jq .
 curl -s http://127.0.0.1:4310/api/history | jq '.entries[-20:]'
 ```
 
-See [Proxy operations](/ops/proxy), [REST API](/ops/rest-api), and [Errors](/ops/errors).
+See [Observability](/ops/observability), [Proxy operations](/ops/proxy), [REST API](/ops/rest-api), and [Errors](/ops/errors).

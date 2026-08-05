@@ -18,5 +18,6 @@ https://github.com/microsoft/playwright/blob/26a9e47/<path>
 | `node/src/agent.ts` | Browser Fetch interceptor + channel settle | MSW HTTP interceptor → proxy protocol |
 | `node/src/websocket-bridge.ts` | `injected/webSocketMock.ts` + WS dispatcher | `DIVERGENCE`: `globalThis.WebSocket` only |
 | `proxy/src/server.ts` | Dispatcher / ownership seam | `DIVERGENCE`: cross-test `ambiguous_route` |
+| `dashboard/*` | — (product-only) | Read-only Vue UI over proxy REST; no Playwright analogue |
 
 Intentional product differences are marked in source with `DIVERGENCE` / `DIVERGENCE END`.

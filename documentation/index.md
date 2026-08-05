@@ -156,13 +156,13 @@ Unmatched requests pass through to the real network. Outside tests, with no prox
 
 ## Inspect traffic while you debug
 
-While the proxy is running, use its REST API to see connected agents and whether each outbound call was mocked, continued, aborted, or passed through:
+While the proxy is running, inspect HTTP and WebSocket traffic — including which test owned it and what action it took — via the optional [dashboard](/ops/dashboard) or the [REST API](/ops/rest-api):
 
-- `GET /health`
-- `GET /api/connections`
-- `GET /api/history`
+- `GET /api/history` — HTTP timeline
+- `GET /api/ws` — WebSocket connections and events
+- `GET /api/export/har` — download HTTP as HAR
 
-See the [REST API](/ops/rest-api) reference for details.
+Local coding agents can use the same REST surface; see [Observability](/ops/observability).
 
 ## Ready to wire it into a suite?
 

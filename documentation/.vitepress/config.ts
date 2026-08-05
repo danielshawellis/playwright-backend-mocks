@@ -29,7 +29,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/backend-mocks" },
       { text: "Recipes", link: "/recipes/compose-fixtures" },
-      { text: "Ops", link: "/ops/proxy" },
+      { text: "Ops", link: "/ops/observability" },
       {
         text: "GitHub",
         link: "https://github.com/danielshawellis/playwright-backend-mocks-msw",
@@ -103,8 +103,10 @@ export default defineConfig({
         {
           text: "Operations",
           items: [
+            { text: "Observability", link: "/ops/observability" },
             { text: "Proxy", link: "/ops/proxy" },
             { text: "REST API", link: "/ops/rest-api" },
+            { text: "Dashboard", link: "/ops/dashboard" },
             { text: "Errors", link: "/ops/errors" },
           ],
         },

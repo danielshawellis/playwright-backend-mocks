@@ -2,7 +2,7 @@
 
 Read-only observability for Playwright Backend Mocks: proxy REST API + Vue dashboard package. Documented for humans and local agents. **No MCP in v1.**
 
-**Status:** final plan — ready to implement after this doc is accepted.  
+**Status:** implemented (see `packages/proxy`, `packages/dashboard`, `documentation/ops/observability.md`, `tests/library/specs/observability-*.spec.ts`).  
 **Scope:** library-only (outside the parity oracle).
 
 | Source | Role |
