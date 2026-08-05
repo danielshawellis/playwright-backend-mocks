@@ -16,7 +16,7 @@ import {
   type SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 import { createProxyConfig, type ProxyConfig } from "./config.js";
-import { historyEntryToHar } from "./har.js";
+import { historyEntryHasExportableHar, historyEntryToHar } from "./har.js";
 import { HistoryStore } from "./history.js";
 import { Logger } from "./logger.js";
 import {
@@ -56,6 +56,9 @@ interface PendingSocket {
   readonly protocols: string[];
   routeId?: string;
   testId?: string;
+  /** Snapshotted at match time so disconnect settles keep ownership metadata. */
+  title?: string;
+  path?: string;
   /** Playwright worker connection that owns this socket after claim. */
   workerConnectionId?: string;
 }
@@ -85,6 +88,9 @@ interface PendingRequest {
   readonly startedAt: number;
   routeId?: string;
   testId?: string;
+  /** Snapshotted at match time so unregister/disconnect keeps title/path. */
+  title?: string;
+  path?: string;
   fetchWaiters: Map<
     string,
     {
@@ -600,16 +606,23 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
     pendingRequest.routeId = match.routeId;
     pendingRequest.testId = match.testId;
+    pendingRequest.title = match.test.title;
+    pendingRequest.path = match.test.file;
 
     const worker = connections.get(match.connectionId);
     if (worker === undefined || worker.socket.readyState !== WebSocket.OPEN) {
       const errorMessage =
         "Matched Playwright worker disconnected before handling the request";
-      finishHistory(historyId, startedAt, {
-        kind: "error",
-        message: errorMessage,
-        code: "disconnected",
-      });
+      finishHistory(
+        historyId,
+        startedAt,
+        {
+          kind: "error",
+          message: errorMessage,
+          code: "disconnected",
+        },
+        pendingRequest,
+      );
       pending.delete(message.requestId);
       send(bound, {
         type: "decision:error",
@@ -852,11 +865,16 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
             message: `Test ${testId} ended while a backend mock request was pending`,
           });
         }
-        finishHistory(item.historyId, item.startedAt, {
-          kind: "error",
-          message: "Test ended while request was pending",
-          code: "disconnected",
-        });
+        finishHistory(
+          item.historyId,
+          item.startedAt,
+          {
+            kind: "error",
+            message: "Test ended while request was pending",
+            code: "disconnected",
+          },
+          item,
+        );
         pending.delete(requestId);
       }
     }
@@ -1028,6 +1046,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
 
     pendingSocket.routeId = match.routeId;
     pendingSocket.testId = match.testId;
+    pendingSocket.title = match.test.title;
+    pendingSocket.path = match.test.file;
     pendingSocket.workerConnectionId = match.connectionId;
 
     const worker = connections.get(match.connectionId);
@@ -1350,6 +1370,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       return;
     }
     const test = item?.testId !== undefined ? tests.get(item.testId) : undefined;
+    const title = item?.title ?? test?.title;
+    const path = item?.path ?? test?.file;
     finishHistoryEntry({
       history,
       capture: config.historyCapture,
@@ -1358,7 +1380,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       outcome,
       ...(item?.testId !== undefined ? { testId: item.testId } : {}),
       ...(item?.routeId !== undefined ? { routeId: item.routeId } : {}),
-      ...(test !== undefined ? { title: test.title, path: test.file } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(path !== undefined ? { path } : {}),
       ...(extras?.overrides !== undefined ? { overrides: extras.overrides } : {}),
     });
   }
@@ -1501,16 +1524,30 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     if (bound.role === "node") {
       for (const [requestId, item] of pending) {
         if (item.connectionId === bound.connectionId) {
-          finishHistory(item.historyId, item.startedAt, {
-            kind: "error",
-            message: "Node agent disconnected",
-            code: "disconnected",
-          });
+          finishHistory(
+            item.historyId,
+            item.startedAt,
+            {
+              kind: "error",
+              message: "Node agent disconnected",
+              code: "disconnected",
+            },
+            item,
+          );
           pending.delete(requestId);
         }
       }
       for (const [socketId, item] of pendingSockets) {
         if (item.connectionId === bound.connectionId) {
+          settleWsHistory(socketId, "error", {
+            detail: "Node agent disconnected",
+            errorCode: "disconnected",
+            errorMessage: "Node agent disconnected",
+            ...(item.testId !== undefined ? { testId: item.testId } : {}),
+            ...(item.routeId !== undefined ? { routeId: item.routeId } : {}),
+            ...(item.title !== undefined ? { title: item.title } : {}),
+            ...(item.path !== undefined ? { path: item.path } : {}),
+          });
           pendingSockets.delete(socketId);
         }
       }
@@ -1528,6 +1565,15 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
               message: "Playwright worker disconnected while WebSocket was active",
             });
           }
+          settleWsHistory(socketId, "error", {
+            detail: "Playwright worker disconnected while WebSocket was active",
+            errorCode: "disconnected",
+            errorMessage: "Playwright worker disconnected while WebSocket was active",
+            ...(item.testId !== undefined ? { testId: item.testId } : {}),
+            ...(item.routeId !== undefined ? { routeId: item.routeId } : {}),
+            ...(item.title !== undefined ? { title: item.title } : {}),
+            ...(item.path !== undefined ? { path: item.path } : {}),
+          });
           pendingSockets.delete(socketId);
         }
       }
@@ -1579,6 +1625,14 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       const entry = history.get(id);
       if (entry === undefined) {
         json(res, 404, { error: "not_found" });
+        return;
+      }
+      if (!historyEntryHasExportableHar(entry)) {
+        json(res, 409, {
+          error: "har_unavailable",
+          message:
+            "HAR export requires a recorded HTTP response (fulfill, or continue/passthrough after an upstream response). Abort, pending, error, and continue/passthrough without a captured response cannot be exported.",
+        });
         return;
       }
       const har = historyEntryToHar(entry);

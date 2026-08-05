@@ -531,16 +531,119 @@ test.describe("observability REST — filters and HAR", () => {
       expect(har.headers()["content-disposition"]).toMatch(/\.har/);
       const body = (await har.json()) as {
         log: {
+          creator: { version: string };
           entries: Array<{
             request: { url: string; method: string };
             response: { status: number };
           }>;
         };
       };
+      expect(body.log.creator.version).toBeTruthy();
       expect(body.log.entries).toHaveLength(1);
       expect(body.log.entries[0]).toMatchObject({
         request: { url: "http://example.test/charges", method: "POST" },
         response: { status: 201 },
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("HAR export rejects continue/abort without a recorded response", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "thin continue",
+        file: "/tests/har-gate.spec.ts",
+        matcher: "http://example.test/**",
+      });
+
+      const continueId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/continue",
+      });
+      await continueRequest(playwright, node, continueId, {
+        url: "http://example.test/continued",
+      });
+      const continueHar = await api.get(`${proxy.url}/api/history/${continueId}/har`);
+      expect(continueHar.status()).toBe(409);
+      expect(await continueHar.json()).toMatchObject({ error: "har_unavailable" });
+
+      const abortId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/abort",
+      });
+      await abortRequest(playwright, node, abortId);
+      const abortHar = await api.get(`${proxy.url}/api/history/${abortId}/har`);
+      expect(abortHar.status()).toBe(409);
+      expect(await abortHar.json()).toMatchObject({ error: "har_unavailable" });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("HAR export allows continue after upstream response is recorded", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "continue with body",
+        file: "/tests/har-gate-upstream.spec.ts",
+        matcher: "http://example.test/with-body",
+      });
+
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/with-body",
+      });
+      await continueRequest(playwright, node, requestId);
+      reportUpstreamResponse(node, requestId, {
+        status: 200,
+        body: { ok: true },
+      });
+
+      const har = await api.get(`${proxy.url}/api/history/${requestId}/har`);
+      expect(har.status()).toBe(200);
+      const body = (await har.json()) as {
+        log: { entries: Array<{ response: { status: number } }> };
+      };
+      expect(body.log.entries).toHaveLength(1);
+      expect(body.log.entries[0]?.response.status).toBe(200);
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("test unregister while pending keeps title/path on history error", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      const { testId } = await registerHttpRoute(playwright, {
+        title: "ends mid-flight",
+        file: "/tests/unregister.spec.ts",
+        matcher: "http://example.test/pending",
+      });
+
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/pending",
+      });
+      playwright.send({ type: "test:unregister", testId });
+      const decision = await node.waitForType("decision:error", 5_000);
+      expect(decision).toMatchObject({ code: "disconnected" });
+
+      const entry = (await getHistory(api, proxy.url)).find(
+        (item) => item.id === requestId,
+      );
+      expect(entry).toMatchObject({
+        action: "error",
+        title: "ends mid-flight",
+        path: "/tests/unregister.spec.ts",
+        testId,
+        outcome: { kind: "error", code: "disconnected" },
       });
 
       playwright.close();
@@ -757,6 +860,130 @@ test.describe("observability REST — WebSockets", () => {
       expect(searched.map((item) => item.id)).toContain(socketId);
 
       playwright.close();
+      node.close();
+    });
+  });
+
+  test("Playwright disconnect settles matched WS history as error with ownership", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerWsRoute(playwright, {
+        title: "live socket",
+        file: "/tests/ws-disconnect.spec.ts",
+        matcher: "ws://example.test/live",
+      });
+
+      const socketId = randomUUID();
+      node.send({
+        type: "ws:connection",
+        socketId,
+        url: "ws://example.test/live",
+        protocols: [],
+        clientId: "obs-node",
+      });
+      await playwright.waitForType("ws:matched", 5_000);
+
+      playwright.close();
+      const error = await node.waitForType("ws:error", 5_000);
+      expect(error).toMatchObject({ socketId, code: "disconnected" });
+
+      const entry = (await getWs(api, proxy.url)).find((item) => item.id === socketId);
+      expect(entry).toMatchObject({
+        outcome: "error",
+        title: "live socket",
+        path: "/tests/ws-disconnect.spec.ts",
+        url: "ws://example.test/live",
+      });
+      expect(entry?.events.some((event) => event.kind === "error")).toBe(true);
+
+      node.close();
+    });
+  });
+
+  test("ambiguous_route WS history includes code and claiming tests", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const workerA = await TestSocket.connect(proxy.url);
+      const workerB = await TestSocket.connect(proxy.url);
+      const node = await TestSocket.connect(proxy.url);
+
+      expect(
+        (await workerA.hello({ role: "playwright", workerId: "ws-ambig-a" })).type,
+      ).toBe("hello:ok");
+      expect(
+        (await workerB.hello({ role: "playwright", workerId: "ws-ambig-b" })).type,
+      ).toBe("hello:ok");
+      expect((await node.hello({ role: "node", clientId: "obs-node" })).type).toBe(
+        "hello:ok",
+      );
+
+      const testA = randomUUID();
+      const testB = randomUUID();
+      workerA.send({
+        type: "test:register",
+        testId: testA,
+        title: "ws claim A",
+        file: "/tests/ws-a.spec.ts",
+        workerId: "ws-ambig-a",
+      });
+      workerA.send({
+        type: "route:register",
+        routeId: randomUUID(),
+        testId: testA,
+        kind: "websocket",
+        matcher: { urlGlob: "ws://example.test/shared" },
+      });
+      workerB.send({
+        type: "test:register",
+        testId: testB,
+        title: "ws claim B",
+        file: "/tests/ws-b.spec.ts",
+        workerId: "ws-ambig-b",
+      });
+      workerB.send({
+        type: "route:register",
+        routeId: randomUUID(),
+        testId: testB,
+        kind: "websocket",
+        matcher: { urlGlob: "ws://example.test/**" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      const socketId = randomUUID();
+      node.send({
+        type: "ws:connection",
+        socketId,
+        url: "ws://example.test/shared",
+        protocols: [],
+        clientId: "obs-node",
+      });
+      const decision = await node.waitForType("ws:error", 5_000);
+      expect(decision).toMatchObject({ code: "ambiguous_route" });
+
+      const detail = await api.get(`${proxy.url}/api/ws/${socketId}`);
+      expect(detail.status()).toBe(200);
+      const body = (await detail.json()) as {
+        connection: {
+          id: string;
+          outcome: string;
+          errorCode?: string;
+          matches?: Array<{ title: string }>;
+        };
+      };
+      expect(body.connection).toMatchObject({
+        id: socketId,
+        outcome: "error",
+        errorCode: "ambiguous_route",
+      });
+      expect(body.connection.matches?.map((match) => match.title)).toEqual(
+        expect.arrayContaining(["ws claim A", "ws claim B"]),
+      );
+
+      workerA.close();
+      workerB.close();
       node.close();
     });
   });

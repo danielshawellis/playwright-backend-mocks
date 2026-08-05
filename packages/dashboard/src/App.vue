@@ -13,6 +13,7 @@ import {
   fetchHistory,
   fetchWsConnections,
   harDownloadUrl,
+  historyEntryHasExportableHar,
   loadRuntimeConfig,
   prettyBody,
   type ConnectionsResponse,
@@ -426,6 +427,7 @@ onUnmounted(() => {
                 </svg>
               </button>
               <a
+                v-if="historyEntryHasExportableHar(selectedHttp)"
                 class="icon-btn"
                 title="Download HAR for routeFromHAR"
                 aria-label="Download HAR"

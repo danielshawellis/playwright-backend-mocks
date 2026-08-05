@@ -1,4 +1,8 @@
-import { historyResponse, type HistoryEntry } from "@playwright-backend-mocks/protocol";
+import {
+  historyResponse,
+  PACKAGE_VERSION,
+  type HistoryEntry,
+} from "@playwright-backend-mocks/protocol";
 
 interface HarHeader {
   name: string;
@@ -37,6 +41,11 @@ function redirectUrlFromResponse(
     return "";
   }
   return response.headers["location"] ?? response.headers["Location"] ?? "";
+}
+
+/** True when the entry has a response usable with `routeFromHAR`. */
+export function historyEntryHasExportableHar(entry: HistoryEntry): boolean {
+  return historyResponse(entry) !== undefined;
 }
 
 /**
@@ -116,7 +125,7 @@ export function historyEntryToHar(entry: HistoryEntry): unknown {
       version: "1.2",
       creator: {
         name: "playwright-backend-mocks",
-        version: "0.1.0",
+        version: PACKAGE_VERSION,
       },
       entries: [harEntry],
     },

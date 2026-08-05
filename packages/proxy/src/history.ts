@@ -7,8 +7,24 @@ export class HistoryStore {
 
   add(entry: HistoryEntry): void {
     this.entries.unshift(entry);
-    if (this.entries.length > this.limit) {
-      this.entries.length = this.limit;
+    this.trim();
+  }
+
+  /** Prefer dropping settled rows so in-flight requests can still finish. */
+  private trim(): void {
+    while (this.entries.length > this.limit) {
+      let dropIndex = -1;
+      for (let i = this.entries.length - 1; i >= 0; i--) {
+        if (this.entries[i]?.outcome.kind !== "pending") {
+          dropIndex = i;
+          break;
+        }
+      }
+      if (dropIndex === -1) {
+        this.entries.pop();
+      } else {
+        this.entries.splice(dropIndex, 1);
+      }
     }
   }
 

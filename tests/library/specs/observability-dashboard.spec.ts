@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { TestSocket } from "../helpers.js";
 import {
   abortRequest,
+  continueRequest,
   fulfill,
   passthrough,
   registerHttpRoute,
@@ -151,9 +152,36 @@ test.describe("observability dashboard", () => {
         await expect(page.getByRole("button", { name: /final/ })).toBeVisible();
         await page.getByRole("button", { name: /final/ }).click();
         await expect(page.getByText('{ "via": "hop" }')).toBeVisible();
+        await expect(page.getByRole("link", { name: "Download HAR" })).toBeVisible();
 
         await page.getByText("http://example.test/blocked").first().click();
         await expect(page.getByText(/aborted — aborted; no response/)).toBeVisible();
+        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveCount(0);
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("continue without upstream response hides HAR download", async ({ page }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "dashboard continue",
+        file: "/tests/dashboard-continue.spec.ts",
+        matcher: "http://example.test/continue",
+      });
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/continue",
+      });
+      await continueRequest(playwright, node, requestId);
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await page.getByText("http://example.test/continue").first().click();
+        await expect(page.getByText("continue").first()).toBeVisible();
+        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveCount(0);
       });
 
       playwright.close();
