@@ -129,25 +129,3 @@ export function historyEntryToHar(entry: HistoryEntry): unknown {
     },
   };
 }
-
-/** @deprecated Prefer historyEntryToHar for routeFromHAR-oriented single exports. */
-export function historyToHar(entries: readonly HistoryEntry[]): unknown {
-  if (entries.length === 1 && entries[0] !== undefined) {
-    return historyEntryToHar(entries[0]);
-  }
-  return {
-    log: {
-      version: "1.2",
-      creator: {
-        name: "playwright-backend-mocks",
-        version: "0.1.0",
-      },
-      entries: entries.map((entry) => {
-        const single = historyEntryToHar(entry) as {
-          log: { entries: unknown[] };
-        };
-        return single.log.entries[0];
-      }),
-    },
-  };
-}

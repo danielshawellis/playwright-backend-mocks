@@ -30,8 +30,7 @@ export function isHandledAction(action: HistoryAction): boolean {
     action === "fulfill" ||
     action === "continue" ||
     action === "abort" ||
-    action === "error" ||
-    action === "fetch"
+    action === "error"
   );
 }
 

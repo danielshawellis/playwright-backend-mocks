@@ -2,7 +2,7 @@
 
 The proxy exposes a read-only HTTP API for observability. The default base URL is `http://127.0.0.1:4310`.
 
-All endpoints listed here are safe to poll. CORS is enabled for API paths.
+All endpoints listed here are safe to poll. CORS is enabled for API paths. `--token` authenticates the coordinator WebSocket only — bind the proxy to localhost (default) so history bodies stay local.
 
 Overview and dashboard setup: [Observability](/ops/observability).
 
@@ -142,7 +142,7 @@ curl -s "http://127.0.0.1:4310/api/history?q=charges" | jq '.entries[:5]'
 | `clientId` | Node agent that made the request. |
 | `request` | Serialized URL, method, headers, and base64 body. |
 | `outcome` | Current or final outcome (`pending`, `mocked`, `passthrough`, `continued`, `aborted`, `error`). For `error`, may include `code` (e.g. `ambiguous_route`) and `matches` (claiming tests). |
-| `action` | Normalized action: `fulfill`, `continue`, `abort`, `passthrough`, `fetch`, `error`, `pending`. |
+| `action` | Normalized terminal action: `fulfill`, `continue`, `abort`, `passthrough`, `error`, `pending`. |
 | `title` | Playwright test title when a test owned the request. |
 | `path` | Playwright test file path when a test owned the request. |
 | `durationMs` | Present after the outcome settles. |

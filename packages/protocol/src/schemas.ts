@@ -126,16 +126,16 @@ export const historyOutcomeSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-/** Normalized handler/coordinator action for observability UIs. */
+/** Normalized terminal / coordinator action recorded on history entries. */
 export const historyActionSchema = z.enum([
   "fulfill",
   "continue",
   "abort",
   "passthrough",
-  "fetch",
   "error",
   "pending",
 ]);
+
 
 export type HistoryAction = z.infer<typeof historyActionSchema>;
 

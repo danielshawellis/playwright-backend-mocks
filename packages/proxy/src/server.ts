@@ -489,6 +489,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       finishHistory(historyId, startedAt, {
         kind: "error",
         message: errorMessage,
+        code,
       });
       pending.delete(message.requestId);
       send(bound, {
@@ -603,6 +604,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       finishHistory(historyId, startedAt, {
         kind: "error",
         message: errorMessage,
+        code: "disconnected",
       });
       pending.delete(message.requestId);
       send(bound, {
@@ -820,6 +822,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         finishHistory(item.historyId, item.startedAt, {
           kind: "error",
           message: "Test ended while request was pending",
+          code: "disconnected",
         });
         pending.delete(requestId);
       }
@@ -890,7 +893,11 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           ? "claim_timeout"
           : "internal";
       pendingSockets.delete(message.socketId);
-      settleWsHistory(message.socketId, "error", { detail: errorMessage });
+      settleWsHistory(message.socketId, "error", {
+        detail: errorMessage,
+        errorCode: code,
+        errorMessage,
+      });
       send(bound, {
         type: "ws:error",
         socketId: message.socketId,
@@ -995,6 +1002,8 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       pendingSockets.delete(message.socketId);
       settleWsHistory(message.socketId, "error", {
         detail: "Matched Playwright worker disconnected before handling the WebSocket",
+        errorCode: "disconnected",
+        errorMessage: "Matched Playwright worker disconnected before handling the WebSocket",
         testId: match.testId,
         routeId: match.routeId,
         title: match.test.title,
@@ -1301,7 +1310,6 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     item?: PendingRequest,
     extras?: {
       overrides?: RequestOverrides;
-      eventDetail?: string;
     },
   ): void {
     if (config.historyCapture === "none") {
@@ -1319,27 +1327,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       ...(item?.routeId !== undefined ? { routeId: item.routeId } : {}),
       ...(test !== undefined ? { title: test.title, path: test.file } : {}),
       ...(extras?.overrides !== undefined ? { overrides: extras.overrides } : {}),
-      ...(extras?.eventDetail !== undefined
-        ? { event: makeHistoryEvent(actionLabel(outcome), extras.eventDetail) }
-        : {}),
     });
-  }
-
-  function actionLabel(outcome: HistoryEntry["outcome"]): string {
-    switch (outcome.kind) {
-      case "mocked":
-        return "fulfill";
-      case "continued":
-        return "continue";
-      case "aborted":
-        return "abort";
-      case "passthrough":
-        return "passthrough";
-      case "error":
-        return "error";
-      case "pending":
-        return "pending";
-    }
   }
 
   function beginWsHistory(
@@ -1485,6 +1473,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
           finishHistory(item.historyId, item.startedAt, {
             kind: "error",
             message: "Node agent disconnected",
+            code: "disconnected",
           });
           pending.delete(requestId);
         }

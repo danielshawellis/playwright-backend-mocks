@@ -77,13 +77,13 @@ Keep id = `requestId`. Additive fields on today’s `HistoryEntry`:
 
 | Field | Notes |
 | ----- | ----- |
-| `action` | `fulfill` \| `continue` \| `abort` \| `passthrough` \| `fetch` \| `error` \| `pending` |
+| `action` | `fulfill` \| `continue` \| `abort` \| `passthrough` \| `error` \| `pending` |
 | `title` | Playwright `testInfo.title` when owned |
 | `path` | Playwright `testInfo.file` when owned (wire/API name: **`path`**, sourced from fixture `file`) |
 | `testId` / `routeId` | Existing |
-| `request` / outcome response | Existing serialization |
+| `request` / outcome response | Existing serialization (`continued` records the continue decision / overrides; upstream response not captured in v1) |
 | `overrides` | When `continue` modified the request |
-| `events` | Short timeline: observed → claimed → handler action → settled |
+| `events` | Short timeline: `observed` plus the terminal action |
 | `durationMs` / `timestamp` / `clientId` | Existing |
 
 `outcome.kind` can remain for coarse filtering; UI prefers `action`.
@@ -191,11 +191,11 @@ Document optional Playwright `webServer` entry alongside the proxy.
 
 Auto-refresh: while checked, poll ~2s. Refresh always runs one fetch. Polling must **not** clear selection or jump scroll if the selected id still exists; if it disappeared, clear selection gently.
 
-Default route: **`/http`** (the main job). `/` redirects there.
+Default view: **HTTP** (in-app view state; no client router).
 
 ---
 
-#### View A — HTTP (`/http`)
+#### View A — HTTP
 
 Master–detail, full width:
 
@@ -251,7 +251,7 @@ Copy icons copy URL and full history JSON (HTTP + WebSockets).
 
 ---
 
-#### View B — WebSockets (`/ws`)
+#### View B — WebSockets
 
 Same shell; **no HAR button**.
 
@@ -274,7 +274,7 @@ No download. Copy-payload affordance on a single event is nice-to-have, not requ
 
 ---
 
-#### View C — Connections (`/connections`)
+#### View C — Connections
 
 Simple two-column list (not cards-as-content):
 
