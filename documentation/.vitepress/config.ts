@@ -7,7 +7,6 @@ export default defineConfig({
   base: "/playwright-backend-mocks-msw/",
   cleanUrls: true,
   lastUpdated: true,
-  head: [["link", { rel: "icon", href: "/playwright-backend-mocks-msw/logo.svg" }]],
   markdown: {
     config(md) {
       const defaultFence = md.renderer.rules.fence;
@@ -23,7 +22,6 @@ export default defineConfig({
     },
   },
   themeConfig: {
-    logo: "/logo.svg",
     siteTitle: "Playwright Backend Mocks",
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
