@@ -39,13 +39,13 @@ pnpm docs:build           # static site → documentation/.vitepress/dist
 
 ## Packages
 
-| Package                                | Description                                   |
-| -------------------------------------- | --------------------------------------------- |
-| `@playwright-backend-mocks/playwright` | Playwright fixtures (`backendMocks.route`, …) |
-| `@playwright-backend-mocks/node`       | Node agent that installs interceptors         |
-| `@playwright-backend-mocks/proxy`      | Standalone coordinator + REST API CLI         |
-| `@playwright-backend-mocks/protocol`   | Shared wire protocol (types + validators)     |
-| `@playwright-backend-mocks/dashboard`  | Optional read-only observability UI           |
+| Package | Description |
+| --- | --- |
+| [`@playwright-backend-mocks/playwright`](./packages/playwright/README.md) | Playwright fixtures (`backendMocks.route`, …) |
+| [`@playwright-backend-mocks/node`](./packages/node/README.md) | Node agent that installs interceptors |
+| [`@playwright-backend-mocks/proxy`](./packages/proxy/README.md) | Standalone coordinator + REST API CLI |
+| [`@playwright-backend-mocks/protocol`](./packages/protocol/README.md) | Shared wire protocol (types + validators) |
+| [`@playwright-backend-mocks/dashboard`](./packages/dashboard/README.md) | Optional read-only observability UI |
 
 Docs: [Observability](./documentation/ops/observability.md). Releases: [`PUBLISHING.md`](./PUBLISHING.md).
 
