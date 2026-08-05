@@ -317,7 +317,7 @@ Avoid glow, purple gradients, emoji, and dense stat strips.
 
 Add a short section (on REST page and/or dashboard page), roughly:
 
-> **Using this with coding agents.** There is no MCP server in v1. If a local agent is writing or running tests against this proxy, give it the REST API docs (this page) and the proxy base URL (default `http://127.0.0.1:4310`). The agent can `GET /api/history`, `/api/ws`, and `/api/export/har` to see what tests intercepted — same data as the dashboard.
+> **Using this with coding agents.** There is no MCP server in v1. If a local agent is writing or running tests against this proxy, give it the REST API docs (this page) and the proxy base URL (default `http://127.0.0.1:4310`). The agent can `GET /api/history`, `/api/ws`, and `/api/history/:id/har` to see what tests intercepted — same data as the dashboard.
 
 Keep that practical and short — not a second product.
 

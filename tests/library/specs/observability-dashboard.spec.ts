@@ -1,58 +1,14 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { getFreePort, withProxy } from "../helpers.js";
-
-const dashboardCli = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../packages/dashboard/dist/cli.cjs",
-);
-
-async function waitForUrl(url: string, timeoutMs = 10_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-      lastError = new Error(`HTTP ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Timed out waiting for ${url}: ${String(lastError)}`);
-}
-
-async function withDashboard(
-  proxyUrl: string,
-  run: (dashboardUrl: string) => Promise<void>,
-): Promise<void> {
-  const port = await getFreePort();
-  const child: ChildProcess = spawn(
-    process.execPath,
-    [dashboardCli, "--host", "127.0.0.1", "--port", String(port), "--proxy-url", proxyUrl],
-    {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    },
-  );
-  const dashboardUrl = `http://127.0.0.1:${port}`;
-  try {
-    await waitForUrl(`${dashboardUrl}/health`);
-    await run(dashboardUrl);
-  } finally {
-    child.kill("SIGTERM");
-    await new Promise<void>((resolve) => {
-      child.once("exit", () => resolve());
-      setTimeout(() => {
-        child.kill("SIGKILL");
-        resolve();
-      }, 2000);
-    });
-  }
-}
+import {
+  fulfill,
+  registerHttpRoute,
+  registerWsRoute,
+  setupPair,
+  startHttpAndMatch,
+  withDashboard,
+  withProxy,
+} from "../observability-helpers.js";
 
 test.describe("observability dashboard", () => {
   test("serves health, config, and SPA pointed at the proxy", async ({ request }) => {
@@ -76,7 +32,7 @@ test.describe("observability dashboard", () => {
     });
   });
 
-  test("UI shows HTTP view chrome and auto-refresh control", async ({ page }) => {
+  test("UI chrome: nav, auto-refresh default on, and empty states", async ({ page }) => {
     await withProxy({}, async (proxy) => {
       await withDashboard(proxy.url, async (dashboardUrl) => {
         await page.goto(dashboardUrl);
@@ -87,7 +43,6 @@ test.describe("observability dashboard", () => {
         await expect(page.getByLabel("Auto-refresh")).toBeChecked();
         await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
         await expect(page.getByText("Select a request")).toBeVisible();
-        // HAR / copy actions appear once a request is selected.
         await expect(page.getByRole("link", { name: "Download HAR" })).toHaveCount(0);
 
         await page.getByRole("button", { name: "WebSockets" }).click();
@@ -97,6 +52,135 @@ test.describe("observability dashboard", () => {
         await expect(page.getByText("Node agents", { exact: true })).toBeVisible();
         await expect(page.getByText("Playwright workers", { exact: true })).toBeVisible();
       });
+    });
+  });
+
+  test("HTTP view shows fulfilled traffic, detail, HAR link, and copy controls", async ({
+    page,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "dashboard pay",
+        file: "/tests/dashboard-pay.spec.ts",
+        matcher: "http://example.test/charges",
+      });
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/charges",
+        method: "POST",
+        body: { amount: 42 },
+      });
+      await fulfill(playwright, node, requestId, {
+        status: 402,
+        json: { error: "card_declined" },
+      });
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await expect(page.getByText("http://example.test/charges").first()).toBeVisible();
+        await expect(page.getByText("fulfill").first()).toBeVisible();
+        await expect(page.getByText("dashboard pay").first()).toBeVisible();
+
+        await page.getByText("http://example.test/charges").first().click();
+        await expect(page.getByText("Select a request")).toHaveCount(0);
+        await expect(page.getByText("/tests/dashboard-pay.spec.ts")).toBeVisible();
+        await expect(page.getByText("card_declined")).toBeVisible();
+        await expect(page.getByRole("link", { name: "Download HAR" })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveAttribute(
+          "href",
+          new RegExp(`/api/history/${requestId}/har`),
+        );
+        await expect(page.getByRole("button", { name: "Copy URL" }).first()).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Copy full history entry" }),
+        ).toBeVisible();
+
+        await page.getByRole("button", { name: "Connections" }).click();
+        await expect(page.getByText("obs-node")).toBeVisible();
+        await expect(page.getByText(/pw-obs-worker|playwright/i).first()).toBeVisible();
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("WebSocket view shows matched connection and copy controls", async ({ page }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerWsRoute(playwright, {
+        title: "dashboard socket",
+        file: "/tests/dashboard-ws.spec.ts",
+        matcher: "ws://example.test/live",
+      });
+
+      const socketId = randomUUID();
+      node.send({
+        type: "ws:connection",
+        socketId,
+        url: "ws://example.test/live",
+        protocols: [],
+        clientId: "obs-node",
+      });
+      await playwright.waitForType("ws:matched", 5_000);
+      node.send({
+        type: "ws:messageFromPage",
+        socketId,
+        data: JSON.stringify({ ping: 1 }),
+        isBase64: false,
+      });
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await page.getByRole("button", { name: "WebSockets" }).click();
+        await expect(page.getByText("ws://example.test/live").first()).toBeVisible();
+        await expect(page.getByText("dashboard socket").first()).toBeVisible();
+
+        await page.getByText("ws://example.test/live").first().click();
+        await expect(page.getByText("Select a connection")).toHaveCount(0);
+        await expect(
+          page.getByText("/tests/dashboard-ws.spec.ts", { exact: true }),
+        ).toBeVisible();
+        await expect(page.getByText('"ping"')).toBeVisible();
+        await expect(page.getByRole("button", { name: "Copy URL" }).first()).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Copy full connection history" }),
+        ).toBeVisible();
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("Refresh picks up newly recorded HTTP traffic", async ({ page }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "late request",
+        file: "/tests/late.spec.ts",
+        matcher: "http://example.test/late",
+      });
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await expect(page.getByText("No requests yet")).toBeVisible();
+
+        // Pause auto-refresh so we explicitly exercise the Refresh button.
+        await page.getByLabel("Auto-refresh").uncheck();
+
+        const requestId = await startHttpAndMatch(node, playwright, {
+          url: "http://example.test/late",
+        });
+        await fulfill(playwright, node, requestId, { status: 200, json: { ok: true } });
+
+        await page.getByRole("button", { name: "Refresh" }).click();
+        await expect(page.getByText("http://example.test/late").first()).toBeVisible();
+        await expect(page.getByText("late request").first()).toBeVisible();
+      });
+
+      playwright.close();
+      node.close();
     });
   });
 });
