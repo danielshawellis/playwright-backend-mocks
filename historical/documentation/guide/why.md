@@ -1,6 +1,6 @@
 # Why this library
 
-> Development source of truth: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md). This VitePress site is user-facing documentation and **may lag** the rewrite.
+> Development source of truth: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/PHILOSOPHY.md). This VitePress site is user-facing documentation and **may lag** the rewrite.
 
 Good end-to-end tests should cover your **entire application** — the UI _and_ the server — and mock **only at the boundaries**.
 

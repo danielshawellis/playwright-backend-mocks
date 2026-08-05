@@ -1,6 +1,6 @@
 # Concepts
 
-> Development source of truth: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks-msw/blob/main/PHILOSOPHY.md). This VitePress site is user-facing documentation and **may lag** the rewrite.
+> Development source of truth: [`PHILOSOPHY.md`](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/PHILOSOPHY.md). This VitePress site is user-facing documentation and **may lag** the rewrite.
 
 A small architecture with three roles. Understanding them makes every other page in these docs obvious.
 

@@ -4,10 +4,10 @@ export default defineConfig({
   title: "Playwright Backend Mocks",
   description:
     "Mock outbound HTTP and WebSocket traffic from Node.js application processes in Playwright tests — with a DX that matches Playwright interception.",
-  base: "/playwright-backend-mocks-msw/",
+  base: "/playwright-backend-mocks/",
   cleanUrls: true,
   lastUpdated: true,
-  head: [["link", { rel: "icon", href: "/playwright-backend-mocks-msw/logo.svg" }]],
+  head: [["link", { rel: "icon", href: "/playwright-backend-mocks/logo.svg" }]],
   markdown: {
     config(md) {
       const defaultFence = md.renderer.rules.fence;
@@ -32,7 +32,7 @@ export default defineConfig({
       { text: "Ops", link: "/ops/observability" },
       {
         text: "GitHub",
-        link: "https://github.com/danielshawellis/playwright-backend-mocks-msw",
+        link: "https://github.com/danielshawellis/playwright-backend-mocks",
       },
     ],
     sidebar: {
@@ -115,7 +115,7 @@ export default defineConfig({
     socialLinks: [
       {
         icon: "github",
-        link: "https://github.com/danielshawellis/playwright-backend-mocks-msw",
+        link: "https://github.com/danielshawellis/playwright-backend-mocks",
       },
     ],
     search: {
@@ -123,7 +123,7 @@ export default defineConfig({
     },
     editLink: {
       pattern:
-        "https://github.com/danielshawellis/playwright-backend-mocks-msw/edit/main/documentation/:path",
+        "https://github.com/danielshawellis/playwright-backend-mocks/edit/main/documentation/:path",
       text: "Edit this page on GitHub",
     },
     outline: {
@@ -132,7 +132,7 @@ export default defineConfig({
     footer: {
       message: "Mock the outside world. Keep the real app.",
       copyright:
-        'MIT Licensed · <a href="https://github.com/danielshawellis/playwright-backend-mocks-msw">GitHub</a>',
+        'MIT Licensed · <a href="https://github.com/danielshawellis/playwright-backend-mocks">GitHub</a>',
     },
   },
 });

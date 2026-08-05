@@ -25,6 +25,7 @@
     "docs:dev": "vitepress dev documentation",
     "docs:build": "vitepress build documentation",
     "docs:preview": "vitepress preview documentation",
+    "publish:packages": "node scripts/publish-packages.mjs",
     "clean": "rm -rf test-results playwright-report packages/*/dist documentation/.vitepress/dist documentation/.vitepress/cache"
   },
   "devDependencies": {

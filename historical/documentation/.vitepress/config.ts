@@ -4,7 +4,7 @@ export default defineConfig({
   title: "Playwright Backend Mocks",
   description:
     "Mock outbound HTTP/HTTPS requests made by Node.js application processes from Playwright tests.",
-  base: "/playwright-backend-mocks-msw/",
+  base: "/playwright-backend-mocks/",
   cleanUrls: true,
   lastUpdated: true,
   markdown: {
@@ -28,7 +28,7 @@ export default defineConfig({
       { text: "Reference", link: "/reference/playwright" },
       {
         text: "GitHub",
-        link: "https://github.com/danielshawellis/playwright-backend-mocks-msw",
+        link: "https://github.com/danielshawellis/playwright-backend-mocks",
       },
     ],
     sidebar: {
@@ -89,7 +89,7 @@ export default defineConfig({
     socialLinks: [
       {
         icon: "github",
-        link: "https://github.com/danielshawellis/playwright-backend-mocks-msw",
+        link: "https://github.com/danielshawellis/playwright-backend-mocks",
       },
     ],
     search: {
@@ -97,7 +97,7 @@ export default defineConfig({
     },
     editLink: {
       pattern:
-        "https://github.com/danielshawellis/playwright-backend-mocks-msw/edit/main/historical/documentation/:path",
+        "https://github.com/danielshawellis/playwright-backend-mocks/edit/main/historical/documentation/:path",
       text: "Edit this page on GitHub",
     },
     outline: {

@@ -36,5 +36,14 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielshawellis/playwright-backend-mocks.git",
+    "directory": "packages/node"
+  },
+  "homepage": "https://danielshawellis.github.io/playwright-backend-mocks/",
+  "bugs": {
+    "url": "https://github.com/danielshawellis/playwright-backend-mocks/issues"
   }
 }
