@@ -18,6 +18,11 @@ https://github.com/microsoft/playwright/blob/26a9e47/<path>
 | `node/src/agent.ts` | Browser Fetch interceptor + channel settle | MSW HTTP interceptor → proxy protocol |
 | `node/src/websocket-bridge.ts` | `injected/webSocketMock.ts` + WS dispatcher | `DIVERGENCE`: `globalThis.WebSocket` only |
 | `proxy/src/server.ts` | Dispatcher / ownership seam | `DIVERGENCE`: cross-test `ambiguous_route` |
+| `proxy/src/observability.ts` | — (product-only) | Capture-mode helpers, history settle, startup banner |
+| `proxy/src/history.ts` | — (product-only) | In-memory HTTP history ring buffer |
+| `proxy/src/ws-history.ts` | — (product-only) | In-memory WebSocket connection timelines |
+| `proxy/src/har.ts` | — (product-only) | Per-request HAR export for `routeFromHAR` |
+| `proxy/src/search.ts` | — (product-only) | REST history/WS search + filters |
 | `dashboard/*` | — (product-only) | Read-only Vue UI over proxy REST; no Playwright analogue |
 
 Intentional product differences are marked in source with `DIVERGENCE` / `DIVERGENCE END`.

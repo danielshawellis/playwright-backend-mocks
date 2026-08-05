@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { TestSocket } from "../helpers.js";
 import {
+  continueRequest,
   fulfill,
   registerHttpRoute,
   registerWsRoute,
@@ -103,6 +104,31 @@ test.describe("observability dashboard", () => {
         await page.getByRole("button", { name: "Connections" }).click();
         await expect(page.getByText("obs-node")).toBeVisible();
         await expect(page.getByText(/pw-obs-worker|playwright/i).first()).toBeVisible();
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("continue without upstream response hides HAR download", async ({ page }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "dashboard continue",
+        file: "/tests/dashboard-continue.spec.ts",
+        matcher: "http://example.test/continue",
+      });
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/continue",
+      });
+      await continueRequest(playwright, node, requestId);
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+        await page.getByText("http://example.test/continue").first().click();
+        await expect(page.getByText("continue").first()).toBeVisible();
+        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveCount(0);
       });
 
       playwright.close();

@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@playwright-backend-mocks/protocol";
+import { PACKAGE_VERSION, type HistoryEntry } from "@playwright-backend-mocks/protocol";
 
 interface HarHeader {
   name: string;
@@ -43,6 +43,11 @@ function responseFromEntry(entry: HistoryEntry): {
     return entry.outcome.response;
   }
   return null;
+}
+
+/** True when the entry has a response body usable with `routeFromHAR`. */
+export function historyEntryHasExportableHar(entry: HistoryEntry): boolean {
+  return responseFromEntry(entry) !== null;
 }
 
 /**
@@ -121,7 +126,7 @@ export function historyEntryToHar(entry: HistoryEntry): unknown {
       version: "1.2",
       creator: {
         name: "playwright-backend-mocks",
-        version: "0.1.0",
+        version: PACKAGE_VERSION,
       },
       entries: [harEntry],
     },
