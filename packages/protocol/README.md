@@ -1,5 +1,10 @@
 # `@playwright-backend-mocks/protocol`
 
+[![npm version](https://img.shields.io/npm/v/@playwright-backend-mocks/protocol.svg)](https://www.npmjs.com/package/@playwright-backend-mocks/protocol)
+[![CI](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml/badge.svg)](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@playwright-backend-mocks/protocol.svg)](https://nodejs.org)
+
 Shared wire types and validators for [Playwright Backend Mocks](https://danielshawellis.github.io/playwright-backend-mocks/).
 
 **[Documentation](https://danielshawellis.github.io/playwright-backend-mocks/)** · **[Concepts](https://danielshawellis.github.io/playwright-backend-mocks/guide/concepts)** · **[GitHub](https://github.com/danielshawellis/playwright-backend-mocks)**

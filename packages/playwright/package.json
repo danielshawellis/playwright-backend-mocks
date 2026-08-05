@@ -1,6 +1,6 @@
 {
   "name": "@playwright-backend-mocks/playwright",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Playwright fixtures for mocking Node.js backend HTTP",
   "license": "MIT",
   "type": "module",
