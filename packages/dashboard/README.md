@@ -1,5 +1,10 @@
 # `@playwright-backend-mocks/dashboard`
 
+[![npm version](https://img.shields.io/npm/v/@playwright-backend-mocks/dashboard.svg)](https://www.npmjs.com/package/@playwright-backend-mocks/dashboard)
+[![CI](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml/badge.svg)](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@playwright-backend-mocks/dashboard.svg)](https://nodejs.org)
+
 Optional read-only dashboard for [Playwright Backend Mocks](https://danielshawellis.github.io/playwright-backend-mocks/) — inspect HTTP and WebSocket traffic while your suite runs.
 
 **[Documentation](https://danielshawellis.github.io/playwright-backend-mocks/)** · **[Dashboard ops](https://danielshawellis.github.io/playwright-backend-mocks/ops/dashboard)** · **[Observability](https://danielshawellis.github.io/playwright-backend-mocks/ops/observability)** · **[GitHub](https://github.com/danielshawellis/playwright-backend-mocks)**

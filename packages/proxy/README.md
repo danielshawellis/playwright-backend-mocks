@@ -1,5 +1,10 @@
 # `@playwright-backend-mocks/proxy`
 
+[![npm version](https://img.shields.io/npm/v/@playwright-backend-mocks/proxy.svg)](https://www.npmjs.com/package/@playwright-backend-mocks/proxy)
+[![CI](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml/badge.svg)](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@playwright-backend-mocks/proxy.svg)](https://nodejs.org)
+
 Standalone proxy, coordinator, and REST API for [Playwright Backend Mocks](https://danielshawellis.github.io/playwright-backend-mocks/) — the process that sits between your Playwright tests and Node app.
 
 **[Documentation](https://danielshawellis.github.io/playwright-backend-mocks/)** · **[Getting started](https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started)** · **[Proxy ops](https://danielshawellis.github.io/playwright-backend-mocks/ops/proxy)** · **[GitHub](https://github.com/danielshawellis/playwright-backend-mocks)**

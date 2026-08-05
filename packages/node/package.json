@@ -1,6 +1,6 @@
 {
   "name": "@playwright-backend-mocks/node",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Node.js interception agent for Playwright Backend Mocks",
   "license": "MIT",
   "type": "module",

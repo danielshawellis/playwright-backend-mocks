@@ -1,5 +1,10 @@
 # `@playwright-backend-mocks/playwright`
 
+[![npm version](https://img.shields.io/npm/v/@playwright-backend-mocks/playwright.svg)](https://www.npmjs.com/package/@playwright-backend-mocks/playwright)
+[![CI](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml/badge.svg)](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@playwright-backend-mocks/playwright.svg)](https://nodejs.org)
+
 Playwright fixtures for mocking outbound Node.js HTTP (and WebSockets) from your tests — the test-side half of [Playwright Backend Mocks](https://danielshawellis.github.io/playwright-backend-mocks/).
 
 **[Documentation](https://danielshawellis.github.io/playwright-backend-mocks/)** · **[Getting started](https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started)** · **[API](https://danielshawellis.github.io/playwright-backend-mocks/api/backend-mocks)** · **[GitHub](https://github.com/danielshawellis/playwright-backend-mocks)**

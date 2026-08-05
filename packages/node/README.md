@@ -1,5 +1,10 @@
 # `@playwright-backend-mocks/node`
 
+[![npm version](https://img.shields.io/npm/v/@playwright-backend-mocks/node.svg)](https://www.npmjs.com/package/@playwright-backend-mocks/node)
+[![CI](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml/badge.svg)](https://github.com/danielshawellis/playwright-backend-mocks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/danielshawellis/playwright-backend-mocks/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/node/v/@playwright-backend-mocks/node.svg)](https://nodejs.org)
+
 Node.js interception agent for [Playwright Backend Mocks](https://danielshawellis.github.io/playwright-backend-mocks/) — one startup call so Playwright can mock outbound HTTP (and `globalThis.WebSocket`) from your real app process.
 
 **[Documentation](https://danielshawellis.github.io/playwright-backend-mocks/)** · **[Getting started](https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started)** · **[Node API](https://danielshawellis.github.io/playwright-backend-mocks/api/node)** · **[GitHub](https://github.com/danielshawellis/playwright-backend-mocks)**
