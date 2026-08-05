@@ -1,437 +1,379 @@
-# Observability System Plan
+# Observability System Plan (final)
 
-Plan for a read-only observability stack: proxy REST API, Vue dashboard package, and MCP server — kept in sync, documented, and tested.
+Read-only observability for Playwright Backend Mocks: proxy REST API + Vue dashboard package. Documented for humans and local agents. **No MCP in v1.**
 
-**Status:** planning (this document). Implementation follows in the same product track after open questions are resolved (defaults proposed below).
-
-**Related sources of truth**
+**Status:** final plan — ready to implement after this doc is accepted.  
+**Scope:** library-only (outside the parity oracle).
 
 | Source | Role |
 | ------ | ---- |
-| [`PHILOSOPHY.md`](../PHILOSOPHY.md) | Architecture; observability is library-only (outside oracle) |
-| [`packages/proxy/`](../packages/proxy/) | Existing thin REST + HTTP history ring buffer |
+| [`PHILOSOPHY.md`](../PHILOSOPHY.md) | Architecture; observability is library-only |
+| [`packages/proxy/`](../packages/proxy/) | Existing thin REST + HTTP history |
 | [`documentation/ops/rest-api.md`](../documentation/ops/rest-api.md) | Living REST docs (to expand) |
-| [`historical/packages/dashboard/`](../historical/packages/dashboard/) | Archived Vue dashboard (feature/CLI reference, not visual source of truth) |
-| [`historical/tests/e2e/specs/observability.spec.ts`](../historical/tests/e2e/specs/observability.spec.ts) | Historical observability e2e template |
-| [`research/playwright-parity-tdd.md`](./playwright-parity-tdd.md) | Dashboard / REST = library-only, not parity oracle |
+| [`historical/packages/dashboard/`](../historical/packages/dashboard/) | CLI/SPA packaging reference only (not visual source of truth) |
+| [`packages/playwright/src/fixtures.ts`](../packages/playwright/src/fixtures.ts) | Already sends `testInfo.title` + `testInfo.file` on `test:register` |
 
 ---
 
-## 0. Cleaned requirements (from speech dump)
+## 1. Decisions (locked)
 
-### Intent
-
-Add a **read-only observability system** so humans and LLM agents can inspect all HTTP and WebSocket traffic coordinated by the proxy, including which test owned it and what action that test took.
-
-### Deliverables
-
-1. **REST API** inside `@playwright-backend-mocks/proxy` — expand today’s thin surface into the canonical read model.
-2. **Separate Vue dashboard package** (`@playwright-backend-mocks/dashboard`) — optional process users install and point at the proxy URL.
-3. **MCP server package** (`@playwright-backend-mocks/mcp`) — tools/resources that mirror the REST API so LLMs can query the same data.
-4. **Docs** for REST routes, MCP setup, dashboard install/run (including Playwright `webServer`), and HAR downloads.
-5. **Intent testing strategy** for REST, MCP, and dashboard (prefer Playwright where clean).
-
-### Behavioral constraints
-
-| Constraint | Detail |
-| ---------- | ------ |
-| Read-only | Observability never changes routing, claims, or settle decisions |
-| In-memory | Proxy stores history in memory; cleared when the proxy process exits |
-| Startup UX | On proxy start, print clear URLs: Node/test connection URL **and** dashboard connection URL |
-| Separate UIs | Distinct HTTP and WebSocket views (connections + event timelines for WS; request/response timeline for HTTP) |
-| Per-entry detail | Owning test (when known), action taken (`fulfill` / `continue` / `abort` / `passthrough` / errors), and test-produced response when mocked/modified |
-| Search / filter | Time range + string inclusion; rank URL matches above body/header/event matches |
-| HAR download | Export captured traffic as HAR (HTTP; WS handling TBD — see open questions) |
-| Dashboard style | Match VitePress docs look; reuse VitePress CSS variables / theme tokens so declarative styles can be shared |
-| Dashboard packaging | Standalone CLI; fine to run as an extra Playwright `webServer` |
-
-### Explicit non-goals (v1)
-
-- Persisting history across proxy restarts
-- Mutating routes / forcing fulfills from dashboard or MCP
-- Bundling the dashboard into the proxy binary (keep process separation; historical e2e asserted proxy does **not** serve `/dashboard`)
-- Parity-oracle coverage (this is library-only product surface)
-
----
-
-## 1. Current state (baseline)
-
-| Area | Today |
-| ---- | ----- |
-| REST | `GET /health`, `/api/history`, `/api/connections` — no query filters |
-| HTTP history | Ring buffer (`--history-limit`, default 1000); outcomes: `pending` / `mocked` / `passthrough` / `continued` / `aborted` / `error` |
-| WebSocket history | **None** in store or REST (control plane exists in protocol) |
-| Action detail | Outcome kind only; no explicit handler action timeline; `continued` response rarely filled; `fetch` intermediates not recorded |
-| Test identity | `testId` / `routeId` on entries; richer diagnostics exist on wire (`title`, `file`, …) but not in history |
-| Startup banner | Single `listening on http://…` log line |
-| Dashboard | Archived only; dark IBM Plex theme ≠ VitePress |
-| MCP | Does not exist |
-| Tests | No living observability suite; historical e2e is the template |
+| Topic | Decision |
+| ----- | -------- |
+| REST history path | `GET /api/history` only (no `/api/http`, no synonyms — never released) |
+| Capture mode CLI | `--history-capture all \| handled \| none` (default **`all`**) |
+| `handled` meaning | Traffic a test claimed/acted on: `fulfill` / `continue` / `abort` (and related errors while owned). **Not** passthrough. |
+| HAR download | **HTTP only** via REST (+ dashboard button). No WebSocket HAR/export/download |
+| WebSocket files | Skip any download or file-recording of WS traffic (Playwright does not meaningfully replay WS from HAR) |
+| WebSocket live UI | **Keep** in-memory WS connections + event timelines in REST + dashboard (observe, don’t export) |
+| MCP | **Skip for v1.** Document how local agents can use the REST API instead |
+| Dashboard package | `@playwright-backend-mocks/dashboard` — separate published npm package |
+| Test metadata | History entries include **`title`** and **`path`** (file path) when a test owns the traffic |
+| Refresh | ~2s polling; auto-refresh **on by default**; toggle + manual Refresh button |
+| Persistence | In-memory only; cleared when proxy exits |
+| Mutations | None — observability never changes routing |
 
 ---
 
 ## 2. Architecture
 
 ```text
-┌─────────────────────┐     REST (read-only)      ┌──────────────────────┐
-│  Vue dashboard      │◄──────────────────────────►│                      │
-│  @…/dashboard       │                            │  Proxy               │
-│  (port 4311)        │                            │  @…/proxy            │
-└─────────────────────┘                            │  • coordinator /ws   │
-                                                   │  • HistoryStore      │
-┌─────────────────────┐     same REST shape        │  • REST /api/*       │
-│  MCP server         │◄──────────────────────────►│                      │
-│  @…/mcp (stdio)     │   (HTTP client → proxy)    └──────────────────────┘
-└─────────────────────┘
-         ▲
-         │ MCP tools/resources
-         │
-   LLM host (Cursor, etc.)
+Playwright fixture ──ws──► Proxy ◄──ws── Node agent
+                              │
+                              ├── in-memory HTTP history
+                              ├── in-memory WS connection timelines
+                              └── REST /api/*  (read-only)
+                                       ▲
+                    ┌──────────────────┼──────────────────┐
+                    │                                     │
+         @…/dashboard (port 4311)              curl / local agents
+         --proxy-url http://proxy             (paste REST docs)
 ```
 
-**Single source of truth:** in-memory stores inside the proxy. Dashboard and MCP are thin clients. Prefer shared TypeScript types from `@playwright-backend-mocks/protocol` (and small shared query helpers if needed) so REST, MCP, and dashboard stay aligned.
-
-**MCP implementation (2026):** official TypeScript server package `@modelcontextprotocol/server` (v2), typically **stdio** transport for local IDE hosts. The MCP process takes `--proxy-url` (like the dashboard) and calls the REST API; it does not embed the coordinator.
+Single source of truth: proxy memory. Dashboard is a thin Vue client. Agents use the same REST surface.
 
 ---
 
-## 3. Data model extensions
+## 3. Proxy: capture, data model, REST, banner
 
-### 3.1 HTTP history (enrich existing `HistoryEntry`)
+### 3.1 CLI
 
-Keep the existing entry id = `requestId`. Add fields (additive, protocol schemas):
+```text
+--history-capture <mode>   all | handled | none   (default: all)
+--history-limit <n>        HTTP history ring size (existing; default 1000)
+--ws-history-limit <n>     Max WS connections retained (new; default 200)
+```
 
-| Field | Purpose |
-| ----- | ------- |
-| `action` | Normalized handler/coordinator action: `fulfill` \| `continue` \| `abort` \| `passthrough` \| `fetch` \| `error` \| `pending` |
-| `test` | Optional `{ testId, title?, file?, workerId? }` when claim/match provides it |
-| `response` | Final response when known (mocked, or continued+upstream when we choose to capture) |
-| `error` | Structured error for abort/error outcomes |
-| `overrides` | Request overrides when `continue` modified the request |
-| `events` | Optional short timeline: `observed` → `claimed` → `handler:*` → `settled` (enough for UI “what happened”) |
+Per-connection WS event lists are capped (e.g. last 500 events) so frame spam cannot unbounded-grow memory.
 
-`outcome.kind` remains for backward compatibility with current docs/clients; `action` is the clearer UI/MCP label.
+| Mode | Stores |
+| ---- | ------ |
+| `all` | Every coordinated HTTP request + every WS connection/timeline |
+| `handled` | Only entries owned/acted on by a test (HTTP: fulfill/continue/abort/owned-error; WS: matched by a test). Passthrough omitted |
+| `none` | No history writes; health/connections still work |
 
-### 3.2 WebSocket history (new)
+### 3.2 HTTP history entry (enriched)
 
-New store, separate from HTTP ring buffer (own limit flag or shared budget — default: shared `--history-limit` split by kind, or `--ws-history-limit`; **proposal:** separate `--ws-history-limit` defaulting to `200` connections, each with capped event list).
+Keep id = `requestId`. Additive fields on today’s `HistoryEntry`:
+
+| Field | Notes |
+| ----- | ----- |
+| `action` | `fulfill` \| `continue` \| `abort` \| `passthrough` \| `fetch` \| `error` \| `pending` |
+| `title` | Playwright `testInfo.title` when owned |
+| `path` | Playwright `testInfo.file` when owned (wire/API name: **`path`**, sourced from fixture `file`) |
+| `testId` / `routeId` | Existing |
+| `request` / outcome response | Existing serialization |
+| `overrides` | When `continue` modified the request |
+| `events` | Short timeline: observed → claimed → handler action → settled |
+| `durationMs` / `timestamp` / `clientId` | Existing |
+
+`outcome.kind` can remain for coarse filtering; UI prefers `action`.
+
+**Fixture wiring:** already sends `title` + `file` on `test:register`. Proxy already stores them on the test record. Implementation work is denormalizing onto history when settling (map `file` → API field `path`). Optional later: `titlePath` for describe breadcrumbs — **not in v1** (explicit title + path only).
+
+### 3.3 WebSocket live model (no export)
+
+In-memory only; power dashboard + REST; **no download endpoint**.
 
 ```ts
 type WsConnectionEntry = {
-  id: string;                 // socketId
-  timestamp: number;          // connection open observed
+  id: string;            // socketId
+  timestamp: number;
   clientId: string;
   url: string;
-  protocols?: string[];
-  test?: { testId; title?; file?; workerId? };
+  title?: string;
+  path?: string;
+  testId?: string;
   routeId?: string;
   outcome: "pending" | "matched" | "passthrough" | "error";
-  action?: "connect" | "passthrough" | "error" | …;
   closedAt?: number;
-  close?: { code?; reason?; wasClean };
+  close?: { code?: number; reason?: string; wasClean: boolean };
   events: WsTimelineEvent[];  // bounded
-};
-
-type WsTimelineEvent = {
-  id: string;
-  timestamp: number;
-  direction: "client" | "server" | "system";
-  kind: "open" | "frame" | "close" | "error" | "handler";
-  // frame payload summary + optional bodyBase64 / text
-  // handler: what the test did (forward, drop, send, close, …)
 };
 ```
 
-Exact handler verbs follow whatever the living WS protocol already emits (`ws:*` messages in `packages/protocol`).
+Events: open / frames (both directions) / close / error / handler actions (forward, send, close, etc. as protocol already allows).
 
-### 3.3 Search ranking
+### 3.4 REST API
 
-Shared search function used by REST and MCP (dashboard calls REST):
-
-1. Filter by `from` / `to` (epoch ms) if provided.
-2. If `q` empty → chronological (newest first).
-3. If `q` set → case-insensitive inclusion across fields; **score**:
-   - URL / WS URL match → highest
-   - method / status / test title / testId → high
-   - headers → medium
-   - body / frame payload → lower
-4. Return scored results; stable tie-break by timestamp desc.
-
----
-
-## 4. REST API design (proxy)
-
-Base URL default: `http://127.0.0.1:4310`. CORS remains open for local dashboard origins. All observability routes are **GET** (plus `OPTIONS` preflight). Read-only.
-
-### 4.1 Retain / extend
-
-| Method | Path | Notes |
-| ------ | ---- | ----- |
-| `GET` | `/health` | Add optional `observability: true` or document existing fields; keep `ok`, `version`, `protocolVersion` |
-| `GET` | `/api/connections` | Enrich with active WS socket counts if cheap; keep node/playwright lists |
-
-### 4.2 HTTP
+Base: `http://127.0.0.1:4310`. CORS open for local dashboard. Read-only `GET` + `OPTIONS`.
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| `GET` | `/api/http` | List HTTP history (alias or replace `/api/history` — see open Q). Query: `q`, `from`, `to`, `testId`, `clientId`, `action`, `limit`, `offset` |
-| `GET` | `/api/http/:id` | Single entry + full timeline/detail |
-| `GET` | `/api/history` | **Deprecated alias** of `/api/http` for one release, or keep as synonym |
+| `GET` | `/health` | Liveness / version / protocolVersion |
+| `GET` | `/api/connections` | Node agents + Playwright workers |
+| `GET` | `/api/history` | HTTP history. Query: `q`, `from`, `to`, `testId`, `clientId`, `action`, `limit`, `offset` |
+| `GET` | `/api/history/:id` | Single HTTP entry + full detail/timeline |
+| `GET` | `/api/ws` | Live WS connections (same filter query where applicable) |
+| `GET` | `/api/ws/:id` | One connection + event timeline |
+| `GET` | `/api/export/har` | HAR 1.2 for **HTTP** history only (same filters). `Content-Disposition` attachment |
 
-### 4.3 WebSockets
+**Search ranking** (`q`): URL highest → method/status/title/path/testId → headers → body/frame payload. Time filter `from`/`to` (epoch ms). Newest-first when unscored.
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| `GET` | `/api/ws` | List WS connections. Same filter query params where applicable |
-| `GET` | `/api/ws/:id` | Connection detail + event timeline |
-| `GET` | `/api/ws/:id/events` | Events only (optional if detail is enough); supports `q`, `from`, `to` |
+No WS export routes.
 
-### 4.4 Export
+### 3.5 Startup banner
 
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| `GET` | `/api/export/har` | HAR 1.2 for HTTP entries (filterable by same query params) |
-| `GET` | `/api/export/ws` | JSON export of WS connections + events (if HAR is HTTP-only) |
-
-Content-Disposition filenames like `playwright-backend-mocks-YYYYMMDD.har`.
-
-### 4.5 Startup banner
-
-On listen, print a short block (not only one log line), e.g.:
+On listen, print something like:
 
 ```text
 playwright-backend-mocks proxy
 
   Connect Node / Playwright:  ws://127.0.0.1:4310/ws
   REST API:                   http://127.0.0.1:4310
-  Dashboard (separate pkg):   point @playwright-backend-mocks/dashboard at
-                              http://127.0.0.1:4310
+  Dashboard:                  install @playwright-backend-mocks/dashboard
+                              and point --proxy-url at http://127.0.0.1:4310
+  History capture:            all
 ```
 
-Exact wording TBD; must include **test/proxy connection URL** and **dashboard→proxy URL**.
-
 ---
 
-## 5. Dashboard package
+## 4. Dashboard package
 
-### 5.1 Package
+### 4.1 Packaging
 
-- Path: `packages/dashboard`
-- Name: `@playwright-backend-mocks/dashboard`
-- Bin: `playwright-backend-mocks-dashboard`
-- Flags (from historical, keep): `--host`, `--port` (default `4311`), `--proxy-url` (default `http://127.0.0.1:4310`)
-- Serves SPA + `/config.json` `{ proxyUrl }` + `/health`
+| Item | Value |
+| ---- | ----- |
+| Package | `@playwright-backend-mocks/dashboard` |
+| Path | `packages/dashboard` |
+| Bin | `playwright-backend-mocks-dashboard` |
+| Flags | `--host` (default `127.0.0.1`), `--port` (default `4311`), `--proxy-url` (default `http://127.0.0.1:4310`) |
+| Endpoints | `GET /` SPA, `GET /config.json` → `{ proxyUrl }`, `GET /health` |
 
-### 5.2 UI information architecture
+Document optional Playwright `webServer` entry alongside the proxy.
 
-Separate primary views (routes under the SPA; package is not mounted on the proxy):
+### 4.2 Visual system
 
-| Route | Purpose |
-| ----- | ------- |
-| `/` | Lightweight overview: connection counts, recent activity, links |
-| `/http` | HTTP timeline + search/time filters + detail drawer |
-| `/ws` | WS connection list + per-connection event timeline + search |
+- VitePress default theme tokens (`--vp-c-bg`, `--vp-c-brand-1`, `--vp-c-text-*`, `--vp-c-divider`, `--vp-c-bg-soft`, danger/warning).
+- Ship a small `vp-tokens.css` snapshot in the dashboard package (do not runtime-depend on VitePress).
+- Light + dark via `prefers-color-scheme` (same token pairs).
+- Typography/spacing should feel like the docs site, not the historical IBM Plex dark dashboard.
+- Layout: app chrome (top bar + nav), not a marketing landing page. Still one clear composition per view — no dashboard-of-cards clutter.
 
-Per HTTP row: method, URL, status/outcome, test label, action, duration, timestamp.  
-Detail: request/response headers & bodies, action, owning test, overrides, timeline events.  
-Per WS connection: URL, test, outcome, open/close; detail = bidirectional event timeline.  
-Toolbar: search box, time range, HAR/export download buttons.
+### 4.3 UI structure (what it actually looks like)
 
-Polling every ~2s is fine for v1 (no SSE required). Live refresh must not reset selection/scroll awkwardly.
+#### Shell (every page)
 
-### 5.3 Styling (VitePress-aligned)
-
-- Use VitePress CSS variables (`--vp-c-bg`, `--vp-c-brand-1`, `--vp-c-text-1`, `--vp-c-divider`, `--vp-c-bg-soft`, danger/warning tokens, etc.).
-- Prefer extracting a small shared token file (e.g. `packages/dashboard/src/styles/vp-tokens.css` modeled on VitePress default theme vars + this repo’s `documentation/.vitepress/theme/custom.css` accents) so the same declarative CSS can be dropped into docs demos later.
-- Support light + dark via `prefers-color-scheme` or a simple toggle using the same token pairs VitePress uses.
-- Do **not** revive the historical IBM Plex dark dashboard as the visual system.
-
-### 5.4 Playwright `webServer` docs snippet
-
-Document dual webServer: proxy + dashboard (historical docs already have this pattern).
-
----
-
-## 6. MCP server package
-
-### 6.1 Package
-
-- Path: `packages/mcp`
-- Name: `@playwright-backend-mocks/mcp`
-- Bin: `playwright-backend-mocks-mcp`
-- Deps: `@modelcontextprotocol/server` (v2), HTTP client to proxy
-- Config: `--proxy-url` / `PBM_PROXY_URL`
-
-### 6.2 Surface (mirror REST)
-
-**Tools** (preferred for filtered queries):
-
-| Tool | Maps to |
-| ---- | ------- |
-| `get_health` | `GET /health` |
-| `list_connections` | `GET /api/connections` |
-| `list_http` | `GET /api/http` (+ filters) |
-| `get_http` | `GET /api/http/:id` |
-| `list_ws` | `GET /api/ws` |
-| `get_ws` | `GET /api/ws/:id` |
-| `search` | unified search across HTTP + WS with ranking |
-| `export_har` | `GET /api/export/har` (return path or inline text; prefer text/base64 in tool result for agent use) |
-
-**Resources** (optional, URI templates):
-
-- `pbm://health`
-- `pbm://http/{id}`
-- `pbm://ws/{id}`
-
-No write tools.
-
-### 6.3 Host setup docs
-
-Document Cursor / generic MCP config:
-
-```json
-{
-  "mcpServers": {
-    "playwright-backend-mocks": {
-      "command": "npx",
-      "args": ["-y", "@playwright-backend-mocks/mcp", "--proxy-url", "http://127.0.0.1:4310"]
-    }
-  }
-}
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Playwright Backend Mocks          [ HTTP ]  [ WebSockets ]  [ Connections ]
+│  proxy http://127.0.0.1:4310                                                 │
+│                                                                              │
+│  [🔍 Search…………]  [From time] [To time]   ☑ Auto-refresh   [Refresh]  [⬇ HAR] │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Note: MCP is useless unless the proxy is running; docs should say so clearly.
+- **Brand** in the top bar (product name), not buried.
+- Primary nav: three destinations — **HTTP**, **WebSockets**, **Connections**.
+- Shared toolbar on HTTP/WS: search, optional time range, auto-refresh checkbox (**checked by default**), Refresh button.
+- **Download HAR** only on the HTTP view (and maybe Connections omitted). Disabled/hidden on WS.
+- Proxy URL shown subtly in the header (from `/config.json`).
+- Connection error banner if proxy unreachable.
+
+Auto-refresh: while checked, poll ~2s. Refresh always runs one fetch. Polling must **not** clear selection or jump scroll if the selected id still exists; if it disappeared, clear selection gently.
+
+Default route: **`/http`** (the main job). `/` redirects there.
 
 ---
 
-## 7. Instrumentation work in the proxy
+#### View A — HTTP (`/http`)
 
-To feed the richer model:
+Master–detail, full width:
 
-1. On HTTP `request:start` → create pending HTTP entry (+ timeline event).
-2. On claim/match → attach `test` metadata from claim diagnostics when available.
-3. On `handler:result` → record `action` (`fulfill` / `continue` / `abort` / `fetch`) and payloads (response, overrides, errorCode).
-4. On passthrough / errors / cancel → settle entry accordingly.
-5. On WS `ws:connection` → create WS entry; append frame/close/handler events from existing relay path; bound per-connection event lists.
-6. Wire list/get/search/export handlers in the HTTP server module (keep coordinator logic separate from serialization).
+```text
+┌──────────────────────────── timeline (≈55%) ─────────────┬── detail (≈45%) ──┐
+│ Time     Action   Method  Status  URL              Test   │  GET /charges      │
+│ 12:01:03 fulfill  POST    402     …/charges        pay…   │  fulfill · 14ms    │
+│ 12:01:02 continue GET     200     …/prices         pay…   │                    │
+│ 12:01:01 passthrough GET  200     …/health         —      │  Test              │
+│ …                                                         │  title: declined…  │
+│                                                           │  path: …/pay.spec  │
+│                                                           │  testId: …         │
+│                                                           │                    │
+│                                                           │  Request           │
+│                                                           │  headers / body    │
+│                                                           │                    │
+│                                                           │  Response          │
+│                                                           │  headers / body    │
+│                                                           │                    │
+│                                                           │  Timeline          │
+│                                                           │  • observed        │
+│                                                           │  • claimed         │
+│                                                           │  • fulfill         │
+└───────────────────────────────────────────────────────────┴────────────────────┘
+```
 
-Careful: observability must remain side-effect free w.r.t. claims and timing (no extra awaits on the hot path beyond in-memory pushes).
+**Timeline columns (compact):**
+
+| Column | Content |
+| ------ | ------- |
+| Time | Relative or `HH:mm:ss.SSS` |
+| Action | Pill: fulfill / continue / abort / passthrough / pending / error |
+| Method | `GET` / `POST` / … |
+| Status | Response status when known; `—` if none; abort/error codes surfaced |
+| URL | Truncated, full in title tooltip |
+| Test | `title` if present, else `—` |
+
+Row click selects. Selected row highlighted with brand-soft background (not a heavy card).
+
+**Detail panel sections (stacked, one job each):**
+
+1. **Summary** — method + URL, action pill, duration, clientId  
+2. **Test** — title, path, testId, routeId (omit section if unowned)  
+3. **Request** — headers table + body (pretty JSON when possible, else text/base64 notice)  
+4. **Response** — status, headers, body (when mocked or when we captured upstream)  
+5. **Overrides** — only if `continue` changed the request  
+6. **Timeline** — ordered events for this request  
+
+Empty states: “No requests yet” / “No matches for this search”.
+
+HAR button downloads current filtered set via `GET /api/export/har?...`.
 
 ---
 
-## 8. Documentation plan
+#### View B — WebSockets (`/ws`)
 
-| Doc | Action |
-| --- | ------ |
-| `documentation/ops/rest-api.md` | Full route reference, query params, schemas, HAR export |
-| `documentation/ops/proxy.md` | Startup banner, new flags, history limits for WS |
-| `documentation/ops/dashboard.md` | **New** — install, CLI, `webServer`, VitePress-style note |
-| `documentation/ops/mcp.md` | **New** — install, stdio config, tool/resource list, proxy dependency |
-| `documentation/guide/troubleshooting.md` | Link observability for “what did my test do?” |
-| `documentation/index.md` / sidebar | Add ops entries |
-| `documentation/guide/limitations.md` | Remove “no dashboard package”; note in-memory + read-only |
+Same shell; **no HAR button**.
 
-Keep REST and MCP docs structurally parallel (same resource names / filters).
+```text
+┌────────── connections (≈35%) ──────────┬────── event timeline (≈65%) ──────────┐
+│ ● wss://…/socket          matched      │  Connection wss://…/socket              │
+│   pay declined · pay.spec.ts           │  matched · title · path                 │
+│ ○ wss://…/other           passthrough  │                                         │
+│   —                                    │  12:01:03.100  →  client  {"sub":…}     │
+│                                        │  12:01:03.140  ←  server  {"ok":true}   │
+│                                        │  12:01:04.002  •  handler forward       │
+│                                        │  12:01:10.500  •  close 1000            │
+└────────────────────────────────────────┴─────────────────────────────────────────┘
+```
+
+**Left list:** each socket — URL, outcome pill, test title/path one-liner, open/closed hint.  
+**Right:** bidirectional timeline for the selected socket (direction arrows, payload preview, expand for full frame). Search filters connections and, when a connection is selected, can also highlight matching events.
+
+No download. Copy-payload affordance on a single event is nice-to-have, not required for v1.
 
 ---
 
-## 9. Testing strategy
+#### View C — Connections (`/connections`)
 
-Observability is **library-only** → live under `tests/library` (not `tests/parity`). Prefer **one Playwright runner** for consistency.
+Simple two-column list (not cards-as-content):
 
-### 9.1 REST API — Playwright `request` (recommended)
+- **Node agents** — `clientId`, connection id  
+- **Playwright workers** — `clientId`, workerId, testCount, routeCount  
 
-Playwright’s APIRequestContext is already how historical observability tests hit the proxy. Clean and sufficient:
+Purpose: confirm the proxy is wired. Secondary to HTTP/WS.
 
-- Start proxy via `webServer` or `withProxy()` helper (existing library pattern).
-- Drive traffic with Node agent + Playwright fixture (or library harness).
-- Assert `/api/http`, filters, ranking, `/api/ws`, HAR shape, CORS, health.
+---
 
-No need for a second test framework.
+#### Motion / polish (light)
 
-### 9.2 MCP server — Playwright-orchestrated process tests (recommended)
+- Soft fade/slide when switching HTTP ↔ WS ↔ Connections  
+- Selected-row background transition  
+- Action pills: stable colors (fulfill=brand/success, continue=neutral, abort/error=danger, passthrough=muted, pending=warning)  
+Avoid glow, purple gradients, emoji, and dense stat strips.
 
-Keep Playwright as the runner; treat MCP as a subprocess:
+### 4.4 What we are not building in the UI
 
-1. Start proxy (+ generate traffic) in the test.
-2. Spawn `playwright-backend-mocks-mcp` with stdio **or** (cleaner) import the tool-registration module and invoke handlers in-process with a fake/proxy URL.
-3. Prefer **in-process tool handler tests** for determinism + **one smoke stdio handshake** if cheap.
+- Editing routes or replaying traffic from the UI  
+- WS file download / HAR-with-websockets  
+- Persistence, login, multi-proxy switcher  
+- MCP panel  
+- Heavy charts or “dashboard metrics” tiles in the first viewport  
 
-Alternative if stdio plumbing is awkward: thin unit/integration tests with Node `node:test` only for MCP framing — but default remains Playwright so CI stays one platform.
+---
 
-Do **not** try to drive MCP through a real LLM host in CI.
+## 5. Documentation
 
-### 9.3 Dashboard — Playwright UI tests (recommended)
+| Doc | Work |
+| --- | ---- |
+| `documentation/ops/rest-api.md` | Full routes, query params, schemas, HAR export, capture modes |
+| `documentation/ops/proxy.md` | `--history-capture`, WS history limit, startup banner |
+| `documentation/ops/dashboard.md` | **New** — install, CLI, `webServer`, UI overview, styling note |
+| `documentation/guide/troubleshooting.md` | Link “inspect traffic” → dashboard/REST |
+| `documentation/guide/limitations.md` | Remove “no dashboard”; note in-memory + no WS export + no MCP |
+| Sidebar / index | Link new ops pages |
 
-- `webServer`: proxy + dashboard.
-- Generate known HTTP + WS traffic.
-- Assert filters, dual views, detail panes, export link/download.
-- Reuse patterns from `historical/tests/e2e/specs/observability.spec.ts`, but target VitePress-styled UI selectors.
+### 5.1 Teaching local agents (instead of MCP)
 
-### 9.4 Suggested layout
+Add a short section (on REST page and/or dashboard page), roughly:
+
+> **Using this with coding agents.** There is no MCP server in v1. If a local agent is writing or running tests against this proxy, give it the REST API docs (this page) and the proxy base URL (default `http://127.0.0.1:4310`). The agent can `GET /api/history`, `/api/ws`, and `/api/export/har` to see what tests intercepted — same data as the dashboard.
+
+Keep that practical and short — not a second product.
+
+---
+
+## 6. Testing strategy (Playwright, `tests/library`)
+
+Observability is library-only → **not** in `tests/parity`.
+
+| Surface | Approach |
+| ------- | -------- |
+| REST | Playwright `request` against proxy; drive traffic via existing library helpers / fixtures |
+| Dashboard | Playwright UI tests: proxy + dashboard `webServer`; assert nav, filters, auto-refresh toggle, HAR download link, HTTP detail, WS timeline smoke |
+| Capture modes | Assert `handled` omits passthrough; `none` leaves history empty |
+
+Suggested files:
 
 ```text
 tests/library/specs/observability/
-  rest-http.spec.ts
+  rest-history.spec.ts
   rest-ws.spec.ts
   rest-har.spec.ts
-  mcp-tools.spec.ts
+  rest-capture-modes.spec.ts
   dashboard.spec.ts
 ```
 
 ---
 
-## 10. Implementation phases (single product PR track)
+## 7. Implementation phases
 
-Prefer one coherent PR series (or one large PR if manageable). Suggested commits/phases:
-
-1. **Protocol + proxy store** — enrich HTTP history; add WS history; search helpers; export HAR.
-2. **REST routes + startup banner** — document in `ops/rest-api.md` / `proxy.md`.
-3. **Dashboard package** — Vue app + CLI + VitePress tokens; docs.
-4. **MCP package** — tools over REST; docs.
-5. **Library tests** — REST / MCP / dashboard.
-6. **Polish** — sidebar links, limitations, README pointers.
+1. **Protocol + proxy store** — enrich HTTP history (`action`, `title`, `path`, events); WS connection store; `--history-capture`; search helpers; HAR export.  
+2. **REST + startup banner** — routes above; update `ops/rest-api.md` / `proxy.md`.  
+3. **Dashboard package** — Vue app as specified; VitePress tokens; docs + `webServer` recipe; agent tip.  
+4. **Library tests** — REST + dashboard.  
+5. **Docs polish** — limitations, troubleshooting, sidebar.
 
 ---
 
-## 11. Open questions (with proposed defaults)
+## 8. Success criteria
 
-Answer these before or during implementation; defaults apply if no preference.
-
-| # | Question | Proposed default |
-| - | -------- | ---------------- |
-| Q1 | Keep `/api/history` forever as synonym of `/api/http`, or deprecate? | Keep as synonym (no breakage). |
-| Q2 | Capture upstream response bodies for `continue` / passthrough? | Yes when Node reports `request:response` / equivalent; may increase memory — still capped by history limit. |
-| Q3 | How to export WebSockets given HAR 1.2 is HTTP-centric? | HAR for HTTP only; separate `GET /api/export/ws` JSON. Optional zip later. |
-| Q4 | MCP transport: stdio only, or also Streamable HTTP? | **stdio only** for v1 (IDE hosts). |
-| Q5 | Should MCP live inside the proxy process? | **No** — separate package calling REST (matches dashboard; simpler lifecycle). |
-| Q6 | Dashboard SPA base path: `/` or `/dashboard`? | SPA at `/` on port 4311; proxy never serves UI. (Speech “slash dashboard” = package/`packages/dashboard`.) |
-| Q7 | Include Playwright test **title/file** in history? | **Yes** when available from claim/match diagnostics. |
-| Q8 | Live updates: polling vs SSE? | **Polling ~2s** v1; design REST so SSE can be added later without schema break. |
-| Q9 | Auth on REST when `--token` is set? | v1: REST stays local-open (current behavior); document that token protects `/ws` only. Revisit later. |
-| Q10 | Shared search package vs inline in proxy? | Implement search in proxy; MCP/dashboard call REST (no third package). |
-| Q11 | This planning PR vs full implementation in one PR? | **This document lands first**; implementation PR(s) follow once defaults/questions are accepted. |
+1. Proxy banner shows Node/Playwright WS URL, REST URL, and how to point the dashboard.  
+2. `--history-capture all|handled|none` behaves as specified.  
+3. `/api/history` lists/filters/searches HTTP with action + title + path.  
+4. `/api/ws` exposes live WS timelines (no export).  
+5. `/api/export/har` downloads HTTP-only HAR.  
+6. Dashboard package installs separately, defaults auto-refresh on, has Refresh + HAR on HTTP view, separate HTTP/WS/Connections views, VitePress-like styling.  
+7. Docs explain REST for humans and local agents; no MCP package.  
+8. Library Playwright tests cover REST + dashboard smoke.
 
 ---
 
-## 12. Success criteria
+## 9. Explicit non-goals (v1)
 
-1. Proxy startup prints Node/Playwright connect URL and dashboard proxy URL.
-2. REST can list/filter/search HTTP and WS traffic with test ownership and action detail.
-3. HAR download works for HTTP history.
-4. Dashboard package installs separately, connects via `--proxy-url`, shows HTTP and WS views with search/time filters, VitePress-like styling.
-5. MCP tools mirror REST; documented for Cursor-style hosts.
-6. Library Playwright tests cover REST, MCP tool handlers, and dashboard smoke/UI.
-7. Docs under `documentation/ops/` are complete and cross-linked.
-
----
-
-## 13. Risks / watch items
-
-| Risk | Mitigation |
-| ---- | ---------- |
-| Memory growth from bodies + WS frames | Caps on history entries, per-socket events, and optional body truncation in list views (full body on get-by-id) |
-| Hot-path overhead | In-memory append only; no disk; no blocking network from observability |
-| Schema churn vs historical clients | Additive fields; keep `/api/history` |
-| VitePress token drift | Vendor a snapshot of tokens into the dashboard package rather than importing VitePress at runtime |
-| MCP SDK v1 vs v2 | Target `@modelcontextprotocol/server` v2; pin version in package.json |
+- MCP server  
+- WebSocket HAR / any WS download or file recording  
+- Persisting history across proxy restarts  
+- Mutating traffic from dashboard/REST  
+- Bundling dashboard into the proxy process  
+- Parity-oracle coverage  
+- `titlePath` describe breadcrumbs (title + path only)
