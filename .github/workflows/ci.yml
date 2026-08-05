@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  # main pushes run CI via the Publish workflow (tests gate npm publish)
+  workflow_call:
 
 jobs:
   build-and-test:
