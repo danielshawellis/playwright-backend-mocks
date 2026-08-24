@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
+import * as nodeZlib from "node:zlib";
 import { BatchInterceptor } from "@mswjs/interceptors";
 import nodeInterceptors from "@mswjs/interceptors/presets/node";
 import {
@@ -410,9 +412,12 @@ async function performUpstreamWithHopReporting(
     let currentUrl = url;
 
     for (;;) {
-      const response = options.exactHeaders
-        ? await httpRequestExact(url, method, headerRecord, body)
-        : await fetchRequest(url, method, headerRecord, body);
+      // DIVERGENCE: node:http/https for upstream settle (not undici fetch). See
+      // performUpstreamOnce — Node 26 + MSW nested fetch hits HTTPParserError on h2.
+      // DIVERGENCE END
+      const response = await normalizeUpstreamResponse(
+        await httpRequestExact(url, method, headerRecord, body),
+      );
 
       if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining <= 0) {
         const finalResponse = await serializeResponse(response, currentUrl);
@@ -523,9 +528,13 @@ async function performUpstreamOnce(
   }
 
   for (;;) {
-    const response = options.exactHeaders
-      ? await httpRequestExact(url, method, headerRecord, body)
-      : await fetchRequest(url, method, headerRecord, body);
+    // DIVERGENCE: Use node:http/https for upstream settle, not undici `fetch`.
+    // On Node 26+, nested `fetch()` while MSW holds the app request fails with
+    // HTTPParserError (HTTP/2 TLS bytes parsed as HTTP/1.1). node:https works.
+    // DIVERGENCE END
+    const response = await normalizeUpstreamResponse(
+      await httpRequestExact(url, method, headerRecord, body),
+    );
 
     if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
       return response;
@@ -576,71 +585,70 @@ async function performUpstreamOnce(
   }
 }
 
-async function fetchRequest(
-  url: string,
-  method: string,
-  headerRecord: Record<string, string>,
-  body: Uint8Array | null,
-): Promise<Response> {
-  const headers = new Headers(headerRecord);
-  const init: RequestInit = {
-    method,
-    headers,
-    redirect: "manual",
-  };
-  if (
-    body !== null &&
-    method.toUpperCase() !== "GET" &&
-    method.toUpperCase() !== "HEAD"
-  ) {
-    init.body = Uint8Array.from(body);
-  }
-  const response = await fetch(url, init);
-  // Undici auto-decompresses before we see the body; strip stale encoding
-  // headers so MSW respondWith does not trigger a second decompression.
-  return unwrapFetchAutoDecompression(response);
-}
-
 /**
- * Undici `fetch` decompresses gzip / br / deflate responses but leaves
- * `content-encoding` and the compressed `content-length` on the Response.
- * Replaying that pair through MSW `respondWith` makes the app's Undici try to
- * decompress already-plain bytes (e.g. ERR__ERROR_FORMAT_PADDING_2 for Brotli).
- *
- * CDN-style responses are often compressed *and* chunked. After decompression
- * we buffer the plain body and set `Content-Length`; leaving
- * `Transfer-Encoding: chunked` creates an illegal CL+TE pair that Undici
- * rejects with UND_ERR_SOCKET when MSW replays the Response.
- *
- * Rebuild with headers that match the fully buffered body we actually hold.
+ * node:http/https returns compressed bytes with Content-Encoding intact.
+ * Decode for respondWith, and drop hop-by-hop framing that no longer applies
+ * to a fully buffered body (Content-Length + Transfer-Encoding: chunked is
+ * illegal and Undici closes the socket with UND_ERR_SOCKET).
  */
-async function unwrapFetchAutoDecompression(response: Response): Promise<Response> {
+async function normalizeUpstreamResponse(response: Response): Promise<Response> {
   const encodingHeader = response.headers.get("content-encoding");
-  if (encodingHeader === null || encodingHeader.length === 0) {
-    return response;
-  }
-  const encodings = encodingHeader
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter((part) => part.length > 0);
-  if (encodings.length === 0 || encodings.every((part) => part === "identity")) {
-    return response;
+  const encodings =
+    encodingHeader === null || encodingHeader.length === 0
+      ? []
+      : encodingHeader
+          .split(",")
+          .map((part) => part.trim().toLowerCase())
+          .filter((part) => part.length > 0 && part !== "identity");
+
+  let buffer: Buffer = Buffer.from(await response.arrayBuffer());
+  if (encodings.length > 0) {
+    // HTTP content-codings apply in order; undo from last to first.
+    for (let i = encodings.length - 1; i >= 0; i--) {
+      buffer = Buffer.from(decompressContentEncoding(buffer, encodings[i]!));
+    }
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
   const headers = new Headers(response.headers);
-  headers.delete("content-encoding");
+  if (encodings.length > 0) {
+    headers.delete("content-encoding");
+  }
   headers.delete("content-length");
-  // Hop-by-hop framing no longer applies to a buffered body.
+  // Always strip TE after buffering — CL+TE together breaks MSW respondWith.
   headers.delete("transfer-encoding");
   if (buffer.byteLength > 0) {
     headers.set("content-length", String(buffer.byteLength));
   }
-  return new Response(buffer, {
+
+  return new Response(Uint8Array.from(buffer), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function decompressContentEncoding(buffer: Buffer, encoding: string): Buffer {
+  switch (encoding) {
+    case "gzip":
+    case "x-gzip":
+      return gunzipSync(buffer);
+    case "deflate":
+      return inflateSync(buffer);
+    case "br":
+      return brotliDecompressSync(buffer);
+    case "zstd":
+    case "zst": {
+      const decompress = nodeZlib.zstdDecompressSync;
+      if (typeof decompress !== "function") {
+        throw new Error(
+          "Upstream response used Content-Encoding: zstd, but this Node build has no zlib.zstdDecompressSync",
+        );
+      }
+      return Buffer.from(decompress(buffer));
+    }
+    default:
+      throw new Error(`Unsupported Content-Encoding for upstream settle: ${encoding}`);
+  }
 }
 
 /**
