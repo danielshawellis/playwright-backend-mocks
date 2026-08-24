@@ -218,12 +218,7 @@ const server = createServer(async (req, res) => {
 
   // Brotli-compressed SSE framing — compression + non-JSON content-type.
   if (req.method === "GET" && url.pathname === "/sse-brotli") {
-    const payload = [
-      "event: message",
-      'data: {"ok":true}',
-      "",
-      "",
-    ].join("\n");
+    const payload = ["event: message", 'data: {"ok":true}', "", ""].join("\n");
     const compressed = brotliCompressSync(Buffer.from(payload, "utf8"));
     res.writeHead(200, {
       "content-type": "text/event-stream",
