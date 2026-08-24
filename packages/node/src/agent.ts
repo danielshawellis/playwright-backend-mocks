@@ -737,7 +737,7 @@ function responseFromNodeHttp(
   buffer: Buffer,
 ): Response {
   const nullBody = status === 204 || status === 205 || status === 304;
-  return new Response(nullBody ? null : buffer, {
+  return new Response(nullBody ? null : Uint8Array.from(buffer), {
     status,
     statusText,
     headers,
