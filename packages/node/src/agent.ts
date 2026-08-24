@@ -237,11 +237,10 @@ function handleProxyMessage(
         maxRedirects: message.maxRedirects,
         maxRetries: message.maxRetries,
       })
-        .then(async (response) => {
-          const serialized = await serializeResponse(
-            response,
-            message.overrides?.url ?? item.request.url,
-          );
+        .then(async ({ response, url: finalUrl }) => {
+          // node:http Responses have an empty url; pass the final hop URL explicitly
+          // (undici fetch used to populate Response.url per hop).
+          const serialized = await serializeResponse(response, finalUrl);
           connection.send({
             type: "fetch:result",
             requestId: message.requestId,
@@ -351,7 +350,7 @@ async function performUpstream(
     maxRetries?: number;
     exactHeaders?: boolean;
   } = {},
-): Promise<Response> {
+): Promise<{ response: Response; url: string }> {
   return upstreamBypass.run(true, async () => {
     // Playwright: maxRetries ?? 0; retry only ECONNRESET with exponential backoff.
     // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts (_sendRequestWithRetries)
@@ -504,7 +503,7 @@ async function performUpstreamOnce(
   original: Request,
   overrides: RequestOverrides | undefined,
   options: { maxRedirects?: number; exactHeaders?: boolean },
-): Promise<Response> {
+): Promise<{ response: Response; url: string }> {
   // Playwright: maxRedirects ?? 20; 0 → -1 meaning "do not follow".
   let redirectsRemaining = options.maxRedirects ?? 20;
   if (options.maxRedirects === 0) {
@@ -537,7 +536,7 @@ async function performUpstreamOnce(
     );
 
     if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
-      return response;
+      return { response, url };
     }
     if (redirectsRemaining === 0) {
       throw new Error("Max redirect count exceeded");
@@ -545,7 +544,7 @@ async function performUpstreamOnce(
 
     const locationHeader = response.headers.get("location");
     if (locationHeader === null || locationHeader.length === 0) {
-      return response;
+      return { response, url };
     }
 
     let nextUrl: URL;
