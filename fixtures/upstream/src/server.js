@@ -150,6 +150,91 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // Larger Brotli JSON — closer to third-party API payloads (e.g. LLM providers).
+  if (req.method === "GET" && url.pathname === "/brotli-large") {
+    const payload = JSON.stringify({
+      brotli: true,
+      message: "hello".repeat(200),
+      items: Array.from({ length: 40 }, (_, i) => ({ id: i, name: `item-${i}` })),
+    });
+    const compressed = brotliCompressSync(Buffer.from(payload, "utf8"));
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "content-encoding": "br",
+      "content-length": compressed.length,
+      "x-upstream": "real",
+    });
+    res.end(compressed);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/gzip-text") {
+    const payload = "plain text, gzipped";
+    const compressed = gzipSync(Buffer.from(payload, "utf8"));
+    res.writeHead(200, {
+      "content-type": "text/plain; charset=utf-8",
+      "content-encoding": "gzip",
+      "content-length": compressed.length,
+      "x-upstream": "real",
+    });
+    res.end(compressed);
+    return;
+  }
+
+  // Chunked JSON (no content-length) — transfer-encoding: chunked via res.write.
+  if (req.method === "GET" && url.pathname === "/chunked-json") {
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "x-upstream": "real",
+      "transfer-encoding": "chunked",
+    });
+    res.write('{"chunked":');
+    res.write("true,");
+    res.write('"message":"hello"}');
+    res.end();
+    return;
+  }
+
+  // Uncompressed SSE-shaped body (single buffered response; still a format clients parse).
+  if (req.method === "GET" && url.pathname === "/sse") {
+    const payload = [
+      "event: message",
+      'data: {"ok":true,"n":1}',
+      "",
+      "event: message",
+      'data: {"ok":true,"n":2}',
+      "",
+      "",
+    ].join("\n");
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      "content-length": Buffer.byteLength(payload),
+      "x-upstream": "real",
+    });
+    res.end(payload);
+    return;
+  }
+
+  // Brotli-compressed SSE framing — compression + non-JSON content-type.
+  if (req.method === "GET" && url.pathname === "/sse-brotli") {
+    const payload = [
+      "event: message",
+      'data: {"ok":true}',
+      "",
+      "",
+    ].join("\n");
+    const compressed = brotliCompressSync(Buffer.from(payload, "utf8"));
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "content-encoding": "br",
+      "content-length": compressed.length,
+      "x-upstream": "real",
+    });
+    res.end(compressed);
+    return;
+  }
+
   // Redirect to localhost (different origin hostname) for Authorization strip tests.
   if (url.pathname === "/redirect-to-localhost") {
     const code = Number(url.searchParams.get("code") ?? "302");

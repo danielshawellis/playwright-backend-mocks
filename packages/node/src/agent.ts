@@ -595,7 +595,45 @@ async function fetchRequest(
   ) {
     init.body = Uint8Array.from(body);
   }
-  return fetch(url, init);
+  const response = await fetch(url, init);
+  // Undici auto-decompresses before we see the body; strip stale encoding
+  // headers so MSW respondWith does not trigger a second decompression.
+  return unwrapFetchAutoDecompression(response);
+}
+
+/**
+ * Undici `fetch` decompresses gzip / br / deflate responses but leaves
+ * `content-encoding` and the compressed `content-length` on the Response.
+ * Replaying that pair through MSW `respondWith` makes the app's Undici try to
+ * decompress already-plain bytes (e.g. ERR__ERROR_FORMAT_PADDING_2 for Brotli).
+ *
+ * Rebuild with headers that match the body we actually hold.
+ */
+async function unwrapFetchAutoDecompression(response: Response): Promise<Response> {
+  const encodingHeader = response.headers.get("content-encoding");
+  if (encodingHeader === null || encodingHeader.length === 0) {
+    return response;
+  }
+  const encodings = encodingHeader
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter((part) => part.length > 0);
+  if (encodings.length === 0 || encodings.every((part) => part === "identity")) {
+    return response;
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const headers = new Headers(response.headers);
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+  if (buffer.byteLength > 0) {
+    headers.set("content-length", String(buffer.byteLength));
+  }
+  return new Response(buffer, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 /**
