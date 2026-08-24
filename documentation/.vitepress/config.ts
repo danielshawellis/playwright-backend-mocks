@@ -28,10 +28,6 @@ export default defineConfig({
       { text: "API", link: "/api/backend-mocks" },
       { text: "Recipes", link: "/recipes/compose-fixtures" },
       { text: "Ops", link: "/ops/observability" },
-      {
-        text: "GitHub",
-        link: "https://github.com/danielshawellis/playwright-backend-mocks",
-      },
     ],
     sidebar: {
       "/guide/": [
