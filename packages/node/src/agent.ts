@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
+import * as nodeZlib from "node:zlib";
 import { BatchInterceptor } from "@mswjs/interceptors";
 import nodeInterceptors from "@mswjs/interceptors/presets/node";
 import {
@@ -235,11 +237,10 @@ function handleProxyMessage(
         maxRedirects: message.maxRedirects,
         maxRetries: message.maxRetries,
       })
-        .then(async (response) => {
-          const serialized = await serializeResponse(
-            response,
-            message.overrides?.url ?? item.request.url,
-          );
+        .then(async ({ response, url: finalUrl }) => {
+          // node:http Responses have an empty url; pass the final hop URL explicitly
+          // (undici fetch used to populate Response.url per hop).
+          const serialized = await serializeResponse(response, finalUrl);
           connection.send({
             type: "fetch:result",
             requestId: message.requestId,
@@ -349,7 +350,7 @@ async function performUpstream(
     maxRetries?: number;
     exactHeaders?: boolean;
   } = {},
-): Promise<Response> {
+): Promise<{ response: Response; url: string }> {
   return upstreamBypass.run(true, async () => {
     // Playwright: maxRetries ?? 0; retry only ECONNRESET with exponential backoff.
     // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/fetch.ts (_sendRequestWithRetries)
@@ -410,9 +411,12 @@ async function performUpstreamWithHopReporting(
     let currentUrl = url;
 
     for (;;) {
-      const response = options.exactHeaders
-        ? await httpRequestExact(url, method, headerRecord, body)
-        : await fetchRequest(url, method, headerRecord, body);
+      // DIVERGENCE: node:http/https for upstream settle (not undici fetch). See
+      // performUpstreamOnce — Node 26 + MSW nested fetch hits HTTPParserError on h2.
+      // DIVERGENCE END
+      const response = await normalizeUpstreamResponse(
+        await httpRequestExact(url, method, headerRecord, body),
+      );
 
       if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining <= 0) {
         const finalResponse = await serializeResponse(response, currentUrl);
@@ -499,7 +503,7 @@ async function performUpstreamOnce(
   original: Request,
   overrides: RequestOverrides | undefined,
   options: { maxRedirects?: number; exactHeaders?: boolean },
-): Promise<Response> {
+): Promise<{ response: Response; url: string }> {
   // Playwright: maxRedirects ?? 20; 0 → -1 meaning "do not follow".
   let redirectsRemaining = options.maxRedirects ?? 20;
   if (options.maxRedirects === 0) {
@@ -523,12 +527,16 @@ async function performUpstreamOnce(
   }
 
   for (;;) {
-    const response = options.exactHeaders
-      ? await httpRequestExact(url, method, headerRecord, body)
-      : await fetchRequest(url, method, headerRecord, body);
+    // DIVERGENCE: Use node:http/https for upstream settle, not undici `fetch`.
+    // On Node 26+, nested `fetch()` while MSW holds the app request fails with
+    // HTTPParserError (HTTP/2 TLS bytes parsed as HTTP/1.1). node:https works.
+    // DIVERGENCE END
+    const response = await normalizeUpstreamResponse(
+      await httpRequestExact(url, method, headerRecord, body),
+    );
 
     if (!REDIRECT_STATUS.has(response.status) || redirectsRemaining < 0) {
-      return response;
+      return { response, url };
     }
     if (redirectsRemaining === 0) {
       throw new Error("Max redirect count exceeded");
@@ -536,7 +544,7 @@ async function performUpstreamOnce(
 
     const locationHeader = response.headers.get("location");
     if (locationHeader === null || locationHeader.length === 0) {
-      return response;
+      return { response, url };
     }
 
     let nextUrl: URL;
@@ -576,71 +584,75 @@ async function performUpstreamOnce(
   }
 }
 
-async function fetchRequest(
-  url: string,
-  method: string,
-  headerRecord: Record<string, string>,
-  body: Uint8Array | null,
-): Promise<Response> {
-  const headers = new Headers(headerRecord);
-  const init: RequestInit = {
-    method,
-    headers,
-    redirect: "manual",
-  };
-  if (
-    body !== null &&
-    method.toUpperCase() !== "GET" &&
-    method.toUpperCase() !== "HEAD"
-  ) {
-    init.body = Uint8Array.from(body);
-  }
-  const response = await fetch(url, init);
-  // Undici auto-decompresses before we see the body; strip stale encoding
-  // headers so MSW respondWith does not trigger a second decompression.
-  return unwrapFetchAutoDecompression(response);
-}
-
 /**
- * Undici `fetch` decompresses gzip / br / deflate responses but leaves
- * `content-encoding` and the compressed `content-length` on the Response.
- * Replaying that pair through MSW `respondWith` makes the app's Undici try to
- * decompress already-plain bytes (e.g. ERR__ERROR_FORMAT_PADDING_2 for Brotli).
- *
- * CDN-style responses are often compressed *and* chunked. After decompression
- * we buffer the plain body and set `Content-Length`; leaving
- * `Transfer-Encoding: chunked` creates an illegal CL+TE pair that Undici
- * rejects with UND_ERR_SOCKET when MSW replays the Response.
- *
- * Rebuild with headers that match the fully buffered body we actually hold.
+ * node:http/https returns compressed bytes with Content-Encoding intact.
+ * Decode for respondWith, and drop hop-by-hop framing that no longer applies
+ * to a fully buffered body (Content-Length + Transfer-Encoding: chunked is
+ * illegal and Undici closes the socket with UND_ERR_SOCKET).
  */
-async function unwrapFetchAutoDecompression(response: Response): Promise<Response> {
+async function normalizeUpstreamResponse(response: Response): Promise<Response> {
   const encodingHeader = response.headers.get("content-encoding");
-  if (encodingHeader === null || encodingHeader.length === 0) {
-    return response;
-  }
-  const encodings = encodingHeader
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter((part) => part.length > 0);
-  if (encodings.length === 0 || encodings.every((part) => part === "identity")) {
-    return response;
+  const encodings =
+    encodingHeader === null || encodingHeader.length === 0
+      ? []
+      : encodingHeader
+          .split(",")
+          .map((part) => part.trim().toLowerCase())
+          .filter((part) => part.length > 0 && part !== "identity");
+
+  let buffer: Buffer = Buffer.from(await response.arrayBuffer());
+  if (encodings.length > 0) {
+    // HTTP content-codings apply in order; undo from last to first.
+    for (let i = encodings.length - 1; i >= 0; i--) {
+      buffer = Buffer.from(decompressContentEncoding(buffer, encodings[i]!));
+    }
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
   const headers = new Headers(response.headers);
-  headers.delete("content-encoding");
+  if (encodings.length > 0) {
+    headers.delete("content-encoding");
+  }
   headers.delete("content-length");
-  // Hop-by-hop framing no longer applies to a buffered body.
+  // Always strip TE after buffering — CL+TE together breaks MSW respondWith.
   headers.delete("transfer-encoding");
-  if (buffer.byteLength > 0) {
+
+  // Fetch forbids a body for 204/205/304; passing even an empty Uint8Array throws
+  // (TypeError: Invalid response status code 204) and can take down the agent.
+  const nullBodyStatus =
+    response.status === 204 || response.status === 205 || response.status === 304;
+  if (!nullBodyStatus && buffer.byteLength > 0) {
     headers.set("content-length", String(buffer.byteLength));
   }
-  return new Response(buffer, {
+
+  return new Response(nullBodyStatus ? null : Uint8Array.from(buffer), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function decompressContentEncoding(buffer: Buffer, encoding: string): Buffer {
+  switch (encoding) {
+    case "gzip":
+    case "x-gzip":
+      return gunzipSync(buffer);
+    case "deflate":
+      return inflateSync(buffer);
+    case "br":
+      return brotliDecompressSync(buffer);
+    case "zstd":
+    case "zst": {
+      const decompress = nodeZlib.zstdDecompressSync;
+      if (typeof decompress !== "function") {
+        throw new Error(
+          "Upstream response used Content-Encoding: zstd, but this Node build has no zlib.zstdDecompressSync",
+        );
+      }
+      return Buffer.from(decompress(buffer));
+    }
+    default:
+      throw new Error(`Unsupported Content-Encoding for upstream settle: ${encoding}`);
+  }
 }
 
 /**
@@ -692,12 +704,14 @@ function httpRequestExact(
               responseHeaders.set(name, value);
             }
           }
+          const status = res.statusCode ?? 0;
           resolve(
-            new Response(Buffer.concat(chunks), {
-              status: res.statusCode ?? 0,
-              statusText: res.statusMessage ?? "",
-              headers: responseHeaders,
-            }),
+            responseFromNodeHttp(
+              status,
+              res.statusMessage ?? "",
+              responseHeaders,
+              Buffer.concat(chunks),
+            ),
           );
         });
         res.on("error", reject);
@@ -708,6 +722,24 @@ function httpRequestExact(
       req.write(body);
     }
     req.end();
+  });
+}
+
+/**
+ * Build a WHATWG Response from a node:http IncomingMessage body.
+ * Undici forbids a body (including empty Uint8Array/Buffer) for 204/205/304.
+ */
+function responseFromNodeHttp(
+  status: number,
+  statusText: string,
+  headers: Headers,
+  buffer: Buffer,
+): Response {
+  const nullBody = status === 204 || status === 205 || status === 304;
+  return new Response(nullBody ? null : Uint8Array.from(buffer), {
+    status,
+    statusText,
+    headers,
   });
 }
 
