@@ -616,11 +616,16 @@ async function normalizeUpstreamResponse(response: Response): Promise<Response> 
   headers.delete("content-length");
   // Always strip TE after buffering — CL+TE together breaks MSW respondWith.
   headers.delete("transfer-encoding");
-  if (buffer.byteLength > 0) {
+
+  // Fetch forbids a body for 204/205/304; passing even an empty Uint8Array throws
+  // (TypeError: Invalid response status code 204) and can take down the agent.
+  const nullBodyStatus =
+    response.status === 204 || response.status === 205 || response.status === 304;
+  if (!nullBodyStatus && buffer.byteLength > 0) {
     headers.set("content-length", String(buffer.byteLength));
   }
 
-  return new Response(Uint8Array.from(buffer), {
+  return new Response(nullBodyStatus ? null : Uint8Array.from(buffer), {
     status: response.status,
     statusText: response.statusText,
     headers,
