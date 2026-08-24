@@ -1,4 +1,8 @@
-import type { HistoryEntry, WsConnectionEntry } from "@playwright-backend-mocks/protocol";
+import {
+  historyResponse,
+  type HistoryEntry,
+  type WsConnectionEntry,
+} from "@playwright-backend-mocks/protocol";
 
 export interface RuntimeConfig {
   readonly proxyUrl: string;
@@ -79,6 +83,11 @@ export async function fetchConnections(proxyUrl: string): Promise<ConnectionsRes
 /** Single-request HAR for use with Playwright `routeFromHAR`. */
 export function harDownloadUrl(proxyUrl: string, requestId: string): string {
   return `${proxyUrl}/api/history/${encodeURIComponent(requestId)}/har`;
+}
+
+/** HAR is only useful when a response was recorded (fulfill, or continue/passthrough with upstream). */
+export function historyEntryHasExportableHar(entry: HistoryEntry): boolean {
+  return historyResponse(entry) !== undefined;
 }
 
 export function decodeBody(bodyBase64: string | null | undefined): string {

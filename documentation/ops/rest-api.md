@@ -13,7 +13,7 @@ Overview and dashboard setup: [Observability](/ops/observability).
 | `GET` | `/health` | Liveness, version, and capture mode. |
 | `GET` | `/api/history` | In-memory HTTP history (filterable). |
 | `GET` | `/api/history/:id` | Single HTTP history entry. |
-| `GET` | `/api/history/:id/har` | Download that request as a single-entry HAR 1.2 (for `routeFromHAR`). |
+| `GET` | `/api/history/:id/har` | Download a single-entry HAR 1.2 when a response was recorded (for `routeFromHAR`). |
 | `GET` | `/api/ws` | In-memory WebSocket connections (filterable). |
 | `GET` | `/api/ws/:id` | Single WebSocket connection + event timeline. |
 | `GET` | `/api/connections` | Connected Node agents and Playwright workers. |
@@ -191,7 +191,13 @@ await backendMocks.routeFromHAR("./fixtures/charge.har", {
 });
 ```
 
-Unknown ids return `{ "error": "not_found" }` with status 404. There is no bulk HAR export and no WebSocket HAR export.
+HAR is available only when a response was recorded on the entry (same rule as `historyResponse()`):
+
+- **`fulfill`** (`outcome.kind === "mocked"`) — always
+- **`continue`** / **`passthrough`** — only after Node attaches an upstream response (`request:response`)
+- **`abort`** / **`error`** / **`pending`** — never
+
+Otherwise the endpoint returns **409** `{ "error": "har_unavailable" }`. Unknown ids return `{ "error": "not_found" }` with status 404. There is no bulk HAR export and no WebSocket HAR export.
 
 ## Using this with coding agents
 
