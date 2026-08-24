@@ -161,7 +161,9 @@ function responseBody(entry: HistoryEntry): string {
   }
   if (entry.outcome.kind === "continued" || entry.outcome.kind === "passthrough") {
     if (entry.events?.some((event) => event.kind === "upstream_error")) {
-      const detail = entry.events.find((event) => event.kind === "upstream_error")?.detail;
+      const detail = entry.events.find(
+        (event) => event.kind === "upstream_error",
+      )?.detail;
       return detail !== undefined
         ? `(upstream error — ${detail})`
         : "(upstream error — no response)";

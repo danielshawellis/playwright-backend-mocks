@@ -1,7 +1,4 @@
-import {
-  historyResponse,
-  type HistoryEntry,
-} from "@playwright-backend-mocks/protocol";
+import { historyResponse, type HistoryEntry } from "@playwright-backend-mocks/protocol";
 
 interface HarHeader {
   name: string;

@@ -149,10 +149,7 @@ export function attachHistoryResponse(options: {
       return {
         ...current,
         durationMs,
-        events: [
-          ...(current.events ?? []),
-          makeHistoryEvent("upstream_error", detail),
-        ],
+        events: [...(current.events ?? []), makeHistoryEvent("upstream_error", detail)],
       };
     }
 

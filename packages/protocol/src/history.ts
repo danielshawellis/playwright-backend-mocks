@@ -7,9 +7,7 @@ import type { HistoryEntry, SerializedResponse } from "./schemas.js";
  * - `continue` / `passthrough` — present after Node reports `request:response`
  * - `abort` / `error` / `pending` — never (no HTTP response to the app)
  */
-export function historyResponse(
-  entry: HistoryEntry,
-): SerializedResponse | undefined {
+export function historyResponse(entry: HistoryEntry): SerializedResponse | undefined {
   switch (entry.outcome.kind) {
     case "mocked":
       return entry.outcome.response;

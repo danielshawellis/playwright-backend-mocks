@@ -351,7 +351,9 @@ test.describe("observability REST — HTTP recording", () => {
 
       await expect
         .poll(async () => {
-          const entry = (await getHistory(api, proxy.url)).find((e) => e.id === requestId);
+          const entry = (await getHistory(api, proxy.url)).find(
+            (e) => e.id === requestId,
+          );
           return entry?.events?.some((event) => event.kind === "upstream_error");
         })
         .toBe(true);
