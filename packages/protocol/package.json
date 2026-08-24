@@ -1,6 +1,6 @@
 {
   "name": "@playwright-backend-mocks/protocol",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Shared protocol types and validators for Playwright Backend Mocks",
   "license": "MIT",
   "type": "module",
