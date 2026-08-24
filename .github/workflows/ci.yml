@@ -47,8 +47,8 @@ jobs:
         run: pnpm format:check
 
       - name: Install Playwright browsers
-        if: matrix.suite == 'full'
-        run: pnpm --filter @playwright-backend-mocks/parity exec playwright install --with-deps chromium
+        # Library dashboard specs need Chromium even when suite=library.
+        run: pnpm --filter @playwright-backend-mocks/library-tests exec playwright install --with-deps chromium
 
       - name: Browser oracle
         if: matrix.suite == 'full'
