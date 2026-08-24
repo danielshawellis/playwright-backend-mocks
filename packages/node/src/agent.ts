@@ -471,12 +471,14 @@ async function performUpstreamWithHopReporting(
 
       url = nextUrl.href;
       currentUrl = url;
+      const priorRequestId = currentRequestId;
       currentRequestId = randomUUID();
       try {
         connection.send({
           type: "request:observe",
           requestId: currentRequestId,
           clientId: options.clientId,
+          redirectedFromRequestId: priorRequestId,
           request: {
             url,
             method,

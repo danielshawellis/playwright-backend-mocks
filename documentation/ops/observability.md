@@ -49,10 +49,12 @@ webServer: [
 
 ## What you can see
 
-- **HTTP** — timeline of requests/responses; action; owning test **title** and **path**; request/response bodies; continue overrides; short per-request timeline
+- **HTTP** — request; action (`fulfill` / `continue` / `abort` / `passthrough`); response body when there was one (mocked or upstream); continue overrides; redirect hop chains; short per-request timeline; owning test **title** and **path**
 - **WebSockets** — each connection, outcome (matched / passthrough / error), and a bidirectional event timeline (live only — no WS file download)
 - **`ambiguous_route`** — history records the competing tests; the dashboard shows a clear callout and links to [troubleshooting](/guide/troubleshooting#ambiguous_route)
 - **Connections** — connected Node agents and Playwright workers
+
+Abort and coordinator errors intentionally have **no** response body — the app never received HTTP.
 
 ### HAR download (single request → `routeFromHAR`)
 
