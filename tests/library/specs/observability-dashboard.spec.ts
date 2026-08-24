@@ -150,8 +150,7 @@ test.describe("observability dashboard", () => {
         await expect(page.getByRole("heading", { name: "Redirect chain" })).toBeVisible();
         await expect(page.getByRole("button", { name: /final/ })).toBeVisible();
         await page.getByRole("button", { name: /final/ }).click();
-        await expect(page.getByText('"via"')).toBeVisible();
-        await expect(page.getByText("hop")).toBeVisible();
+        await expect(page.getByText('{ "via": "hop" }')).toBeVisible();
 
         await page.getByText("http://example.test/blocked").first().click();
         await expect(page.getByText(/aborted — aborted; no response/)).toBeVisible();
