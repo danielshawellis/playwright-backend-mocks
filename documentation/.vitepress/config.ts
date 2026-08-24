@@ -28,10 +28,6 @@ export default defineConfig({
       { text: "API", link: "/api/backend-mocks" },
       { text: "Recipes", link: "/recipes/compose-fixtures" },
       { text: "Ops", link: "/ops/observability" },
-      {
-        text: "GitHub",
-        link: "https://github.com/danielshawellis/playwright-backend-mocks",
-      },
     ],
     sidebar: {
       "/guide/": [
@@ -114,6 +110,10 @@ export default defineConfig({
       {
         icon: "github",
         link: "https://github.com/danielshawellis/playwright-backend-mocks",
+      },
+      {
+        icon: "npm",
+        link: "https://www.npmjs.com/org/playwright-backend-mocks",
       },
     ],
     search: {

@@ -16,6 +16,9 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/danielshawellis/playwright-backend-mocks
+    - theme: alt
+      text: npm
+      link: https://www.npmjs.com/org/playwright-backend-mocks
 ---
 
 ## Mock Node.js outbound requests from Playwright
