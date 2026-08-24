@@ -11,7 +11,8 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        node-version: [22]
+        # Node 26: undici fetch under MSW fails on HTTP/2 TLS (CDN passthrough).
+        node-version: [22, 26]
     steps:
       - uses: actions/checkout@v4
 
