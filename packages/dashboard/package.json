@@ -1,6 +1,6 @@
 {
   "name": "@playwright-backend-mocks/dashboard",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Standalone read-only dashboard for Playwright Backend Mocks",
   "license": "MIT",
   "type": "module",
