@@ -3,9 +3,10 @@ import { defineConfig } from "@playwright/test";
 /**
  * Library-only suite — product concerns outside the dual-mode oracle:
  * clientId filtering, cross-test ambiguous_route, disconnect / auth,
- * and observability (proxy REST + dashboard).
+ * observability (proxy REST + dashboard), and wire-level passthrough/continue
+ * (encoding × framing) against a local HTTP/1.1 upstream with CDN-like shapes.
  *
- * No browser / upstream fixtures; each spec spins its own proxy (+ agents).
+ * No browser / shared upstream fixtures; each spec spins its own proxy (+ agents).
  */
 export default defineConfig({
   testDir: "./specs",

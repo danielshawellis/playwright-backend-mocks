@@ -607,7 +607,12 @@ async function fetchRequest(
  * Replaying that pair through MSW `respondWith` makes the app's Undici try to
  * decompress already-plain bytes (e.g. ERR__ERROR_FORMAT_PADDING_2 for Brotli).
  *
- * Rebuild with headers that match the body we actually hold.
+ * CDN-style responses are often compressed *and* chunked. After decompression
+ * we buffer the plain body and set `Content-Length`; leaving
+ * `Transfer-Encoding: chunked` creates an illegal CL+TE pair that Undici
+ * rejects with UND_ERR_SOCKET when MSW replays the Response.
+ *
+ * Rebuild with headers that match the fully buffered body we actually hold.
  */
 async function unwrapFetchAutoDecompression(response: Response): Promise<Response> {
   const encodingHeader = response.headers.get("content-encoding");
@@ -626,6 +631,8 @@ async function unwrapFetchAutoDecompression(response: Response): Promise<Respons
   const headers = new Headers(response.headers);
   headers.delete("content-encoding");
   headers.delete("content-length");
+  // Hop-by-hop framing no longer applies to a buffered body.
+  headers.delete("transfer-encoding");
   if (buffer.byteLength > 0) {
     headers.set("content-length", String(buffer.byteLength));
   }

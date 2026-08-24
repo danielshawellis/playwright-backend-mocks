@@ -18,7 +18,7 @@ The executable contract is the dual-mode parity suite in [`tests/parity/`](./tes
 | --- | --- |
 | Browser oracle (`pnpm test`) | **319 passed**, 5 skipped |
 | Full node oracle (`pnpm test:parity:node:full`) | **319 passed**, 5 skipped |
-| Library-only (`pnpm test:library`) | `clientId`, cross-test `ambiguous_route`, disconnect / auth, observability REST + dashboard |
+| Library-only (`pnpm test:library`) | `clientId`, cross-test `ambiguous_route`, disconnect / auth, observability REST + dashboard, wire encoding×framing passthrough/continue |
 
 Module map: [`packages/MODULE_MAP.md`](./packages/MODULE_MAP.md). `historical/` remains reference-only until deleted.
 
@@ -30,7 +30,7 @@ pnpm test                 # browser oracle (Playwright-against-Playwright)
 pnpm test:parity:node     # Node passthrough smokes (+ library agent)
 pnpm test:parity:node:fulfill   # dual-mode routing gate (one fulfill case)
 pnpm test:parity:node:full      # full oracle in node mode
-pnpm test:library               # clientId / ambiguity / disconnect / observability
+pnpm test:library               # clientId / ambiguity / disconnect / observability / wire matrix
 pnpm typecheck
 pnpm lint
 pnpm docs:dev             # VitePress docs locally
@@ -138,7 +138,7 @@ Inspect traffic while debugging via the proxy REST API (`/health`, `/api/history
 | [`AGENTS.md`](./AGENTS.md)         | Agent entrypoint                        |
 | [`research/`](./research)          | Rewrite + parity + docs-site + observability research |
 | [`tests/parity/`](./tests/parity/) | Living dual-mode oracle suite           |
-| [`tests/library/`](./tests/library/) | Library-only (clientId / ambiguity / disconnect / observability) |
+| [`tests/library/`](./tests/library/) | Library-only (clientId / ambiguity / disconnect / observability / wire matrix) |
 | [`packages/MODULE_MAP.md`](./packages/MODULE_MAP.md) | Living package → Playwright file map |
 | [`historical/`](./historical/)     | Archived prototype + old VitePress site |
 
