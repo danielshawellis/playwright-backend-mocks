@@ -111,6 +111,10 @@ export default defineConfig({
         icon: "github",
         link: "https://github.com/danielshawellis/playwright-backend-mocks",
       },
+      {
+        icon: "npm",
+        link: "https://www.npmjs.com/org/playwright-backend-mocks",
+      },
     ],
     search: {
       provider: "local",
