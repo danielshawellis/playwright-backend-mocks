@@ -20,9 +20,11 @@ import { historyEntryToHar } from "./har.js";
 import { HistoryStore } from "./history.js";
 import { Logger } from "./logger.js";
 import {
+  attachHistoryResponse,
   finishHistoryEntry,
   formatStartupBanner,
   makeHistoryEvent,
+  recordRedirectHop,
   shouldRetainWs,
 } from "./observability.js";
 import { filterHistory, filterWsConnections, parseObservabilityQuery } from "./search.js";
@@ -199,13 +201,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         handleRequestResponse(message);
         return;
       case "request:observe":
-        // Synthetic redirect-hop observation from the Node agent.
-        broadcastToPlaywright({
-          type: "request:observed",
-          requestId: message.requestId,
-          request: message.request,
-          clientId: message.clientId,
-        });
+        handleRequestObserve(message);
         return;
       case "agent:error":
         logger.warn(`agent error from ${bound.clientId}: ${message.message}`);
@@ -780,6 +776,35 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       ...(message.response !== undefined ? { response: message.response } : {}),
       ...(message.error !== undefined ? { error: message.error } : {}),
     });
+    attachHistoryResponse({
+      history,
+      requestId: message.requestId,
+      ok: message.ok,
+      ...(message.response !== undefined ? { response: message.response } : {}),
+      ...(message.error !== undefined ? { error: message.error } : {}),
+    });
+  }
+
+  function handleRequestObserve(
+    message: Extract<ClientToProxyMessage, { type: "request:observe" }>,
+  ): void {
+    // Synthetic redirect-hop observation from the Node agent.
+    broadcastToPlaywright({
+      type: "request:observed",
+      requestId: message.requestId,
+      request: message.request,
+      clientId: message.clientId,
+    });
+    if (message.redirectedFromRequestId !== undefined) {
+      recordRedirectHop({
+        history,
+        capture: config.historyCapture,
+        requestId: message.requestId,
+        clientId: message.clientId,
+        request: message.request,
+        redirectedFromRequestId: message.redirectedFromRequestId,
+      });
+    }
   }
 
   function handleTestRegister(

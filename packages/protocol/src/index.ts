@@ -1,5 +1,6 @@
 export { PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 export { encodeBody, decodeBody } from "./body.js";
+export { historyResponse, historyOutcomeHasNoResponse } from "./history.js";
 export { normalizeHeaders } from "./headers.js";
 export {
   globToRegexPattern,

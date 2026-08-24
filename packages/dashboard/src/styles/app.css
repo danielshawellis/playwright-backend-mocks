@@ -464,6 +464,41 @@ table.timeline tbody tr.selected {
   word-break: break-word;
 }
 
+.hop-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hop-chain li {
+  margin: 0;
+}
+
+.hop-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--vp-radius);
+  background: var(--vp-c-bg-soft);
+  color: inherit;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.hop-link:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.hop-chain li.current .hop-link {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+}
+
 .kv {
   display: grid;
   grid-template-columns: 6rem 1fr;

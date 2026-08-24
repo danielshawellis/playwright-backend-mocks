@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "@playwright-backend-mocks/protocol";
+import { historyResponse, type HistoryEntry } from "@playwright-backend-mocks/protocol";
 
 interface HarHeader {
   name: string;
@@ -30,28 +30,23 @@ function decodeBody(bodyBase64: string | null | undefined): {
   return { text: bodyBase64, encoding: "base64", size: buffer.length };
 }
 
-function responseFromEntry(entry: HistoryEntry): {
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-  bodyBase64: string | null;
-} | null {
-  if (entry.outcome.kind === "mocked") {
-    return entry.outcome.response;
+function redirectUrlFromResponse(
+  response: { headers: Record<string, string> } | null | undefined,
+): string {
+  if (response === undefined || response === null) {
+    return "";
   }
-  if (entry.outcome.kind === "continued" && entry.outcome.response) {
-    return entry.outcome.response;
-  }
-  return null;
+  return response.headers["location"] ?? response.headers["Location"] ?? "";
 }
 
 /**
  * Build a single-entry HAR 1.2 document suitable for Playwright `routeFromHAR`.
  * Omits observability-only fields so the file stays a plain HTTP archive.
+ * One hop per download — walk `redirectedToId` for the rest of a redirect chain.
  */
 export function historyEntryToHar(entry: HistoryEntry): unknown {
   const requestBody = decodeBody(entry.request.bodyBase64);
-  const response = responseFromEntry(entry);
+  const response = historyResponse(entry) ?? null;
   const responseBody = decodeBody(response?.bodyBase64 ?? null);
   const mimeType =
     response?.headers["content-type"] ??
@@ -100,7 +95,7 @@ export function historyEntryToHar(entry: HistoryEntry): unknown {
           ? { encoding: responseBody.encoding }
           : {}),
       },
-      redirectURL: "",
+      redirectURL: redirectUrlFromResponse(response),
       headersSize: -1,
       bodySize: responseBody.size,
       ...(entry.outcome.kind === "aborted"

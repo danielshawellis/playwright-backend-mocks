@@ -81,7 +81,8 @@ Keep id = `requestId`. Additive fields on today’s `HistoryEntry`:
 | `title` | Playwright `testInfo.title` when owned |
 | `path` | Playwright `testInfo.file` when owned (wire/API name: **`path`**, sourced from fixture `file`) |
 | `testId` / `routeId` | Existing |
-| `request` / outcome response | Existing serialization (`continued` records the continue decision / overrides; upstream response not captured in v1) |
+| `request` / outcome response | Request always; `mocked` response on fulfill; upstream `response` on continue/passthrough (and each redirect hop); abort/error have no response |
+| `redirectedFromId` / `redirectedToId` | Continue/passthrough redirect hop links (flat chain; one history entry per hop) |
 | `overrides` | When `continue` modified the request |
 | `events` | Short timeline: `observed` plus the terminal action |
 | `durationMs` / `timestamp` / `clientId` | Existing |

@@ -21,16 +21,26 @@ export type HistoryEntryJson = {
   testId?: string;
   clientId?: string;
   timestamp?: number;
+  durationMs?: number;
   overrides?: { url?: string; method?: string };
-  request: { url: string; method: string };
+  redirectedFromId?: string;
+  redirectedToId?: string;
+  request: { url: string; method: string; headers?: Record<string, string> };
   outcome: {
     kind: string;
     errorCode?: string;
     code?: string;
     message?: string;
     matches?: Array<{ testId: string; title: string; file: string }>;
+    response?: {
+      status: number;
+      statusText: string;
+      headers: Record<string, string>;
+      bodyBase64: string | null;
+      url?: string;
+    };
   };
-  events?: Array<{ kind: string }>;
+  events?: Array<{ kind: string; detail?: string }>;
 };
 
 export type WsEntryJson = {
@@ -218,6 +228,87 @@ export async function passthrough(node: TestSocket, url: string): Promise<string
   });
   await node.waitForType("decision:passthrough", 5_000);
   return requestId;
+}
+
+/** Simulate Node reporting an upstream settle response for continue/passthrough. */
+export function reportUpstreamResponse(
+  node: TestSocket,
+  requestId: string,
+  response: {
+    status: number;
+    statusText?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+    url?: string;
+  },
+): void {
+  node.send({
+    type: "request:response",
+    requestId,
+    ok: true,
+    response: {
+      status: response.status,
+      statusText: response.statusText ?? "OK",
+      headers: response.headers ?? { "content-type": "application/json" },
+      bodyBase64:
+        response.body === undefined
+          ? null
+          : encodeBody(
+              typeof response.body === "string"
+                ? response.body
+                : JSON.stringify(response.body),
+            ),
+      ...(response.url !== undefined ? { url: response.url } : {}),
+    },
+  });
+}
+
+export function reportUpstreamError(
+  node: TestSocket,
+  requestId: string,
+  message: string,
+): void {
+  node.send({
+    type: "request:response",
+    requestId,
+    ok: false,
+    error: { name: "Error", message },
+  });
+}
+
+/** Simulate a redirect hop: 3xx on prior id, then observe the next request id. */
+export async function reportRedirectHop(
+  node: TestSocket,
+  priorRequestId: string,
+  next: {
+    url: string;
+    method?: string;
+    status?: number;
+    location: string;
+  },
+): Promise<string> {
+  const nextId = randomUUID();
+  reportUpstreamResponse(node, priorRequestId, {
+    status: next.status ?? 302,
+    statusText: "Found",
+    headers: { location: next.location },
+    body: "",
+    url: next.url,
+  });
+  node.send({
+    type: "request:observe",
+    requestId: nextId,
+    clientId: "obs-node",
+    redirectedFromRequestId: priorRequestId,
+    request: {
+      url: next.location,
+      method: next.method ?? "GET",
+      headers: {},
+      bodyBase64: null,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  return nextId;
 }
 
 export async function getHistory(

@@ -1,4 +1,8 @@
-import type { HistoryEntry, WsConnectionEntry } from "@playwright-backend-mocks/protocol";
+import {
+  historyResponse,
+  type HistoryEntry,
+  type WsConnectionEntry,
+} from "@playwright-backend-mocks/protocol";
 
 export interface ObservabilityQuery {
   readonly q?: string;
@@ -44,13 +48,8 @@ function scoreHttp(entry: HistoryEntry, needle: string): number {
   ) {
     return 70;
   }
-  const status =
-    entry.outcome.kind === "mocked"
-      ? String(entry.outcome.response.status)
-      : entry.outcome.kind === "continued" && entry.outcome.response
-        ? String(entry.outcome.response.status)
-        : "";
-  if (includesInsensitive(status, q)) {
+  const response = historyResponse(entry);
+  if (response !== undefined && includesInsensitive(String(response.status), q)) {
     return 70;
   }
   const headerBlob = Object.entries(entry.request.headers)
@@ -59,14 +58,14 @@ function scoreHttp(entry: HistoryEntry, needle: string): number {
   if (includesInsensitive(headerBlob, q)) {
     return 40;
   }
-  if (entry.outcome.kind === "mocked") {
-    const responseHeaders = Object.entries(entry.outcome.response.headers)
+  if (response !== undefined) {
+    const responseHeaders = Object.entries(response.headers)
       .map(([k, v]) => `${k}:${v}`)
       .join("\n");
     if (includesInsensitive(responseHeaders, q)) {
       return 40;
     }
-    if (includesInsensitive(decodeBody(entry.outcome.response.bodyBase64), q)) {
+    if (includesInsensitive(decodeBody(response.bodyBase64), q)) {
       return 20;
     }
   }

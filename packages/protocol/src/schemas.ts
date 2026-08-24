@@ -104,9 +104,12 @@ export const historyOutcomeSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("passthrough"),
+    /** Upstream response after the Node agent settles passthrough (may arrive later). */
+    response: serializedResponseSchema.optional(),
   }),
   z.object({
     kind: z.literal("continued"),
+    /** Upstream response after continue settles (may arrive later). */
     response: serializedResponseSchema.optional(),
   }),
   z.object({
@@ -163,6 +166,10 @@ export const historyEntrySchema = z.object({
   path: z.string().optional(),
   overrides: requestOverridesSchema.optional(),
   events: z.array(historyEventSchema).optional(),
+  /** Prior hop in a continue/passthrough redirect chain (Playwright redirectedFrom). */
+  redirectedFromId: z.string().optional(),
+  /** Next hop in a continue/passthrough redirect chain (Playwright redirectedTo). */
+  redirectedToId: z.string().optional(),
 });
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
@@ -280,6 +287,8 @@ export const clientToProxyMessageSchema = z.discriminatedUnion("type", [
     requestId: z.string(),
     clientId: z.string(),
     request: serializedRequestSchema,
+    /** Prior hop requestId when this observation is a redirect follow-up. */
+    redirectedFromRequestId: z.string().optional(),
   }),
   z.object({
     type: z.literal("agent:error"),

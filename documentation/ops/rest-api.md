@@ -141,14 +141,28 @@ curl -s "http://127.0.0.1:4310/api/history?q=charges" | jq '.entries[:5]'
 | `timestamp` | Milliseconds since epoch when the request was observed. |
 | `clientId` | Node agent that made the request. |
 | `request` | Serialized URL, method, headers, and base64 body. |
-| `outcome` | Current or final outcome (`pending`, `mocked`, `passthrough`, `continued`, `aborted`, `error`). For `error`, may include `code` (e.g. `ambiguous_route`) and `matches` (claiming tests). |
-| `action` | Normalized terminal action: `fulfill`, `continue`, `abort`, `passthrough`, `error`, `pending`. |
+| `outcome` | Current or final outcome (`pending`, `mocked`, `passthrough`, `continued`, `aborted`, `error`). |
+| `action` | Decision: `fulfill`, `continue`, `abort`, `passthrough`, `error`, or `pending`. |
 | `title` | Playwright test title when a test owned the request. |
 | `path` | Playwright test file path when a test owned the request. |
-| `durationMs` | Present after the outcome settles. |
+| `durationMs` | Present after the outcome settles (updated again when an upstream response arrives). |
 | `testId` / `routeId` | Owning test/route when any. |
 | `overrides` | Request overrides when `continue` modified the request. |
-| `events` | Short timeline for the request. |
+| `events` | Short timeline (`observed`, decision, `response`, `upstream_error`, …). |
+| `redirectedFromId` / `redirectedToId` | Prior / next hop when continue or passthrough followed a redirect. |
+
+### Request / response / no-response
+
+Every retained HTTP entry answers three questions:
+
+1. **Request** — always on `request`.
+2. **What happened** — `action` (`passthrough`, `abort`, `fulfill`, `continue`, …).
+3. **Response** — on `outcome.response` when there was one:
+   - `fulfill` (`mocked`) — mock body from the handler
+   - `continue` / `passthrough` — upstream body after Node settles (may arrive slightly after the decision)
+   - `abort` / coordinator `error` — **no** response body (the app never received HTTP)
+
+Redirect follows for continue/passthrough create **one history entry per hop**, linked with `redirectedFromId` / `redirectedToId`. Each hop has its own request and response (for example a `302` then a `200`).
 
 History is stored in memory and capped by `--history-limit`. Capture mode is `--history-capture` (`all` \| `handled` \| `none`). See [Observability](/ops/observability#capture-modes).
 
@@ -168,7 +182,7 @@ There is **no** WebSocket HAR/export endpoint.
 curl -OJ "http://127.0.0.1:4310/api/history/<requestId>/har"
 ```
 
-Returns a **single-entry** HAR 1.2 file for that HTTP request — suitable for Playwright / this library’s `routeFromHAR`:
+Returns a **single-entry** HAR 1.2 file for that HTTP request — suitable for Playwright / this library’s `routeFromHAR`. Redirect chains are exported one hop at a time (use `redirectedToId` to walk the chain). `redirectURL` is set from the hop’s `Location` header when present.
 
 ```ts
 await backendMocks.routeFromHAR("./fixtures/charge.har", {

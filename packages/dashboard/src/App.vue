@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type {
-  HistoryEntry,
-  RouteMatchDiagnostic,
-  WsConnectionEntry,
+import {
+  historyOutcomeHasNoResponse,
+  historyResponse,
+  type HistoryEntry,
+  type RouteMatchDiagnostic,
+  type WsConnectionEntry,
 } from "@playwright-backend-mocks/protocol";
 import {
   copyText,
@@ -131,33 +133,91 @@ function formatTime(timestamp: number): string {
 }
 
 function statusFor(entry: HistoryEntry): string {
-  if (entry.outcome.kind === "mocked") return String(entry.outcome.response.status);
-  if (entry.outcome.kind === "continued" && entry.outcome.response) {
-    return String(entry.outcome.response.status);
-  }
+  const response = historyResponse(entry);
+  if (response !== undefined) return String(response.status);
   if (entry.outcome.kind === "aborted") return entry.outcome.errorCode;
   if (entry.outcome.kind === "error") {
     return entry.outcome.code === "ambiguous_route" ? "ambiguous" : "error";
+  }
+  if (
+    (entry.outcome.kind === "continued" || entry.outcome.kind === "passthrough") &&
+    entry.events?.some((event) => event.kind === "upstream_error")
+  ) {
+    return "upstream error";
   }
   return "—";
 }
 
 function responseBody(entry: HistoryEntry): string {
-  if (entry.outcome.kind === "mocked") {
-    return prettyBody(entry.outcome.response.bodyBase64);
+  const response = historyResponse(entry);
+  if (response !== undefined) {
+    return prettyBody(response.bodyBase64);
   }
-  if (entry.outcome.kind === "continued" && entry.outcome.response) {
-    return prettyBody(entry.outcome.response.bodyBase64);
+  if (entry.outcome.kind === "aborted") {
+    return `(aborted — ${entry.outcome.errorCode}; no response)`;
+  }
+  if (entry.outcome.kind === "error") {
+    return `(error — no response)`;
+  }
+  if (entry.outcome.kind === "continued" || entry.outcome.kind === "passthrough") {
+    if (entry.events?.some((event) => event.kind === "upstream_error")) {
+      const detail = entry.events.find(
+        (event) => event.kind === "upstream_error",
+      )?.detail;
+      return detail !== undefined
+        ? `(upstream error — ${detail})`
+        : "(upstream error — no response)";
+    }
+    return "(waiting for upstream response)";
   }
   return "(none)";
 }
 
 function responseHeaders(entry: HistoryEntry): Record<string, string> | null {
-  if (entry.outcome.kind === "mocked") return entry.outcome.response.headers;
-  if (entry.outcome.kind === "continued" && entry.outcome.response) {
-    return entry.outcome.response.headers;
+  return historyResponse(entry)?.headers ?? null;
+}
+
+function hopChainIds(entry: HistoryEntry): string[] {
+  // Order root → final by walking from the earliest hop.
+  let root = entry;
+  const seen = new Set<string>([entry.id]);
+  while (root.redirectedFromId) {
+    const prior = entries.value.find((item) => item.id === root.redirectedFromId);
+    if (prior === undefined || seen.has(prior.id)) break;
+    seen.add(prior.id);
+    root = prior;
   }
-  return null;
+  const ordered: string[] = [];
+  let walk: HistoryEntry | undefined = root;
+  while (walk !== undefined) {
+    ordered.push(walk.id);
+    if (!walk.redirectedToId) break;
+    const next = entries.value.find((item) => item.id === walk!.redirectedToId);
+    if (next === undefined || ordered.includes(next.id)) break;
+    walk = next;
+  }
+  return ordered;
+}
+
+function hopChainEntries(entry: HistoryEntry): HistoryEntry[] {
+  return hopChainIds(entry)
+    .map((id) => entries.value.find((item) => item.id === id))
+    .filter((item): item is HistoryEntry => item !== undefined);
+}
+
+function selectHttp(id: string): void {
+  selectedHttpId.value = id;
+}
+
+function responseSectionTitle(entry: HistoryEntry): string {
+  if (historyOutcomeHasNoResponse(entry) && entry.outcome.kind !== "pending") {
+    return "Response";
+  }
+  const response = historyResponse(entry);
+  if (response !== undefined) {
+    return `Response · ${response.status} ${response.statusText}`;
+  }
+  return "Response";
 }
 
 async function copy(label: string, text: string): Promise<void> {
@@ -477,8 +537,25 @@ onUnmounted(() => {
               <pre>{{ prettyBody(selectedHttp.request.bodyBase64) }}</pre>
             </section>
 
+            <section v-if="hopChainEntries(selectedHttp).length > 1">
+              <h3>Redirect chain</h3>
+              <ol class="hop-chain">
+                <li
+                  v-for="(hop, index) in hopChainEntries(selectedHttp)"
+                  :key="hop.id"
+                  :class="{ current: hop.id === selectedHttp.id }"
+                >
+                  <button type="button" class="hop-link" @click="selectHttp(hop.id)">
+                    <span class="mono">{{ index + 1 }}.</span>
+                    {{ hop.request.method }} {{ hop.request.url }}
+                    <span class="meta"> · {{ statusFor(hop) }}</span>
+                  </button>
+                </li>
+              </ol>
+            </section>
+
             <section>
-              <h3>Response</h3>
+              <h3>{{ responseSectionTitle(selectedHttp) }}</h3>
               <pre v-if="responseHeaders(selectedHttp)">{{
                 JSON.stringify(responseHeaders(selectedHttp), null, 2)
               }}</pre>

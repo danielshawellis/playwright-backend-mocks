@@ -4,6 +4,9 @@ import type {
   HistoryEntry,
   HistoryEvent,
   RequestOverrides,
+  SerializedError,
+  SerializedRequest,
+  SerializedResponse,
 } from "@playwright-backend-mocks/protocol";
 import type { HistoryCaptureMode } from "./config.js";
 import type { HistoryStore } from "./history.js";
@@ -114,6 +117,133 @@ export function finishHistoryEntry(options: FinishHistoryOptions): void {
       events,
     };
   });
+}
+
+/**
+ * Attach an upstream settle response (continue / passthrough / redirect hop).
+ * Preserves the decision `action`; only patches `outcome.response` and timeline.
+ */
+export function attachHistoryResponse(options: {
+  readonly history: HistoryStore;
+  readonly requestId: string;
+  readonly ok: boolean;
+  readonly response?: SerializedResponse;
+  readonly error?: SerializedError;
+}): void {
+  const entry = options.history.get(options.requestId);
+  if (entry === undefined) {
+    return;
+  }
+
+  options.history.update(options.requestId, (current) => {
+    const durationMs = Date.now() - current.timestamp;
+
+    if (!options.ok || options.response === undefined) {
+      if (
+        current.outcome.kind !== "continued" &&
+        current.outcome.kind !== "passthrough"
+      ) {
+        return current;
+      }
+      const detail = options.error?.message ?? "Upstream request failed";
+      return {
+        ...current,
+        durationMs,
+        events: [...(current.events ?? []), makeHistoryEvent("upstream_error", detail)],
+      };
+    }
+
+    if (current.outcome.kind === "continued") {
+      return {
+        ...current,
+        durationMs,
+        events: [
+          ...(current.events ?? []),
+          makeHistoryEvent(
+            "response",
+            `${options.response.status} ${options.response.statusText}`,
+          ),
+        ],
+        outcome: { kind: "continued", response: options.response },
+      };
+    }
+    if (current.outcome.kind === "passthrough") {
+      return {
+        ...current,
+        durationMs,
+        events: [
+          ...(current.events ?? []),
+          makeHistoryEvent(
+            "response",
+            `${options.response.status} ${options.response.statusText}`,
+          ),
+        ],
+        outcome: { kind: "passthrough", response: options.response },
+      };
+    }
+    // fulfill / abort / error already terminal — ignore late upstream reports.
+    return current;
+  });
+}
+
+/**
+ * Record a synthetic redirect hop from Node `request:observe`.
+ * Inherits action / ownership metadata from the prior hop when retained.
+ */
+export function recordRedirectHop(options: {
+  readonly history: HistoryStore;
+  readonly capture: HistoryCaptureMode;
+  readonly requestId: string;
+  readonly clientId: string;
+  readonly request: SerializedRequest;
+  readonly redirectedFromRequestId: string;
+}): void {
+  if (options.capture === "none") {
+    return;
+  }
+
+  const prior = options.history.get(options.redirectedFromRequestId);
+  if (prior === undefined) {
+    return;
+  }
+
+  const action = prior.action ?? actionFromOutcome(prior.outcome);
+  if (!shouldRetainHttp(options.capture, action)) {
+    return;
+  }
+
+  // Only continue / passthrough settlements follow redirects inside the agent.
+  if (action !== "continue" && action !== "passthrough") {
+    return;
+  }
+
+  if (options.history.get(options.requestId) !== undefined) {
+    return;
+  }
+
+  const timestamp = Date.now();
+  const outcome: HistoryEntry["outcome"] =
+    action === "continue" ? { kind: "continued" } : { kind: "passthrough" };
+
+  options.history.add({
+    id: options.requestId,
+    timestamp,
+    clientId: options.clientId,
+    request: options.request,
+    outcome,
+    action,
+    ...(prior.testId !== undefined ? { testId: prior.testId } : {}),
+    ...(prior.routeId !== undefined ? { routeId: prior.routeId } : {}),
+    ...(prior.title !== undefined ? { title: prior.title } : {}),
+    ...(prior.path !== undefined ? { path: prior.path } : {}),
+    redirectedFromId: prior.id,
+    events: [makeHistoryEvent("observed", "redirect hop", timestamp)],
+  });
+
+  options.history.update(prior.id, (entry) => ({
+    ...entry,
+    redirectedToId: options.requestId,
+  }));
 }
 
 export function formatStartupBanner(options: {

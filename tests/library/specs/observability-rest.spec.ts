@@ -10,6 +10,9 @@ import {
   passthrough,
   registerHttpRoute,
   registerWsRoute,
+  reportRedirectHop,
+  reportUpstreamError,
+  reportUpstreamResponse,
   setupPair,
   startHttpAndMatch,
   withProxy,
@@ -86,11 +89,23 @@ test.describe("observability REST — HTTP recording", () => {
         url: "http://example.test/prices-v2",
         method: "GET",
       });
+      reportUpstreamResponse(node, continueId, {
+        status: 200,
+        body: { price: 9 },
+        url: "http://example.test/prices-v2",
+      });
 
       const abortId = await startHttpAndMatch(node, playwright, {
         url: "http://example.test/blocked",
       });
       await abortRequest(playwright, node, abortId, "aborted");
+
+      await expect
+        .poll(async () => {
+          const entries = await getHistory(api, proxy.url);
+          return entries.find((item) => item.id === continueId)?.outcome.response?.status;
+        })
+        .toBe(200);
 
       const entries = await getHistory(api, proxy.url);
       const continued = entries.find((item) => item.id === continueId);
@@ -98,12 +113,16 @@ test.describe("observability REST — HTTP recording", () => {
         action: "continue",
         title: "modify and abort",
         path: "/tests/actions.spec.ts",
-        outcome: { kind: "continued" },
+        outcome: {
+          kind: "continued",
+          response: { status: 200 },
+        },
         overrides: {
           url: "http://example.test/prices-v2",
           method: "GET",
         },
       });
+      expect(continued?.events?.some((event) => event.kind === "response")).toBe(true);
 
       const aborted = entries.find((item) => item.id === abortId);
       expect(aborted).toMatchObject({
@@ -111,6 +130,240 @@ test.describe("observability REST — HTTP recording", () => {
         title: "modify and abort",
         outcome: { kind: "aborted", errorCode: "aborted" },
       });
+      expect(aborted?.outcome.response).toBeUndefined();
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("passthrough and continue store upstream responses; abort has none", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "response matrix",
+        file: "/tests/responses.spec.ts",
+        matcher: "http://example.test/owned/**",
+      });
+
+      const passthroughId = await passthrough(node, "http://example.test/health");
+      reportUpstreamResponse(node, passthroughId, {
+        status: 204,
+        statusText: "No Content",
+        headers: { "x-from": "upstream" },
+      });
+
+      const continueId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/owned/continue",
+      });
+      await continueRequest(playwright, node, continueId);
+      reportUpstreamResponse(node, continueId, {
+        status: 201,
+        body: { created: true },
+      });
+
+      const abortId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/owned/abort",
+      });
+      await abortRequest(playwright, node, abortId, "connectionrefused");
+
+      const fulfillId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/owned/fulfill",
+      });
+      await fulfill(playwright, node, fulfillId, {
+        status: 418,
+        json: { teapot: true },
+      });
+
+      await expect
+        .poll(async () => {
+          const entries = await getHistory(api, proxy.url);
+          return {
+            passthrough: entries.find((e) => e.id === passthroughId)?.outcome.response
+              ?.status,
+            continued: entries.find((e) => e.id === continueId)?.outcome.response?.status,
+          };
+        })
+        .toEqual({ passthrough: 204, continued: 201 });
+
+      const entries = await getHistory(api, proxy.url);
+
+      expect(entries.find((e) => e.id === passthroughId)).toMatchObject({
+        action: "passthrough",
+        outcome: {
+          kind: "passthrough",
+          response: { status: 204, headers: { "x-from": "upstream" } },
+        },
+      });
+      expect(entries.find((e) => e.id === continueId)).toMatchObject({
+        action: "continue",
+        outcome: { kind: "continued", response: { status: 201 } },
+      });
+      expect(entries.find((e) => e.id === abortId)).toMatchObject({
+        action: "abort",
+        outcome: { kind: "aborted", errorCode: "connectionrefused" },
+      });
+      expect(entries.find((e) => e.id === abortId)?.outcome.response).toBeUndefined();
+      expect(entries.find((e) => e.id === fulfillId)).toMatchObject({
+        action: "fulfill",
+        outcome: { kind: "mocked", response: { status: 418 } },
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("records redirect hop chains for passthrough with linked ids", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      const rootId = await passthrough(node, "http://example.test/redirect");
+      const hopId = await reportRedirectHop(node, rootId, {
+        url: "http://example.test/redirect",
+        location: "http://example.test/final",
+      });
+      reportUpstreamResponse(node, hopId, {
+        status: 200,
+        body: { ok: true },
+        url: "http://example.test/final",
+      });
+
+      await expect
+        .poll(async () => {
+          const entries = await getHistory(api, proxy.url);
+          return {
+            rootTo: entries.find((e) => e.id === rootId)?.redirectedToId,
+            hopFrom: entries.find((e) => e.id === hopId)?.redirectedFromId,
+            hopStatus: entries.find((e) => e.id === hopId)?.outcome.response?.status,
+            rootStatus: entries.find((e) => e.id === rootId)?.outcome.response?.status,
+          };
+        })
+        .toEqual({
+          rootTo: hopId,
+          hopFrom: rootId,
+          hopStatus: 200,
+          rootStatus: 302,
+        });
+
+      const entries = await getHistory(api, proxy.url);
+      const root = entries.find((e) => e.id === rootId);
+      const hop = entries.find((e) => e.id === hopId);
+      expect(root).toMatchObject({
+        action: "passthrough",
+        request: { url: "http://example.test/redirect" },
+        outcome: { kind: "passthrough", response: { status: 302 } },
+        redirectedToId: hopId,
+      });
+      expect(hop).toMatchObject({
+        action: "passthrough",
+        request: { url: "http://example.test/final" },
+        outcome: { kind: "passthrough", response: { status: 200 } },
+        redirectedFromId: rootId,
+      });
+
+      const rootHar = await api.get(`${proxy.url}/api/history/${rootId}/har`);
+      const rootBody = (await rootHar.json()) as {
+        log: { entries: Array<{ response: { status: number; redirectURL: string } }> };
+      };
+      expect(rootBody.log.entries[0]?.response).toMatchObject({
+        status: 302,
+        redirectURL: "http://example.test/final",
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("continue redirect hops inherit test metadata; handled omits passthrough hops", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "continue hops",
+        file: "/tests/hops.spec.ts",
+        matcher: "http://example.test/start",
+      });
+
+      const rootId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/start",
+      });
+      await continueRequest(playwright, node, rootId);
+      const hopId = await reportRedirectHop(node, rootId, {
+        url: "http://example.test/start",
+        location: "http://example.test/end",
+      });
+      reportUpstreamResponse(node, hopId, { status: 200, body: { done: true } });
+
+      await expect
+        .poll(async () => (await getHistory(api, proxy.url)).find((e) => e.id === hopId))
+        .toMatchObject({
+          action: "continue",
+          title: "continue hops",
+          path: "/tests/hops.spec.ts",
+          redirectedFromId: rootId,
+          outcome: { kind: "continued", response: { status: 200 } },
+        });
+
+      playwright.close();
+      node.close();
+    });
+
+    await withProxy({ historyCapture: "handled" }, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      const rootId = await passthrough(node, "http://example.test/skip-redirect");
+      const hopId = await reportRedirectHop(node, rootId, {
+        url: "http://example.test/skip-redirect",
+        location: "http://example.test/skip-final",
+      });
+      reportUpstreamResponse(node, hopId, { status: 200, body: {} });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const ids = (await getHistory(api, proxy.url)).map((e) => e.id);
+      expect(ids).not.toContain(rootId);
+      expect(ids).not.toContain(hopId);
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("upstream failure on continue records timeline error without inventing a body", async ({
+    request: api,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "upstream fail",
+        file: "/tests/fail.spec.ts",
+        matcher: "http://example.test/**",
+      });
+      const requestId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/down",
+      });
+      await continueRequest(playwright, node, requestId);
+      reportUpstreamError(node, requestId, "connect ECONNREFUSED");
+
+      await expect
+        .poll(async () => {
+          const entry = (await getHistory(api, proxy.url)).find(
+            (e) => e.id === requestId,
+          );
+          return entry?.events?.some((event) => event.kind === "upstream_error");
+        })
+        .toBe(true);
+
+      const entry = (await getHistory(api, proxy.url)).find((e) => e.id === requestId);
+      expect(entry).toMatchObject({
+        action: "continue",
+        outcome: { kind: "continued" },
+      });
+      expect(entry?.outcome.response).toBeUndefined();
 
       playwright.close();
       node.close();

@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { TestSocket } from "../helpers.js";
 import {
+  abortRequest,
   fulfill,
+  passthrough,
   registerHttpRoute,
   registerWsRoute,
+  reportRedirectHop,
+  reportUpstreamResponse,
   setupPair,
   startHttpAndMatch,
   withDashboard,
@@ -103,6 +107,53 @@ test.describe("observability dashboard", () => {
         await page.getByRole("button", { name: "Connections" }).click();
         await expect(page.getByText("obs-node")).toBeVisible();
         await expect(page.getByText(/pw-obs-worker|playwright/i).first()).toBeVisible();
+      });
+
+      playwright.close();
+      node.close();
+    });
+  });
+
+  test("HTTP detail shows upstream responses, abort no-response, and redirect hops", async ({
+    page,
+  }) => {
+    await withProxy({}, async (proxy) => {
+      const { playwright, node } = await setupPair(proxy.url);
+      await registerHttpRoute(playwright, {
+        title: "dashboard abort",
+        file: "/tests/dashboard-abort.spec.ts",
+        matcher: "http://example.test/blocked",
+      });
+
+      const passthroughId = await passthrough(node, "http://example.test/redirect");
+      const hopId = await reportRedirectHop(node, passthroughId, {
+        url: "http://example.test/redirect",
+        location: "http://example.test/final",
+      });
+      reportUpstreamResponse(node, hopId, {
+        status: 200,
+        body: { via: "hop" },
+      });
+
+      const abortId = await startHttpAndMatch(node, playwright, {
+        url: "http://example.test/blocked",
+      });
+      await abortRequest(playwright, node, abortId, "aborted");
+
+      await withDashboard(proxy.url, async (dashboardUrl) => {
+        await page.goto(dashboardUrl);
+
+        await expect(page.getByText("http://example.test/redirect").first()).toBeVisible({
+          timeout: 10_000,
+        });
+        await page.getByText("http://example.test/redirect").first().click();
+        await expect(page.getByRole("heading", { name: "Redirect chain" })).toBeVisible();
+        await expect(page.getByRole("button", { name: /final/ })).toBeVisible();
+        await page.getByRole("button", { name: /final/ }).click();
+        await expect(page.getByText('{ "via": "hop" }')).toBeVisible();
+
+        await page.getByText("http://example.test/blocked").first().click();
+        await expect(page.getByText(/aborted — aborted; no response/)).toBeVisible();
       });
 
       playwright.close();
