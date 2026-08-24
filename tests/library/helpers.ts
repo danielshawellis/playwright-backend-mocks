@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { expect } from "@playwright/test";
 import {
   PACKAGE_VERSION,
   PROTOCOL_VERSION,
@@ -10,6 +11,7 @@ import {
   type SerializedMatcher,
 } from "@playwright-backend-mocks/protocol";
 import { createProxyServer, type ProxyServer } from "@playwright-backend-mocks/proxy";
+import { WIRE_BODIES, WIRE_CONTENT_TYPES, type WireBodyType } from "./wire-upstream.js";
 
 export async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -274,4 +276,37 @@ export class TestSocket {
   close(): void {
     this.socket.close();
   }
+}
+
+/**
+ * App-visible response after agent passthrough/continue must match a fully
+ * buffered body: readable bytes, no stale Content-Encoding, and no illegal
+ * Content-Length + Transfer-Encoding: chunked pair (MSW respondWith / Undici
+ * closes the socket on that combination).
+ */
+export async function assertWireResponseCoherent(
+  response: Response,
+  type: WireBodyType = "json",
+): Promise<void> {
+  expect(response.status).toBe(200);
+
+  const encoding = response.headers.get("content-encoding");
+  expect(encoding === null || encoding.toLowerCase() === "identity").toBe(true);
+
+  const contentLength = response.headers.get("content-length");
+  const transferEncoding = response.headers.get("transfer-encoding");
+  if (contentLength !== null && transferEncoding !== null) {
+    expect(
+      transferEncoding,
+      "buffered settle must not keep Transfer-Encoding alongside Content-Length",
+    ).toBeNull();
+  }
+
+  const expectedType = WIRE_CONTENT_TYPES[type];
+  if (expectedType !== undefined) {
+    expect(response.headers.get("content-type")).toBe(expectedType);
+  }
+
+  const actual = Buffer.from(await response.arrayBuffer());
+  expect(actual.equals(WIRE_BODIES[type])).toBe(true);
 }
