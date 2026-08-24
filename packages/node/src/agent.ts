@@ -705,12 +705,14 @@ function httpRequestExact(
               responseHeaders.set(name, value);
             }
           }
+          const status = res.statusCode ?? 0;
           resolve(
-            new Response(Buffer.concat(chunks), {
-              status: res.statusCode ?? 0,
-              statusText: res.statusMessage ?? "",
-              headers: responseHeaders,
-            }),
+            responseFromNodeHttp(
+              status,
+              res.statusMessage ?? "",
+              responseHeaders,
+              Buffer.concat(chunks),
+            ),
           );
         });
         res.on("error", reject);
@@ -721,6 +723,24 @@ function httpRequestExact(
       req.write(body);
     }
     req.end();
+  });
+}
+
+/**
+ * Build a WHATWG Response from a node:http IncomingMessage body.
+ * Undici forbids a body (including empty Uint8Array/Buffer) for 204/205/304.
+ */
+function responseFromNodeHttp(
+  status: number,
+  statusText: string,
+  headers: Headers,
+  buffer: Buffer,
+): Response {
+  const nullBody = status === 204 || status === 205 || status === 304;
+  return new Response(nullBody ? null : buffer, {
+    status,
+    statusText,
+    headers,
   });
 }
 
