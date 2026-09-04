@@ -20,13 +20,19 @@ export interface PlaywrightProxyConnection {
 /** How long `route()` / fixture setup wait for a proxy ack. */
 export const ACK_TIMEOUT_MS = 5_000;
 
-export function waitForAck(
+export type AckWaiter = {
+  readonly promise: Promise<void>;
+  cancel(error: Error): void;
+};
+
+export function createAckWaiter(
   connection: Pick<PlaywrightProxyConnection, "onMessage">,
   isAck: (message: ProxyToClientMessage) => boolean,
   timeoutMs: number,
   label: string,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
+): AckWaiter {
+  let cancel!: (error: Error) => void;
+  const promise = new Promise<void>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       finish(() => {
@@ -52,7 +58,20 @@ export function waitForAck(
       off();
       action();
     }
+    cancel = (error) => {
+      finish(() => reject(error));
+    };
   });
+  return { promise, cancel };
+}
+
+export function waitForAck(
+  connection: Pick<PlaywrightProxyConnection, "onMessage">,
+  isAck: (message: ProxyToClientMessage) => boolean,
+  timeoutMs: number,
+  label: string,
+): Promise<void> {
+  return createAckWaiter(connection, isAck, timeoutMs, label).promise;
 }
 
 export async function sendAndWaitForAck(
@@ -61,9 +80,15 @@ export async function sendAndWaitForAck(
   isAck: (message: ProxyToClientMessage) => boolean,
   timeoutMs: number = ACK_TIMEOUT_MS,
 ): Promise<void> {
-  const pending = waitForAck(connection, isAck, timeoutMs, message.type);
-  connection.send(message);
-  await pending;
+  const waiter = createAckWaiter(connection, isAck, timeoutMs, message.type);
+  try {
+    connection.send(message);
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    waiter.cancel(err);
+    await waiter.promise;
+  }
+  await waiter.promise;
 }
 
 function toWsUrl(proxyUrl: string): string {

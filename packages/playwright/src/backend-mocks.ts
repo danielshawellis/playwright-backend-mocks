@@ -13,8 +13,8 @@ import {
 } from "@playwright-backend-mocks/protocol";
 import {
   ACK_TIMEOUT_MS,
+  createAckWaiter,
   sendAndWaitForAck,
-  waitForAck,
   type PlaywrightProxyConnection,
 } from "./connection.js";
 import { matchRouteMatcher } from "./match.js";
@@ -1262,46 +1262,79 @@ export function createBackendMocks(options: {
       }
       harSessions.length = 0;
 
-      const routeAck = waitForAck(
+      const routeAck = createAckWaiter(
         connection,
         (message) => message.type === "route:unregistered" && message.testId === testId,
         ackTimeoutMs,
         "route:unregister",
       );
-      const testAck = waitForAck(
+      const testAck = createAckWaiter(
         connection,
         (message) => message.type === "test:unregistered" && message.testId === testId,
         ackTimeoutMs,
         "test:unregister",
       );
-      connection.send({
-        type: "route:unregister",
-        testId,
-      });
-      connection.send({
-        type: "test:unregister",
-        testId,
-      });
-      await Promise.all([routeAck, testAck]);
 
-      unsubscribe();
-      for (const [, waiter] of pendingFetches) {
-        waiter.reject(new Error("Test ended while route.fetch was pending"));
+      try {
+        try {
+          connection.send({
+            type: "route:unregister",
+            testId,
+          });
+          connection.send({
+            type: "test:unregister",
+            testId,
+          });
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          routeAck.cancel(err);
+          testAck.cancel(err);
+          throw err;
+        }
+
+        const results = await Promise.allSettled([routeAck.promise, testAck.promise]);
+        const failures = results.filter(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        if (failures.length > 0) {
+          throw cleanupNotAcknowledgedError(failures, ackTimeoutMs);
+        }
+      } finally {
+        unsubscribe();
+        for (const [, waiter] of pendingFetches) {
+          waiter.reject(new Error("Test ended while route.fetch was pending"));
+        }
+        pendingFetches.clear();
+        for (const waiter of requestWaiters) {
+          waiter.reject(new Error("Test ended while waitForRequest was pending"));
+        }
+        requestWaiters.clear();
+        for (const waiter of responseWaiters) {
+          waiter.reject(new Error("Test ended while waitForResponse was pending"));
+        }
+        responseWaiters.clear();
+        requestsById.clear();
       }
-      pendingFetches.clear();
-      for (const waiter of requestWaiters) {
-        waiter.reject(new Error("Test ended while waitForRequest was pending"));
-      }
-      requestWaiters.clear();
-      for (const waiter of responseWaiters) {
-        waiter.reject(new Error("Test ended while waitForResponse was pending"));
-      }
-      responseWaiters.clear();
-      requestsById.clear();
     },
   };
 
   return api;
+}
+
+function cleanupNotAcknowledgedError(
+  failures: PromiseRejectedResult[],
+  timeoutMs: number,
+): AggregateError {
+  const reasons = failures.map((failure) =>
+    failure.reason instanceof Error ? failure.reason : new Error(String(failure.reason)),
+  );
+  return new AggregateError(
+    reasons,
+    `Proxy did not acknowledge test cleanup after ${timeoutMs}ms. ` +
+      `This test may still be registered on the proxy, which can collide with later tests ` +
+      `(ambiguous_route) or stall them until claim timeout.\n` +
+      reasons.map((error) => error.message).join("\n"),
+  );
 }
 
 /** String glob from a route matcher, if any (for eager validation). */

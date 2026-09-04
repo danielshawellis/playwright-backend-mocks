@@ -104,22 +104,28 @@ export async function createNodeMocksForTest(meta: {
 }): Promise<BackendMocksController> {
   const connection = await getWorkerConnection();
   const testId = randomUUID();
-  await sendAndWaitForAck(
-    connection,
-    {
-      type: "test:register",
-      testId,
-      title: meta.title,
-      file: meta.file,
-      workerId: String(process.pid),
-    },
-    (message) => message.type === "test:registered" && message.testId === testId,
-  );
-  return createBackendMocks({
+  const mocks = createBackendMocks({
     connection,
     testId,
     ...(meta.baseURL !== undefined ? { baseURL: meta.baseURL } : {}),
   });
+  try {
+    await sendAndWaitForAck(
+      connection,
+      {
+        type: "test:register",
+        testId,
+        title: meta.title,
+        file: meta.file,
+        workerId: String(process.pid),
+      },
+      (message) => message.type === "test:registered" && message.testId === testId,
+    );
+  } catch (error) {
+    await mocks.dispose();
+    throw error;
+  }
+  return mocks;
 }
 
 function triggerPayload(init: {

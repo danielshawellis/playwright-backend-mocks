@@ -158,6 +158,33 @@ test.describe("route registration acks", () => {
     );
   });
 
+  test("dispose() fails loudly if cleanup is not acked, and drops local handlers", async () => {
+    const { connection, sent, emit } = fakeConnection();
+    const mocks = createBackendMocks({
+      connection,
+      testId: "t1",
+      ackTimeoutMs: 50,
+    });
+
+    await expect(mocks.dispose()).rejects.toThrow(
+      /Proxy did not acknowledge test cleanup[\s\S]*still be registered on the proxy[\s\S]*ambiguous_route/,
+    );
+
+    emit({
+      type: "request:claim",
+      requestId: "after-dispose",
+      clientId: "node-1",
+      request: {
+        url: "https://example.test/",
+        method: "GET",
+        headers: {},
+        bodyBase64: null,
+      },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(sent.some((message) => message.type === "request:claim-result")).toBe(false);
+  });
+
   test("proxy acks test and route registration", async () => {
     await withProxy({}, async (proxy) => {
       const playwright = await TestSocket.connect(proxy.url);

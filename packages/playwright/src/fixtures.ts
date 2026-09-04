@@ -44,26 +44,27 @@ export const test = base.extend<BackendMocksFixtures, WorkerFixtures>({
 
   backendMocks: async ({ backendMocksConnection }, use, testInfo) => {
     const testId = randomUUID();
-
-    await sendAndWaitForAck(
-      backendMocksConnection,
-      {
-        type: "test:register",
-        testId,
-        title: testInfo.title,
-        file: testInfo.file,
-        workerId: String(testInfo.workerIndex),
-      },
-      (message) => message.type === "test:registered" && message.testId === testId,
-    );
-
     const mocks = createBackendMocks({
       connection: backendMocksConnection,
       testId,
     });
 
-    await use(mocks);
-    await mocks.dispose();
+    try {
+      await sendAndWaitForAck(
+        backendMocksConnection,
+        {
+          type: "test:register",
+          testId,
+          title: testInfo.title,
+          file: testInfo.file,
+          workerId: String(testInfo.workerIndex),
+        },
+        (message) => message.type === "test:registered" && message.testId === testId,
+      );
+      await use(mocks);
+    } finally {
+      await mocks.dispose();
+    }
 
     const remainingErrors = mocks.takeErrors();
     if (remainingErrors.length > 0) {
