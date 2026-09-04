@@ -83,13 +83,14 @@ export async function registerHttpRoute(
     file: options.file,
     workerId: options.workerId ?? "obs-worker",
   });
+  await playwright.waitForType("test:registered");
   playwright.send({
     type: "route:register",
     routeId,
     testId,
     matcher: { urlGlob: options.matcher },
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await playwright.waitForType("route:registered");
   return { testId, routeId };
 }
 
@@ -111,6 +112,7 @@ export async function registerWsRoute(
     file: options.file,
     workerId: options.workerId ?? "obs-worker",
   });
+  await playwright.waitForType("test:registered");
   playwright.send({
     type: "route:register",
     routeId,
@@ -118,7 +120,7 @@ export async function registerWsRoute(
     kind: "websocket",
     matcher: { urlGlob: options.matcher },
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await playwright.waitForType("route:registered");
   return { testId, routeId };
 }
 

@@ -11,7 +11,12 @@ import {
   type SerializedRequest,
   type SerializedResponse,
 } from "@playwright-backend-mocks/protocol";
-import type { PlaywrightProxyConnection } from "./connection.js";
+import {
+  ACK_TIMEOUT_MS,
+  sendAndWaitForAck,
+  waitForAck,
+  type PlaywrightProxyConnection,
+} from "./connection.js";
 import { matchRouteMatcher } from "./match.js";
 import {
   createRouteFromHARSession,
@@ -733,7 +738,7 @@ class RouteHandlerRecord {
 }
 
 export interface BackendMocksController extends BackendMocks {
-  dispose(): void;
+  dispose(): Promise<void>;
 }
 
 export function createBackendMocks(options: {
@@ -741,8 +746,11 @@ export function createBackendMocks(options: {
   testId: string;
   /** Playwright context/page `baseURL` for relative glob resolution. */
   baseURL?: string;
+  /** Test-only override for how long to wait for proxy register/unregister acks. */
+  ackTimeoutMs?: number;
 }): BackendMocksController {
   const { connection, testId, baseURL } = options;
+  const ackTimeoutMs = options.ackTimeoutMs ?? ACK_TIMEOUT_MS;
   const routes: RouteHandlerRecord[] = [];
   /** WebSocket routes — not cleared by unrouteAll (Playwright quirk). */
   const wsRoutes: WebSocketRouteHandlerRecord[] = [];
@@ -1087,11 +1095,16 @@ export function createBackendMocks(options: {
     }
   }
 
-  function unregisterRoute(routeId: string): void {
-    connection.send({
-      type: "route:unregister",
-      routeId,
-    });
+  function unregisterRoute(routeId: string): Promise<void> {
+    return sendAndWaitForAck(
+      connection,
+      {
+        type: "route:unregister",
+        routeId,
+      },
+      (message) => message.type === "route:unregistered" && message.routeId === routeId,
+      ackTimeoutMs,
+    );
   }
 
   const api: BackendMocksController = {
@@ -1101,27 +1114,37 @@ export function createBackendMocks(options: {
       // LIFO: newest handler first (Playwright unshift).
       // RouteHandlerRecord constructor eagerly validates string globs (throws).
       routes.unshift(new RouteHandlerRecord(routeId, url, handler, times, baseURL));
-      connection.send({
-        type: "route:register",
-        routeId,
-        testId,
-        matcher: toSerializedMatcher(url),
-      });
+      // DIVERGENCE: Playwright page.route is ready when CDP interception is on;
+      // we wait for the proxy to ack so Node traffic cannot passthrough first.
+      // DIVERGENCE END
+      await sendAndWaitForAck(
+        connection,
+        {
+          type: "route:register",
+          routeId,
+          testId,
+          matcher: toSerializedMatcher(url),
+        },
+        (message) => message.type === "route:registered" && message.routeId === routeId,
+        ackTimeoutMs,
+      );
     },
 
     async unroute(url, handler) {
       const remaining: RouteHandlerRecord[] = [];
+      const removed: RouteHandlerRecord[] = [];
       for (const route of routes) {
         const urlMatches = url === undefined || matcherEquals(route.matcherInput, url);
         const handlerMatches = handler === undefined || route.handler === handler;
         if (urlMatches && handlerMatches) {
-          unregisterRoute(route.routeId);
+          removed.push(route);
         } else {
           remaining.push(route);
         }
       }
       routes.length = 0;
       routes.push(...remaining);
+      await Promise.all(removed.map((route) => unregisterRoute(route.routeId)));
     },
 
     async unrouteAll(options: UnrouteAllOptions = {}) {
@@ -1129,9 +1152,7 @@ export function createBackendMocks(options: {
       // NOTE: HTTP routes only — WebSocket routes intentionally survive unrouteAll.
       const removed = [...routes];
       routes.length = 0;
-      for (const route of removed) {
-        unregisterRoute(route.routeId);
-      }
+      await Promise.all(removed.map((route) => unregisterRoute(route.routeId)));
 
       const behavior = options.behavior ?? "default";
       if (behavior === "wait" || behavior === "ignoreErrors") {
@@ -1152,13 +1173,18 @@ export function createBackendMocks(options: {
       const routeId = randomUUID();
       // LIFO registration; selection is newest-match only (find), not a fallback chain.
       wsRoutes.unshift(new WebSocketRouteHandlerRecord(routeId, baseURL, url, handler));
-      connection.send({
-        type: "route:register",
-        routeId,
-        testId,
-        matcher: toWebSocketSerializedMatcher(url),
-        kind: "websocket",
-      });
+      await sendAndWaitForAck(
+        connection,
+        {
+          type: "route:register",
+          routeId,
+          testId,
+          matcher: toWebSocketSerializedMatcher(url),
+          kind: "websocket",
+        },
+        (message) => message.type === "route:registered" && message.routeId === routeId,
+        ackTimeoutMs,
+      );
     },
 
     async routeFromHAR(file: string, options: RouteFromHAROptions = {}) {
@@ -1230,13 +1256,24 @@ export function createBackendMocks(options: {
       return drained;
     },
 
-    dispose() {
+    async dispose() {
       for (const session of harSessions) {
         flushRouteFromHARSession(session);
       }
       harSessions.length = 0;
 
-      unsubscribe();
+      const routeAck = waitForAck(
+        connection,
+        (message) => message.type === "route:unregistered" && message.testId === testId,
+        ackTimeoutMs,
+        "route:unregister",
+      );
+      const testAck = waitForAck(
+        connection,
+        (message) => message.type === "test:unregistered" && message.testId === testId,
+        ackTimeoutMs,
+        "test:unregister",
+      );
       connection.send({
         type: "route:unregister",
         testId,
@@ -1245,6 +1282,9 @@ export function createBackendMocks(options: {
         type: "test:unregister",
         testId,
       });
+      await Promise.all([routeAck, testAck]);
+
+      unsubscribe();
       for (const [, waiter] of pendingFetches) {
         waiter.reject(new Error("Test ended while route.fetch was pending"));
       }

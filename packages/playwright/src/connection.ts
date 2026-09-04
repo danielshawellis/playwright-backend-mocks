@@ -17,6 +17,55 @@ export interface PlaywrightProxyConnection {
   close(): Promise<void>;
 }
 
+/** How long `route()` / fixture setup wait for a proxy ack. */
+export const ACK_TIMEOUT_MS = 5_000;
+
+export function waitForAck(
+  connection: Pick<PlaywrightProxyConnection, "onMessage">,
+  isAck: (message: ProxyToClientMessage) => boolean,
+  timeoutMs: number,
+  label: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(() => {
+        reject(
+          new Error(
+            `Timed out waiting for proxy to acknowledge ${label} after ${timeoutMs}ms`,
+          ),
+        );
+      });
+    }, timeoutMs);
+    const off = connection.onMessage((message) => {
+      if (!isAck(message)) {
+        return;
+      }
+      finish(resolve);
+    });
+    function finish(action: () => void): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      off();
+      action();
+    }
+  });
+}
+
+export async function sendAndWaitForAck(
+  connection: Pick<PlaywrightProxyConnection, "send" | "onMessage">,
+  message: ClientToProxyMessage,
+  isAck: (message: ProxyToClientMessage) => boolean,
+  timeoutMs: number = ACK_TIMEOUT_MS,
+): Promise<void> {
+  const pending = waitForAck(connection, isAck, timeoutMs, message.type);
+  connection.send(message);
+  await pending;
+}
+
 function toWsUrl(proxyUrl: string): string {
   const url = new URL(proxyUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

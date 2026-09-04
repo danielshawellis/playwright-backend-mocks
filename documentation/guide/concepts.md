@@ -26,7 +26,7 @@ flowchart TB
 
 ## Route lifecycle
 
-1. A test registers `await backendMocks.route(matcher, handler)`.
+1. A test registers `await backendMocks.route(matcher, handler)`. The promise resolves after the proxy has the route.
 2. The fixture keeps the handler in the Playwright worker and registers matcher metadata with the proxy.
 3. A Node agent sees outbound HTTP and sends `request:start` to the proxy.
 4. The proxy asks every active test route set whether it claims the request.

@@ -52,7 +52,7 @@ curl -s http://127.0.0.1:4310/health
 {
   "ok": true,
   "version": "0.1.0",
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "historyCapture": "all"
 }
 ```

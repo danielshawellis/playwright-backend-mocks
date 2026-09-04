@@ -60,6 +60,7 @@ test.describe("clientId matching", () => {
         file: "client-id.spec.ts",
         workerId: "client-id-worker",
       });
+      await playwright.waitForType("test:registered");
       playwright.send({
         type: "route:register",
         routeId,
@@ -69,8 +70,7 @@ test.describe("clientId matching", () => {
           clientIds: ["job-worker"],
         },
       });
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await playwright.waitForType("route:registered");
 
       // api-server must not match a job-worker-only route → passthrough
       const passthroughId = randomUUID();

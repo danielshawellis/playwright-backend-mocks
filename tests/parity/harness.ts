@@ -669,7 +669,7 @@ export const test = base.extend<ParityFixtures>({
       file: testInfo.file,
     });
     await use(mocks);
-    disposeNodeMocks(mocks);
+    await disposeNodeMocks(mocks);
   },
 
   nodeRouting: async ({ nodeMocks }, use) => {
@@ -792,7 +792,7 @@ export const test = base.extend<ParityFixtures>({
         try {
           return await fn(api);
         } finally {
-          disposeNodeMocks(mocks);
+          await disposeNodeMocks(mocks);
           await resetNodeControl();
         }
       }

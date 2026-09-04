@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import {
   connectPlaywrightProxy,
   createBackendMocks,
+  sendAndWaitForAck,
   type BackendMocksController,
   type PlaywrightProxyConnection,
   type RouteHandler as BackendRouteHandler,
@@ -103,13 +104,17 @@ export async function createNodeMocksForTest(meta: {
 }): Promise<BackendMocksController> {
   const connection = await getWorkerConnection();
   const testId = randomUUID();
-  connection.send({
-    type: "test:register",
-    testId,
-    title: meta.title,
-    file: meta.file,
-    workerId: String(process.pid),
-  });
+  await sendAndWaitForAck(
+    connection,
+    {
+      type: "test:register",
+      testId,
+      title: meta.title,
+      file: meta.file,
+      workerId: String(process.pid),
+    },
+    (message) => message.type === "test:registered" && message.testId === testId,
+  );
   return createBackendMocks({
     connection,
     testId,
@@ -227,8 +232,8 @@ export function createNodeRouting(mocks: BackendMocksController): NodeParityRout
 }
 
 /** Dispose mocks for a test and drain proxy errors. */
-export function disposeNodeMocks(mocks: BackendMocksController): void {
-  mocks.dispose();
+export async function disposeNodeMocks(mocks: BackendMocksController): Promise<void> {
+  await mocks.dispose();
   const remaining = mocks.takeErrors();
   if (remaining.length > 0) {
     throw new AggregateError(

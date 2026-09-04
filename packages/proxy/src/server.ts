@@ -216,13 +216,13 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         handleTestRegister(bound, message);
         return;
       case "test:unregister":
-        handleTestUnregister(message.testId);
+        handleTestUnregister(bound, message.testId);
         return;
       case "route:register":
         handleRouteRegister(bound, message);
         return;
       case "route:unregister":
-        handleRouteUnregister(message);
+        handleRouteUnregister(bound, message);
         return;
       case "request:claim-result":
         handleClaimResult(message);
@@ -831,6 +831,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       workerId: message.workerId,
       connectionId: bound.connectionId,
     });
+    send(bound, { type: "test:registered", testId: message.testId });
   }
 
   function completeWsClaimForTest(testId: string): void {
@@ -845,7 +846,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     }
   }
 
-  function handleTestUnregister(testId: string): void {
+  function handleTestUnregister(bound: BoundSocket, testId: string): void {
     tests.delete(testId);
     for (const [routeId, route] of routes) {
       if (route.testId === testId) {
@@ -878,6 +879,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
         pending.delete(requestId);
       }
     }
+    send(bound, { type: "test:unregistered", testId });
   }
 
   function handleRouteRegister(
@@ -891,6 +893,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
       connectionId: bound.connectionId,
       kind: message.kind ?? "http",
     });
+    send(bound, { type: "route:registered", routeId: message.routeId });
   }
 
   async function handleWsConnection(
@@ -1198,19 +1201,23 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
   }
 
   function handleRouteUnregister(
+    bound: BoundSocket,
     message: Extract<ClientToProxyMessage, { type: "route:unregister" }>,
   ): void {
     if (message.routeId !== undefined) {
       routes.delete(message.routeId);
-      return;
-    }
-    if (message.testId !== undefined) {
+    } else if (message.testId !== undefined) {
       for (const [routeId, route] of routes) {
         if (route.testId === message.testId) {
           routes.delete(routeId);
         }
       }
     }
+    send(bound, {
+      type: "route:unregistered",
+      ...(message.routeId !== undefined ? { routeId: message.routeId } : {}),
+      ...(message.testId !== undefined ? { testId: message.testId } : {}),
+    });
   }
 
   async function handleHandlerResult(
@@ -1516,7 +1523,7 @@ export function createProxyServer(overrides: Partial<ProxyConfig> = {}): ProxySe
     if (bound.role === "playwright") {
       for (const [testId, test] of tests) {
         if (test.connectionId === bound.connectionId) {
-          handleTestUnregister(testId);
+          handleTestUnregister(bound, testId);
         }
       }
     }
