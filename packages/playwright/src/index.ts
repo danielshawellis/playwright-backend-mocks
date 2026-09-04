@@ -32,7 +32,10 @@ export type {
 export { createBackendMocks } from "./backend-mocks.js";
 export type { BackendMocksController } from "./backend-mocks.js";
 export {
+  ACK_TIMEOUT_MS,
   connectPlaywrightProxy,
+  sendAndWaitForAck,
+  waitForAck,
   type PlaywrightProxyConnection,
   type ProxyMessageHandler,
 } from "./connection.js";

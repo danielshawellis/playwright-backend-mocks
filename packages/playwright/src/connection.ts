@@ -17,6 +17,80 @@ export interface PlaywrightProxyConnection {
   close(): Promise<void>;
 }
 
+/** How long `route()` / fixture setup wait for a proxy ack. */
+export const ACK_TIMEOUT_MS = 5_000;
+
+export type AckWaiter = {
+  readonly promise: Promise<void>;
+  cancel(error: Error): void;
+};
+
+export function createAckWaiter(
+  connection: Pick<PlaywrightProxyConnection, "onMessage">,
+  isAck: (message: ProxyToClientMessage) => boolean,
+  timeoutMs: number,
+  label: string,
+): AckWaiter {
+  let cancel!: (error: Error) => void;
+  const promise = new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(() => {
+        reject(
+          new Error(
+            `Timed out waiting for proxy to acknowledge ${label} after ${timeoutMs}ms`,
+          ),
+        );
+      });
+    }, timeoutMs);
+    const off = connection.onMessage((message) => {
+      if (!isAck(message)) {
+        return;
+      }
+      finish(resolve);
+    });
+    function finish(action: () => void): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      off();
+      action();
+    }
+    cancel = (error) => {
+      finish(() => reject(error));
+    };
+  });
+  return { promise, cancel };
+}
+
+export function waitForAck(
+  connection: Pick<PlaywrightProxyConnection, "onMessage">,
+  isAck: (message: ProxyToClientMessage) => boolean,
+  timeoutMs: number,
+  label: string,
+): Promise<void> {
+  return createAckWaiter(connection, isAck, timeoutMs, label).promise;
+}
+
+export async function sendAndWaitForAck(
+  connection: Pick<PlaywrightProxyConnection, "send" | "onMessage">,
+  message: ClientToProxyMessage,
+  isAck: (message: ProxyToClientMessage) => boolean,
+  timeoutMs: number = ACK_TIMEOUT_MS,
+): Promise<void> {
+  const waiter = createAckWaiter(connection, isAck, timeoutMs, message.type);
+  try {
+    connection.send(message);
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    waiter.cancel(err);
+    await waiter.promise;
+  }
+  await waiter.promise;
+}
+
 function toWsUrl(proxyUrl: string): string {
   const url = new URL(proxyUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

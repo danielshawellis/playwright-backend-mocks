@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { test as base } from "@playwright/test";
 import { createBackendMocks } from "./backend-mocks.js";
-import { connectPlaywrightProxy, type PlaywrightProxyConnection } from "./connection.js";
+import {
+  connectPlaywrightProxy,
+  sendAndWaitForAck,
+  type PlaywrightProxyConnection,
+} from "./connection.js";
 import type { BackendMocksWorkerOptions } from "./options.js";
 import type { BackendMocks } from "./types.js";
 
@@ -40,22 +44,27 @@ export const test = base.extend<BackendMocksFixtures, WorkerFixtures>({
 
   backendMocks: async ({ backendMocksConnection }, use, testInfo) => {
     const testId = randomUUID();
-
-    backendMocksConnection.send({
-      type: "test:register",
-      testId,
-      title: testInfo.title,
-      file: testInfo.file,
-      workerId: String(testInfo.workerIndex),
-    });
-
     const mocks = createBackendMocks({
       connection: backendMocksConnection,
       testId,
     });
 
-    await use(mocks);
-    mocks.dispose();
+    try {
+      await sendAndWaitForAck(
+        backendMocksConnection,
+        {
+          type: "test:register",
+          testId,
+          title: testInfo.title,
+          file: testInfo.file,
+          workerId: String(testInfo.workerIndex),
+        },
+        (message) => message.type === "test:registered" && message.testId === testId,
+      );
+      await use(mocks);
+    } finally {
+      await mocks.dispose();
+    }
 
     const remainingErrors = mocks.takeErrors();
     if (remainingErrors.length > 0) {

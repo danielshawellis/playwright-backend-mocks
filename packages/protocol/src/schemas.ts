@@ -454,6 +454,23 @@ export const proxyToClientMessageSchema = z.discriminatedUnion("type", [
     at: z.number(),
   }),
   z.object({
+    type: z.literal("test:registered"),
+    testId: z.string(),
+  }),
+  z.object({
+    type: z.literal("test:unregistered"),
+    testId: z.string(),
+  }),
+  z.object({
+    type: z.literal("route:registered"),
+    routeId: z.string(),
+  }),
+  z.object({
+    type: z.literal("route:unregistered"),
+    routeId: z.string().optional(),
+    testId: z.string().optional(),
+  }),
+  z.object({
     type: z.literal("decision:fulfill"),
     requestId: z.string(),
     response: serializedResponseSchema,
