@@ -71,9 +71,10 @@ async function withMocksAndUpstream(
       proxyUrl: proxy.url,
       clientId: `cr-${randomUUID().slice(0, 8)}`,
     });
+    const workerId = `cr-worker-${randomUUID().slice(0, 8)}`;
     const connection = await connectPlaywrightProxy({
       proxyUrl: proxy.url,
-      workerId: `cr-worker-${randomUUID().slice(0, 8)}`,
+      workerId,
     });
     const testId = randomUUID();
     await sendAndWaitForAck(
@@ -83,7 +84,7 @@ async function withMocksAndUpstream(
         testId,
         title: "client-request-modify-upstream",
         file: "client-request-modify-upstream.spec.ts",
-        workerId: "cr-worker",
+        workerId,
       },
       (message) => message.type === "test:registered" && message.testId === testId,
     );
