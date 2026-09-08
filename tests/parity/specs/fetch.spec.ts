@@ -75,12 +75,14 @@ test.describe("route.fetch", () => {
 
     const result = await trigger("/users");
     expect(result.status).toBe(200);
-    expect(result.data).toEqual(longer);
+    // Node clients honor Content-Length; assert it before the body so a stale
+    // upstream length fails on the root cause (not only via truncated JSON).
     if (parityMode === "node") {
       expect(headerValue(result.headers, "content-length")).toBe(
         String(Buffer.byteLength(JSON.stringify(longer))),
       );
     }
+    expect(result.data).toEqual(longer);
   });
 
   test("supports url / method / headers / postData overrides", async ({
