@@ -23,15 +23,18 @@ export type HttpGetResult =
     };
 
 export type HttpGetOptions = {
-  /** Default true (Node http.Agent default). Pass false for issue #34 case 2. */
+  /** Default true (Node http.Agent default). Pass false to disable keep-alive. */
   keepAlive?: boolean;
 };
 
 /**
- * Issue outbound GET via ClientRequest (`http.get` / `https.get`).
- * This is the transport axios uses under the hood — not WHATWG fetch.
+ * Outbound GET via ClientRequest (`http.get` / `https.get`) — the stack axios
+ * uses. Not WHATWG fetch.
  */
-export function httpGet(url: string, options: HttpGetOptions = {}): Promise<HttpGetResult> {
+export function httpGet(
+  url: string,
+  options: HttpGetOptions = {},
+): Promise<HttpGetResult> {
   const keepAlive = options.keepAlive ?? true;
   const parsed = new URL(url);
   const transport = parsed.protocol === "https:" ? https : http;

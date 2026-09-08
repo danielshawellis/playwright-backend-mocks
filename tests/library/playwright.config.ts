@@ -6,8 +6,8 @@ import { defineConfig } from "@playwright/test";
  * observability (proxy REST + dashboard), wire-level passthrough/continue
  * (encoding × framing) against a local HTTP/1.1 upstream with CDN-like shapes,
  * live HTTPS CDN smokes (example.com / Anthropic) for Node 26 HTTP/2 issues,
- * and ClientRequest (`http.get` / axios) modify-upstream fidelity (#34) that
- * the fetch-only parity downstream cannot host.
+ * and ClientRequest (`http.get`) modify-upstream fidelity that the fetch-only
+ * parity downstream cannot host.
  *
  * No browser / shared upstream fixtures; each spec spins its own proxy (+ agents).
  */
