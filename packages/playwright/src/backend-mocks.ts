@@ -1813,6 +1813,20 @@ async function buildFulfillResponse(
         ? Buffer.from(body, "utf8")
         : toBuffer(body);
   const length = bodyBuffer?.length ?? 0;
+  // DIVERGENCE: Playwright may keep Content-Length from `response` when
+  // fulfill({ response, json|body|path }) replaces the body. Browsers often
+  // ignore a mismatch; Node fetch/http truncate (or hang on a too-large length).
+  // Drop inherited length when the body was overridden and the caller did not
+  // pass `headers`, then recompute below. Explicit headers["content-length"] wins.
+  // See https://github.com/danielshawellis/playwright-backend-mocks/issues/33
+  const bodyOverridden =
+    options.json !== undefined ||
+    options.body !== undefined ||
+    options.path !== undefined;
+  if (bodyOverridden && options.headers === undefined) {
+    delete headers["content-length"];
+  }
+  // DIVERGENCE END
   if (length > 0 && !("content-length" in headers)) {
     headers["content-length"] = String(length);
   }

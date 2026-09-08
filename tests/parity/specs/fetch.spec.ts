@@ -1,4 +1,4 @@
-import { test, expect, UPSTREAM, headerValue } from "../harness.js";
+import { test, expect, UPSTREAM, headerValue, parityMode } from "../harness.js";
 
 test.describe("route.fetch", () => {
   test("fetches original request and fulfills", async ({ route, trigger }) => {
@@ -43,6 +43,46 @@ test.describe("route.fetch", () => {
       { id: 2, name: "Grace" },
       { id: 100, name: "Loquat" },
     ]);
+  });
+
+  /**
+   * Docs recipe: fulfill({ response, json: longerArray }) without overriding headers.
+   * Body readability is the dual-mode contract. Node clients honor Content-Length, so
+   * node mode also asserts the header matches the overridden body (browsers often
+   * ignore a stale upstream length). See issue #33.
+   */
+  test("fulfills with fetch response and longer json body", async ({
+    route,
+    trigger,
+  }) => {
+    const longer = [
+      { id: 1, name: "Ada" },
+      { id: 2, name: "Grace" },
+      { id: 100, name: "Injected" },
+    ];
+
+    await route(`${UPSTREAM}/users`, async (r) => {
+      const response = await r.fetch();
+      const users = (await response.json()) as Array<{
+        id: number;
+        name: string;
+      }>;
+      await r.fulfill({
+        response,
+        json: [...users, { id: 100, name: "Injected" }],
+      });
+    });
+
+    const result = await trigger("/users");
+    expect(result.status).toBe(200);
+    // Node clients honor Content-Length; assert it before the body so a stale
+    // upstream length fails on the root cause (not only via truncated JSON).
+    if (parityMode === "node") {
+      expect(headerValue(result.headers, "content-length")).toBe(
+        String(Buffer.byteLength(JSON.stringify(longer))),
+      );
+    }
+    expect(result.data).toEqual(longer);
   });
 
   test("supports url / method / headers / postData overrides", async ({
