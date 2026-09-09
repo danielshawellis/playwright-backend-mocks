@@ -131,9 +131,7 @@ export function createRouteFromHARSession(
   // rewrite remains out of scope for Node outbound traffic.
   // DIVERGENCE END
   if (resolvedPath.endsWith(".zip")) {
-    throw new Error(
-      "Zipped HAR archives are not supported; use a plain .har file",
-    );
+    throw new Error("Zipped HAR archives are not supported; use a plain .har file");
   }
 
   const pendingBlobs = new Map<string, Buffer>();
