@@ -91,8 +91,10 @@ await backendMocks.routeFromHAR("tests/fixtures/api.har", {
 
 Plain `.har` files are supported, including Playwright-style sibling `_file` attachments created by `updateContent: "attach"`.
 
+Replay open matches Playwright’s loud failures: a missing file or invalid JSON rejects at `routeFromHAR()` registration. A parseable but incomplete document (for example `{ "log": {} }`) still registers and falls through to `notFound`.
+
 ::: warning
-Zip HAR archives are not supported in the living implementation. Commit plain `.har` files and any sibling body files.
+Zip HAR archives are not supported in the living implementation. Commit plain `.har` files and any sibling body files. Passing a `.zip` path rejects at registration.
 :::
 
 ## Related
