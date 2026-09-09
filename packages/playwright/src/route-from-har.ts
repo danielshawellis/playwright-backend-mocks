@@ -2,7 +2,7 @@
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/harBackend.ts
 // Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/har/harTracer.ts
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type {
   BackendRequest,
@@ -125,9 +125,16 @@ export function createRouteFromHARSession(
     updateMode: options.updateMode ?? "minimal",
   };
 
-  // DIVERGENCE: zip HAR archives / navigation-only redirect rewrite are out of scope
-  // for Node outbound traffic. Plain `.har` (+ sibling `_file` attach) is supported.
+  // DIVERGENCE: Playwright `harOpen` accepts `.zip` HAR archives; we do not.
+  // Reject `.zip` paths at registration with a clear error (issue #37). Plain
+  // `.har` (+ sibling `_file` attach) is supported. Navigation-only redirect
+  // rewrite remains out of scope for Node outbound traffic.
   // DIVERGENCE END
+  if (resolvedPath.endsWith(".zip")) {
+    throw new Error(
+      "Zipped HAR archives are not supported; use a plain .har file",
+    );
+  }
 
   const pendingBlobs = new Map<string, Buffer>();
   let entries: HarEntry[];
@@ -163,21 +170,16 @@ export function flushRouteFromHARSession(session: RouteFromHARSession): void {
 }
 
 /**
- * Load entries for replay. Bad / incomplete HAR is treated as empty so the
- * HarRouter-style handler can fall through to notFound abort/fallback instead
- * of throwing at registration time.
- * Playwright: harOpen accepts parseable JSON; lookup errors surface as action "error".
+ * Load entries for replay.
+ * Playwright: https://github.com/microsoft/playwright/blob/26a9e47/packages/playwright-core/src/server/localUtils.ts (harOpen)
+ * Missing file / invalid JSON throw at registration (same as harOpen).
+ * Parseable but incomplete structure (`{ log: {} }`, empty entries) stays empty
+ * so the HarRouter-style handler falls through to notFound abort/fallback;
+ * lookup errors surface as action "error".
  */
 function loadHarEntriesForReplay(filePath: string): HarEntry[] {
-  if (!existsSync(filePath)) {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    return extractHarEntries(parsed);
-  } catch {
-    return [];
-  }
+  const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+  return extractHarEntries(parsed);
 }
 
 function extractHarEntries(value: unknown): HarEntry[] {
