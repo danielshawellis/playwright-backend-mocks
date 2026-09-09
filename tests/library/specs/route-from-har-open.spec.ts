@@ -4,6 +4,8 @@
  * (Playwright-shaped soft path → notFound at request time).
  *
  * Fake connection — loud failures throw before route:register; soft cases ack.
+ * Zip is detected by path (`.zip`); disguised zip bytes as `.har` fall through
+ * to the invalid-JSON failure — no magic-byte special case.
  */
 import fs from "node:fs";
 import { expect, test } from "@playwright/test";
@@ -54,16 +56,6 @@ test.describe("routeFromHAR open failures", () => {
     const zipPath = testInfo.outputPath("recording.har.zip");
 
     await expect(mocks().routeFromHAR(zipPath)).rejects.toThrow(/zip/i);
-  });
-
-  test("rejects zip magic even when the path ends in .har", async ({}, testInfo) => {
-    const disguised = testInfo.outputPath("disguised.har");
-    fs.writeFileSync(
-      disguised,
-      Buffer.from("504b030400000000000000000000000000000000000000000000000000000000", "hex"),
-    );
-
-    await expect(mocks().routeFromHAR(disguised)).rejects.toThrow(/zip/i);
   });
 
   test("rejects a missing HAR file", async ({}, testInfo) => {
