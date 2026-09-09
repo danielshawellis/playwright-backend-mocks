@@ -52,29 +52,29 @@ function mocks() {
 }
 
 test.describe("routeFromHAR open failures", () => {
-  test("rejects a .har.zip path as unsupported", async ({}, testInfo) => {
-    const zipPath = testInfo.outputPath("recording.har.zip");
+  test("rejects a .har.zip path as unsupported", async () => {
+    const zipPath = test.info().outputPath("recording.har.zip");
 
     await expect(mocks().routeFromHAR(zipPath)).rejects.toThrow(/zip/i);
   });
 
-  test("rejects a missing HAR file", async ({}, testInfo) => {
-    const missing = testInfo.outputPath("missing.har");
+  test("rejects a missing HAR file", async () => {
+    const missing = test.info().outputPath("missing.har");
 
     await expect(mocks().routeFromHAR(missing)).rejects.toThrow(
       /ENOENT|no such file|not found/i,
     );
   });
 
-  test("rejects invalid JSON in a plain .har", async ({}, testInfo) => {
-    const corrupt = testInfo.outputPath("corrupt.har");
+  test("rejects invalid JSON in a plain .har", async () => {
+    const corrupt = test.info().outputPath("corrupt.har");
     fs.writeFileSync(corrupt, "{ not json", "utf8");
 
     await expect(mocks().routeFromHAR(corrupt)).rejects.toThrow(/JSON|Unexpected|parse/i);
   });
 
-  test("registers parseable incomplete HAR without throwing", async ({}, testInfo) => {
-    const incomplete = testInfo.outputPath("incomplete.har");
+  test("registers parseable incomplete HAR without throwing", async () => {
+    const incomplete = test.info().outputPath("incomplete.har");
     fs.writeFileSync(incomplete, JSON.stringify({ log: {} }), "utf8");
 
     const { connection, sent } = fakeConnection();
