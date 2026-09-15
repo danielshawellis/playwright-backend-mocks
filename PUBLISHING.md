@@ -18,6 +18,7 @@ Do this once before the first successful publish. Packages today:
 - `@playwright-backend-mocks/proxy`
 - `@playwright-backend-mocks/playwright`
 - `@playwright-backend-mocks/dashboard`
+- `@playwright-backend-mocks/create` (`npm create @playwright-backend-mocks`)
 
 ### 1. Create the npm scope
 

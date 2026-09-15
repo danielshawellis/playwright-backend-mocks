@@ -12,3 +12,4 @@ test-results
 .env.*
 documentation/.vitepress/cache
 documentation/.vitepress/dist
+packages/create/template

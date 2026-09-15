@@ -1,0 +1,39 @@
+{
+  "name": "@playwright-backend-mocks/create",
+  "version": "0.1.8",
+  "description": "Scaffold a Playwright Backend Mocks getting-started example",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-playwright-backend-mocks": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "template"
+  ],
+  "scripts": {
+    "build": "node ./scripts/sync-template.mjs && tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "sync-template": "node ./scripts/sync-template.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielshawellis/playwright-backend-mocks.git",
+    "directory": "packages/create"
+  },
+  "homepage": "https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started",
+  "bugs": {
+    "url": "https://github.com/danielshawellis/playwright-backend-mocks/issues"
+  }
+}

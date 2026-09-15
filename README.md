@@ -46,6 +46,8 @@ pnpm docs:build           # static site → documentation/.vitepress/dist
 | [`@playwright-backend-mocks/proxy`](./packages/proxy/README.md) | Standalone coordinator + REST API CLI |
 | [`@playwright-backend-mocks/protocol`](./packages/protocol/README.md) | Shared wire protocol (types + validators) |
 | [`@playwright-backend-mocks/dashboard`](./packages/dashboard/README.md) | Optional read-only observability UI |
+| [`@playwright-backend-mocks/create`](./packages/create/README.md) | `npm create @playwright-backend-mocks` scaffolder |
+| [`examples/getting-started`](./examples/getting-started) | Minimal app used by the getting started guide |
 
 Docs: [Observability](./documentation/ops/observability.md). Releases: [`PUBLISHING.md`](./PUBLISHING.md).
 
