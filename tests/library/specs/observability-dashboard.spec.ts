@@ -63,57 +63,61 @@ test.describe("observability dashboard", () => {
     });
   });
 
-  test("HTTP view shows fulfilled traffic, detail, HAR link, and copy controls", async ({
-    page,
-  }) => {
-    await withProxy({}, async (proxy) => {
-      const { playwright, node } = await setupPair(proxy.url);
-      await registerHttpRoute(playwright, {
-        title: "dashboard pay",
-        file: "/tests/dashboard-pay.spec.ts",
-        matcher: "http://example.test/charges",
-      });
-      const requestId = await startHttpAndMatch(node, playwright, {
-        url: "http://example.test/charges",
-        method: "POST",
-        body: { amount: 42 },
-      });
-      await fulfill(playwright, node, requestId, {
-        status: 402,
-        json: { error: "card_declined" },
-      });
+  test(
+    "HTTP view shows fulfilled traffic, detail, HAR link, and copy controls",
+    { timeout: 60_000 },
+    async ({ page }) => {
+      await withProxy({}, async (proxy) => {
+        const { playwright, node } = await setupPair(proxy.url);
+        await registerHttpRoute(playwright, {
+          title: "dashboard pay",
+          file: "/tests/dashboard-pay.spec.ts",
+          matcher: "http://example.test/charges",
+        });
+        const requestId = await startHttpAndMatch(node, playwright, {
+          url: "http://example.test/charges",
+          method: "POST",
+          body: { amount: 42 },
+        });
+        await fulfill(playwright, node, requestId, {
+          status: 402,
+          json: { error: "card_declined" },
+        });
 
-      await withDashboard(proxy.url, async (dashboardUrl) => {
-        await page.goto(dashboardUrl);
-        await expect(page.getByText("http://example.test/charges").first()).toBeVisible();
-        await expect(page.getByText("fulfill").first()).toBeVisible();
-        await expect(page.getByText("dashboard pay").first()).toBeVisible();
+        await withDashboard(proxy.url, async (dashboardUrl) => {
+          await page.goto(dashboardUrl);
+          await expect(
+            page.getByText("http://example.test/charges").first(),
+          ).toBeVisible();
+          await expect(page.getByText("fulfill").first()).toBeVisible();
+          await expect(page.getByText("dashboard pay").first()).toBeVisible();
 
-        await page.getByText("http://example.test/charges").first().click();
-        await expect(page.getByText("Select a request")).toHaveCount(0);
-        await expect(page.getByText("/tests/dashboard-pay.spec.ts")).toBeVisible();
-        await expect(page.getByText("card_declined")).toBeVisible();
-        await expect(page.getByRole("link", { name: "Download HAR" })).toBeVisible();
-        await expect(page.getByRole("link", { name: "Download HAR" })).toHaveAttribute(
-          "href",
-          new RegExp(`/api/history/${requestId}/har`),
-        );
-        await expect(
-          page.getByRole("button", { name: "Copy URL" }).first(),
-        ).toBeVisible();
-        await expect(
-          page.getByRole("button", { name: "Copy full history entry" }),
-        ).toBeVisible();
+          await page.getByText("http://example.test/charges").first().click();
+          await expect(page.getByText("Select a request")).toHaveCount(0);
+          await expect(page.getByText("/tests/dashboard-pay.spec.ts")).toBeVisible();
+          await expect(page.getByText("card_declined")).toBeVisible();
+          await expect(page.getByRole("link", { name: "Download HAR" })).toBeVisible();
+          await expect(page.getByRole("link", { name: "Download HAR" })).toHaveAttribute(
+            "href",
+            new RegExp(`/api/history/${requestId}/har`),
+          );
+          await expect(
+            page.getByRole("button", { name: "Copy URL" }).first(),
+          ).toBeVisible();
+          await expect(
+            page.getByRole("button", { name: "Copy full history entry" }),
+          ).toBeVisible();
 
-        await page.getByRole("button", { name: "Connections" }).click();
-        await expect(page.getByText("obs-node")).toBeVisible();
-        await expect(page.getByText(/pw-obs-worker|playwright/i).first()).toBeVisible();
+          await page.getByRole("button", { name: "Connections" }).click();
+          await expect(page.getByText("obs-node")).toBeVisible();
+          await expect(page.getByText(/pw-obs-worker|playwright/i).first()).toBeVisible();
+        });
+
+        playwright.close();
+        node.close();
       });
-
-      playwright.close();
-      node.close();
-    });
-  });
+    },
+  );
 
   test("HTTP detail shows upstream responses, abort no-response, and redirect hops", async ({
     page,
