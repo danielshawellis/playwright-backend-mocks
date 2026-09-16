@@ -14,6 +14,9 @@ importers:
       '@iconify/vue':
         specifier: ^5.0.1
         version: 5.0.1(vue@3.5.40(typescript@5.9.3))
+      '@playwright-backend-mocks/create':
+        specifier: workspace:*
+        version: link:packages/create
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
@@ -42,6 +45,27 @@ importers:
         specifier: ^1.6.4
         version: 1.6.4(@algolia/client-search@5.56.0)(@types/node@22.20.1)(postcss@8.5.25)(search-insights@2.17.3)(typescript@5.9.3)
 
+  examples/getting-started:
+    devDependencies:
+      '@playwright-backend-mocks/node':
+        specifier: workspace:*
+        version: link:../../packages/node
+      '@playwright-backend-mocks/playwright':
+        specifier: workspace:*
+        version: link:../../packages/playwright
+      '@playwright-backend-mocks/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
+      '@playwright/test':
+        specifier: 1.62.1
+        version: 1.62.1
+      '@types/node':
+        specifier: ^22.16.5
+        version: 22.20.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   fixtures/browser-harness: {}
 
   fixtures/downstream: {}
@@ -62,6 +86,18 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.21.1
+
+  packages/create:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.16.5
+        version: 22.20.1
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.25)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
   packages/dashboard:
     devDependencies:
@@ -4398,7 +4434,7 @@ snapshots:
       '@rollup/rollup-win32-ia32-msvc': 4.62.4
       '@rollup/rollup-win32-x64-gnu': 4.62.4
       '@rollup/rollup-win32-x64-msvc': 4.62.4
-      fsevents: 2.3.2
+      fsevents: 2.3.3
 
   roughjs@4.6.6:
     dependencies:

@@ -68,3 +68,19 @@ jobs:
 
       - name: Library-only suite
         run: pnpm test:library
+
+      - name: Getting started example
+        if: matrix.suite == 'full'
+        run: |
+          pnpm --filter @playwright-backend-mocks/example-getting-started exec playwright install chromium
+          pnpm test:example:getting-started
+
+      - name: Create scaffolder smoke
+        if: matrix.suite == 'full'
+        run: |
+          rm -rf /tmp/pbm-create-smoke
+          pnpm --filter @playwright-backend-mocks/create exec node ./dist/cli.js /tmp/pbm-create-smoke --quiet --no-deps --no-browsers
+          test -f /tmp/pbm-create-smoke/package.json
+          test -f /tmp/pbm-create-smoke/app/server.js
+          test -f /tmp/pbm-create-smoke/tests/declined-card.spec.ts
+          ! grep -q 'workspace:' /tmp/pbm-create-smoke/package.json

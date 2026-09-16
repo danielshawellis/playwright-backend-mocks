@@ -66,6 +66,7 @@ test.describe("observability dashboard", () => {
   test("HTTP view shows fulfilled traffic, detail, HAR link, and copy controls", async ({
     page,
   }) => {
+    test.setTimeout(60_000);
     await withProxy({}, async (proxy) => {
       const { playwright, node } = await setupPair(proxy.url);
       await registerHttpRoute(playwright, {

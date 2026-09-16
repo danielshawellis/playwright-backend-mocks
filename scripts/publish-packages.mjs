@@ -12,7 +12,14 @@ import { fileURLToPath } from "node:url";
 const packagesRoot = fileURLToPath(new URL("../packages/", import.meta.url));
 
 /** Preferred publish order (dependents after dependencies). */
-const PREFERRED_ORDER = ["protocol", "node", "proxy", "playwright", "dashboard"];
+const PREFERRED_ORDER = [
+  "protocol",
+  "node",
+  "proxy",
+  "playwright",
+  "dashboard",
+  "create",
+];
 
 function readPackageJson(dirName) {
   return JSON.parse(readFileSync(join(packagesRoot, dirName, "package.json"), "utf8"));
@@ -20,14 +27,21 @@ function readPackageJson(dirName) {
 
 function assertBuilt(dirName, pkg) {
   const files = Array.isArray(pkg.files) ? pkg.files : [];
-  if (!files.includes("dist")) {
-    return;
+  if (files.includes("dist")) {
+    const distDir = join(packagesRoot, dirName, "dist");
+    if (!existsSync(distDir) || readdirSync(distDir).length === 0) {
+      throw new Error(
+        `packages/${dirName}/dist is missing or empty. Run \`pnpm build\` before publishing.`,
+      );
+    }
   }
-  const distDir = join(packagesRoot, dirName, "dist");
-  if (!existsSync(distDir) || readdirSync(distDir).length === 0) {
-    throw new Error(
-      `packages/${dirName}/dist is missing or empty. Run \`pnpm build\` before publishing.`,
-    );
+  if (files.includes("template")) {
+    const templateDir = join(packagesRoot, dirName, "template");
+    if (!existsSync(templateDir) || !existsSync(join(templateDir, "package.json"))) {
+      throw new Error(
+        `packages/${dirName}/template is missing. Run \`pnpm build\` before publishing.`,
+      );
+    }
   }
 }
 

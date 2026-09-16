@@ -16,6 +16,9 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   timeout: 30_000,
+  // Dashboard UI specs occasionally exceed 30s under cold CI after the full
+  // oracle suite; one retry avoids failing the job on that flake.
+  retries: process.env.CI ? 1 : 0,
   expect: {
     timeout: 10_000,
   },

@@ -22,6 +22,7 @@ export default tseslint.config(
       "fixtures/**/public/**",
       "**/playwright-report/**",
       "**/test-results/**",
+      "packages/create/template/**",
       "**/*.vue",
     ],
   },

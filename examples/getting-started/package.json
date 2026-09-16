@@ -1,0 +1,22 @@
+{
+  "name": "@playwright-backend-mocks/example-getting-started",
+  "private": true,
+  "version": "0.1.8",
+  "description": "Minimal checkout app for the Playwright Backend Mocks getting-started guide",
+  "type": "module",
+  "scripts": {
+    "start:e2e": "node app/server.js",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright-backend-mocks/node": "workspace:*",
+    "@playwright-backend-mocks/playwright": "workspace:*",
+    "@playwright-backend-mocks/proxy": "workspace:*",
+    "@playwright/test": "1.62.1",
+    "@types/node": "^22.16.5",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

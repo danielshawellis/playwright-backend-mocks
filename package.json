@@ -10,7 +10,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' run build",
+    "build": "pnpm -r --filter './packages/*' run build && pnpm install --frozen-lockfile",
     "typecheck": "pnpm -r --filter './packages/*' run typecheck && tsc -p tests/parity/tsconfig.json --noEmit && tsc -p tests/library/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -22,6 +22,7 @@
     "test:parity:node:full": "pnpm --filter @playwright-backend-mocks/parity test:node:full",
     "test:parity:node:fulfill": "pnpm --filter @playwright-backend-mocks/parity exec env PARITY_MODE=node PARITY_NODE_FULL=1 playwright test specs/fulfill.spec.ts -g \"mocks a GET JSON response\"",
     "test:library": "pnpm --filter @playwright-backend-mocks/library-tests test",
+    "test:example:getting-started": "pnpm --filter @playwright-backend-mocks/example-getting-started test",
     "docs:dev": "vitepress dev documentation",
     "docs:build": "vitepress build documentation",
     "docs:preview": "vitepress preview documentation",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@iconify/vue": "^5.0.1",
+    "@playwright-backend-mocks/create": "workspace:*",
     "@playwright/test": "1.62.1",
     "@types/node": "^22.16.5",
     "eslint": "^9.32.0",
