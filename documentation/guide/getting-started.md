@@ -1,12 +1,10 @@
 # Getting started
 
-Wire Playwright Backend Mocks into a Node app: run the proxy, enable the Node agent, connect Playwright, then write a route.
-
-You can follow along in the sample app **or** apply each step to a project you already have.
+Wire Playwright Backend Mocks into a Node app in four steps: proxy → Node agent → Playwright fixture → first mock.
 
 ## 0. Optional: scaffold the sample app
 
-If you do not already have a Playwright + Node app, scaffold a tiny checkout demo and follow the rest of this guide in that folder:
+No existing app? Scaffold a tiny checkout demo and use it while you read the rest of this page:
 
 ```bash
 npm create @playwright-backend-mocks@latest getting-started-demo
@@ -15,9 +13,13 @@ cd getting-started-demo
 
 When prompted, accept installing dependencies and Chromium (or pass `--quiet`).
 
-The sample is plain Node (one `app/server.js`) plus TypeScript Playwright tests. It is also checked in at [`examples/getting-started`](https://github.com/danielshawellis/playwright-backend-mocks/tree/main/examples/getting-started).
+The sample is already wired for steps 1–4. Confirm it works:
 
-If you already have a project, skip this step and map each snippet below onto your own server entry and Playwright config.
+```bash
+npx playwright test
+```
+
+You should see one passing test (`shows declined payment messaging`). Keep this folder open and read on — each section below matches a file that is already in the sample. If you are adding the library to your own app instead, skip the scaffold and apply the same snippets to your project.
 
 ::: tip
 Keep `@playwright-backend-mocks/playwright`, `@playwright-backend-mocks/node`, `@playwright-backend-mocks/proxy`, and `@playwright-backend-mocks/protocol` on the same version. Playwright pin: `@playwright/test@1.62.1`. Node.js `>=20`.
@@ -27,8 +29,9 @@ Keep `@playwright-backend-mocks/playwright`, `@playwright-backend-mocks/node`, `
 
 The proxy sits between Playwright and your Node process. Start it from Playwright `webServer` and pass the same URL to the fixture and the app.
 
+**Sample file:** `playwright.config.ts`
+
 ```ts
-// playwright.config.ts
 import { defineConfig } from "@playwright/test";
 import type { BackendMocksWorkerOptions } from "@playwright-backend-mocks/playwright";
 
@@ -58,18 +61,17 @@ export default defineConfig<object, BackendMocksWorkerOptions>({
 });
 ```
 
-**In your app:** keep your existing start script; point `webServer` at it and set `PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL`. Set `use.baseURL` yourself — Playwright does not infer it when `webServer` is an array.
+**In your own app:** keep your existing start command in `webServer`, set `PLAYWRIGHT_BACKEND_MOCKS_PROXY_URL`, and set `use.baseURL` yourself — Playwright does not infer it when `webServer` is an array.
 
-**Check:** with only the proxy running, `curl -s http://127.0.0.1:4310/health` returns ok.
-
-You can also run `npx @playwright-backend-mocks/proxy --host 127.0.0.1 --port 4310`.
+**Check:** with only the proxy running, `curl -s http://127.0.0.1:4310/health` returns ok. You can also run `npx @playwright-backend-mocks/proxy --host 127.0.0.1 --port 4310`.
 
 ## 2. Enable the Node agent
 
 Call `startBackendMocks()` early in the app process (before outbound HTTP). With no proxy URL, it is a no-op.
 
+**Sample file:** `app/server.js`
+
 ```js
-// app/server.js (sample)
 import { startBackendMocks } from "@playwright-backend-mocks/node";
 
 const agent = await startBackendMocks({
@@ -85,29 +87,33 @@ process.once("SIGTERM", async () => {
 });
 ```
 
-**In your app:** run this once at process startup (API server, worker, etc.). Use a stable `clientId` if you have multiple Node processes.
+**In your own app:** call this once at process startup. Use a stable `clientId` if you have multiple Node processes.
 
-**Check:** start proxy + app, then `curl -s http://127.0.0.1:4310/api/connections` should list an agent.
-
-Install if needed:
+If you did not use the scaffold:
 
 ```bash
 npm install -D @playwright-backend-mocks/node @playwright-backend-mocks/proxy
 ```
 
+**Check:** start proxy + app, then `curl -s http://127.0.0.1:4310/api/connections` should list an agent.
+
 ## 3. Wire Playwright
 
-Install the fixture package and import `test` / `expect` from it (or `mergeTests` with your existing fixtures).
+Import `test` / `expect` from the Playwright package (or `mergeTests` with your existing fixtures).
 
-```bash
-npm install -D @playwright/test@1.62.1 @playwright-backend-mocks/playwright
-```
+**Sample file:** `tests/declined-card.spec.ts` (imports shown in step 4)
 
 ```ts
 import { test, expect } from "@playwright-backend-mocks/playwright";
 ```
 
 `backendMocksProxyUrl` in the config (step 1) is how the worker finds the proxy.
+
+If you did not use the scaffold:
+
+```bash
+npm install -D @playwright/test@1.62.1 @playwright-backend-mocks/playwright
+```
 
 **Already have fixtures?**
 
@@ -121,11 +127,13 @@ export const test = mergeTests(appTest, backendMocksTest);
 export { expect } from "@playwright/test";
 ```
 
-**Check:** run any test that uses the fixture; `GET /api/connections` should show a Playwright worker as well as the Node agent.
+**Check:** when a fixture test is running, `GET /api/connections` should show a Playwright worker as well as the Node agent.
 
 ## 4. Write your first mock
 
 Routes look like Playwright `page.route()`, but they target outbound Node requests.
+
+**Sample file:** `tests/declined-card.spec.ts`
 
 ```ts
 import { test, expect } from "@playwright-backend-mocks/playwright";
@@ -152,7 +160,7 @@ test("shows declined payment messaging", async ({ page, backendMocks }) => {
 
 In the sample app, Pay → `POST /api/pay` → the server calls `https://payments.example.test/charges`. The mock fulfills that outbound call; the UI shows the declined message.
 
-**In your app:** match a real outbound URL your server hits, then drive the UI the same way you would with `page.route`.
+**In your own app:** match a real outbound URL your server hits, then drive the UI the same way you would with `page.route`.
 
 ```bash
 npx playwright test
