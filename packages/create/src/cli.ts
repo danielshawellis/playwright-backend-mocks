@@ -224,13 +224,14 @@ async function main(): Promise<void> {
     join(targetDir, "README.md"),
     `# ${projectName}
 
-Scaffolded with \`@playwright-backend-mocks/create\`.
+Scaffolded with \`@playwright-backend-mocks/create\`. The sample is already wired
+(proxy, Node agent, Playwright fixture, and one declined-card test).
 
 \`\`\`bash
-npm test
+npx playwright test
 \`\`\`
 
-Follow the getting started guide:
+Then read the getting started guide to see how each piece fits:
 https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started
 `,
   );
@@ -262,17 +263,13 @@ https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started
   console.log(`
 ✔ Success! Created a Playwright Backend Mocks example at ${targetDir}
 
-Inside that directory, run:
-
-  ${pm === "pnpm" ? "pnpm test" : pm === "yarn" ? "yarn test" : "npm test"}
-
-Then open the getting started guide and follow steps 1–4 in this project:
-https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started
-
-We suggest:
+The sample is already wired. Confirm it works:
 
   cd ${rel}
-  ${pm === "pnpm" ? "pnpm test" : pm === "yarn" ? "yarn test" : "npm test"}
+  npx playwright test
+
+Then read the getting started guide — steps 1–4 match the files in this folder:
+https://danielshawellis.github.io/playwright-backend-mocks/guide/getting-started
 `);
 }
 
